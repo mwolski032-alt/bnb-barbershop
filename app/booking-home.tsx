@@ -1609,6 +1609,16 @@ export function BookingHome() {
         </section>
       ) : visibleStep === "booking" ? (
         <>
+          <div className="home-hero" aria-hidden="true">
+            <img
+              src="/brand/bnb-hero.png"
+              alt=""
+              width="1672"
+              height="941"
+              decoding="async"
+              fetchPriority="high"
+            />
+          </div>
           <section className="booking-panel" aria-label="Kalendarz rezerwacji">
             <div className="topbar">
               <div className="topbar-title">
