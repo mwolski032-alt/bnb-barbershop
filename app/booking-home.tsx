@@ -12,7 +12,11 @@ import {
 import { onValue, ref, remove, set, update } from "firebase/database";
 
 import { firebaseApp, realtimeDb } from "./lib/firebase";
-import { registerPushNotifications, sendAppointmentNotification } from "./lib/notifications";
+import {
+  registerPushNotifications,
+  sendAppointmentNotification,
+  sendTestNotification,
+} from "./lib/notifications";
 
 type Availability = "high" | "medium" | "low" | "none";
 type Step = "booking" | "confirm" | "success" | "admin";
@@ -499,6 +503,7 @@ export function BookingHome() {
   const [pushStatus, setPushStatus] = useState<
     | "idle"
     | "saving"
+    | "testing"
     | "enabled"
     | "permission_denied"
     | "missing_vapid_key"
@@ -1088,6 +1093,24 @@ export function BookingHome() {
     }
   };
 
+  const handlePushButtonClick = async () => {
+    if (!activeUser || pushStatus === "saving" || pushStatus === "testing") return;
+
+    if (pushStatus === "enabled") {
+      setPushStatus("testing");
+      window.setTimeout(() => {
+        void sendTestNotification({
+          uid: activeUser.uid,
+          displayName: activeUser.displayName ?? null,
+          email: activeUser.email ?? null,
+        }).finally(() => setPushStatus("enabled"));
+      }, 5000);
+      return;
+    }
+
+    await handleEnablePushNotifications();
+  };
+
   const getServiceForAppointment = (appointment: AdminAppointment) =>
     services.find((service) => service.name === appointment.serviceName) ??
     services.find((service) => service.durationMinutes === appointment.durationMinutes) ??
@@ -1368,8 +1391,10 @@ export function BookingHome() {
   const pushButtonLabel =
     pushStatus === "saving"
       ? "Włączanie..."
+      : pushStatus === "testing"
+        ? "Test za 5 s..."
       : pushStatus === "enabled"
-        ? "Powiadomienia włączone"
+        ? "Test powiadomienia"
         : pushStatus === "permission_denied"
           ? "Brak zgody w telefonie"
           : pushStatus === "missing_vapid_key"
@@ -1486,9 +1511,9 @@ export function BookingHome() {
             <button
               className={`push-toggle ${pushStatus === "enabled" ? "enabled" : ""}`}
               type="button"
-              disabled={pushStatus === "saving" || pushStatus === "enabled"}
+              disabled={pushStatus === "saving" || pushStatus === "testing"}
               onClick={() => {
-                void handleEnablePushNotifications();
+                void handlePushButtonClick();
               }}
             >
               {pushButtonLabel}
@@ -2166,9 +2191,9 @@ export function BookingHome() {
               <button
                 className={`push-toggle ${pushStatus === "enabled" ? "enabled" : ""}`}
                 type="button"
-                disabled={pushStatus === "saving" || pushStatus === "enabled"}
+                disabled={pushStatus === "saving" || pushStatus === "testing"}
                 onClick={() => {
-                  void handleEnablePushNotifications();
+                  void handlePushButtonClick();
                 }}
               >
                 {pushButtonLabel}

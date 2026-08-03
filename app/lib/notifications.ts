@@ -108,7 +108,8 @@ export const sendAppointmentNotification = async (
     | "client_rescheduled"
     | "client_cancelled"
     | "admin_rescheduled"
-    | "admin_cancelled",
+    | "admin_cancelled"
+    | "test_push",
   appointment: {
     id: string;
     userId?: string;
@@ -131,4 +132,15 @@ export const sendAppointmentNotification = async (
   } catch {
     // Powiadomienia nie mogą blokować rezerwacji ani edycji wizyty.
   }
+};
+
+export const sendTestNotification = async (user: NotificationUser) => {
+  await sendAppointmentNotification("test_push", {
+    id: `test-${Date.now()}`,
+    userId: user.uid,
+    clientName: user.displayName ?? "Klient",
+    serviceName: "Test powiadomienia",
+    dateKey: new Date().toISOString().slice(0, 10),
+    startTime: new Date().toTimeString().slice(0, 5),
+  });
 };

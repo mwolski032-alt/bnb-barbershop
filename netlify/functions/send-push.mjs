@@ -37,6 +37,11 @@ const eventCopy = {
     title: "Wizyta została odwołana",
     body: (appointment) => `${appointment.serviceName} została odwołana przez administratora.`,
   },
+  test_push: {
+    target: "client",
+    title: "Test powiadomien BNB",
+    body: () => "Jesli to widzisz, powiadomienia dzialaja na tym urzadzeniu.",
+  },
 };
 
 const base64Url = (value) =>
