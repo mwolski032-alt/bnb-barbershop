@@ -966,6 +966,19 @@ export function BookingHome() {
     void remove(ref(realtimeDb, `appointments/${appointmentId}`));
   };
 
+  const confirmClientRescheduledAppointment = async (appointmentId: string) => {
+    if (isSaving) return;
+
+    try {
+      setIsSaving(true);
+      await update(ref(realtimeDb, `appointments/${appointmentId}`), {
+        status: "confirmed",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const saveClientReschedule = async () => {
     if (!reschedulingAppointment || !selectedTime || isSaving) return;
 
@@ -2270,9 +2283,26 @@ export function BookingHome() {
               </span>
             </div>
 
-            <div className="modal-actions">
+            <div
+              className={`modal-actions ${
+                normalizeAppointmentStatus(selectedClientAppointment.status) === "rescheduled"
+                  ? "with-confirmation"
+                  : ""
+              }`}
+            >
+              {normalizeAppointmentStatus(selectedClientAppointment.status) === "rescheduled" ? (
+                <button
+                  className="confirm"
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => confirmClientRescheduledAppointment(selectedClientAppointment.id)}
+                >
+                  Potwierdzam
+                </button>
+              ) : null}
               <button
                 type="button"
+                disabled={isSaving}
                 onClick={() => beginClientReschedule(selectedClientAppointment)}
               >
                 Zmień
@@ -2280,6 +2310,7 @@ export function BookingHome() {
               <button
                 className="danger"
                 type="button"
+                disabled={isSaving}
                 onClick={() => cancelClientAppointment(selectedClientAppointment.id)}
               >
                 Odmów
