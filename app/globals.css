@@ -87,6 +87,10 @@ input {
   font-weight: 760;
 }
 
+.auth-brand p {
+  white-space: nowrap;
+}
+
 .auth-logo {
   display: grid;
   place-items: center;
@@ -155,6 +159,7 @@ input {
   color: #111217;
   cursor: pointer;
   font-weight: 800;
+  white-space: nowrap;
   transition:
     opacity 160ms ease,
     transform 160ms ease;
@@ -196,6 +201,39 @@ input {
   border-top-color: var(--blue);
   border-radius: 50%;
   animation: spin-ring 900ms linear infinite;
+}
+
+@media (min-width: 901px) {
+  .auth-shell {
+    width: min(100%, 58rem);
+  }
+
+  .auth-card:has(.auth-benefits) {
+    display: grid;
+    grid-template-columns: minmax(16rem, 0.9fr) minmax(19rem, 1fr);
+    gap: 1.25rem 1.65rem;
+    align-items: end;
+    padding: 2rem;
+  }
+
+  .auth-card:has(.auth-benefits) .auth-brand {
+    grid-column: 1 / -1;
+  }
+
+  .auth-card:has(.auth-benefits) .auth-hero {
+    grid-column: 1;
+    margin-top: 2.2rem;
+  }
+
+  .auth-card:has(.auth-benefits) .auth-benefits {
+    grid-column: 2;
+    margin-top: 0;
+  }
+
+  .auth-card:has(.auth-benefits) .google-login-button,
+  .auth-card:has(.auth-benefits) .auth-error {
+    grid-column: 2;
+  }
 }
 
 .app-shell {
@@ -2115,9 +2153,80 @@ h2 {
   font-weight: 800;
 }
 
-.availability-window-list {
+.availability-month-list {
   display: grid;
   gap: 0.6rem;
+}
+
+.availability-month {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 1.12rem;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.availability-month-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3.35rem;
+  border: 0;
+  background: transparent;
+  color: #eef1f7;
+  cursor: pointer;
+  padding: 0.78rem;
+  text-align: left;
+}
+
+.availability-month-toggle span {
+  display: grid;
+  gap: 0.16rem;
+  min-width: 0;
+}
+
+.availability-month-toggle strong {
+  overflow: hidden;
+  font-size: 0.9rem;
+  font-weight: 840;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.availability-month-toggle small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 790;
+}
+
+.availability-month-toggle b {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.075);
+  color: #dfe5f2;
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: transform 200ms ease;
+}
+
+.availability-month.expanded .availability-month-toggle b {
+  transform: rotate(180deg);
+}
+
+.availability-window-list {
+  display: none;
+  gap: 0.55rem;
+  padding: 0 0.55rem 0.65rem;
+}
+
+.availability-month.expanded .availability-window-list {
+  display: grid;
 }
 
 .availability-window-row {
@@ -2166,7 +2275,7 @@ h2 {
   font-weight: 840;
 }
 
-.availability-window-list > p {
+.availability-month-list > p {
   margin: 0;
   padding: 0.9rem;
   border-radius: 1rem;
@@ -2253,12 +2362,14 @@ h2 {
 
 .service-editor-summary span {
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   color: #c3cad8;
   font-size: 0.82rem;
   font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .service-editor-summary button {
@@ -2296,9 +2407,10 @@ h2 {
 
 .service-management-card strong,
 .service-management-card span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .service-management-card strong {
@@ -2640,6 +2752,9 @@ h2 {
 .admin-bottom-nav button {
   position: relative;
   z-index: 1;
+  display: grid;
+  place-items: center;
+  gap: 0.12rem;
   min-height: 2.85rem;
   border: 0;
   border-radius: 999px;
@@ -2655,6 +2770,101 @@ h2 {
 
 .admin-bottom-nav button.active {
   color: #ffffff;
+}
+
+.admin-nav-icon {
+  position: relative;
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  color: currentColor;
+  opacity: 0.84;
+}
+
+.schedule-icon {
+  border: 0.12rem solid currentColor;
+  border-radius: 0.2rem;
+}
+
+.schedule-icon::before {
+  content: "";
+  position: absolute;
+  top: 0.24rem;
+  right: -0.12rem;
+  left: -0.12rem;
+  height: 0.12rem;
+  background: currentColor;
+}
+
+.clients-icon::before,
+.clients-icon::after {
+  content: "";
+  position: absolute;
+  border: 0.12rem solid currentColor;
+  border-radius: 50%;
+}
+
+.clients-icon::before {
+  top: 0.08rem;
+  left: 0.32rem;
+  width: 0.38rem;
+  height: 0.38rem;
+}
+
+.clients-icon::after {
+  right: 0.08rem;
+  bottom: 0.08rem;
+  left: 0.08rem;
+  height: 0.45rem;
+  border-radius: 999px 999px 0.28rem 0.28rem;
+}
+
+.work-icon {
+  border: 0.12rem solid currentColor;
+  border-radius: 50%;
+}
+
+.work-icon::before,
+.work-icon::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
+  border-radius: 999px;
+  transform-origin: bottom center;
+}
+
+.work-icon::before {
+  top: 0.22rem;
+  left: 0.42rem;
+  width: 0.12rem;
+  height: 0.34rem;
+}
+
+.work-icon::after {
+  top: 0.45rem;
+  left: 0.43rem;
+  width: 0.34rem;
+  height: 0.12rem;
+}
+
+.services-icon::before,
+.services-icon::after {
+  content: "";
+  position: absolute;
+  top: 0.15rem;
+  left: 0.44rem;
+  width: 0.12rem;
+  height: 0.76rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.services-icon::before {
+  transform: rotate(38deg);
+}
+
+.services-icon::after {
+  transform: rotate(-38deg);
 }
 
 .admin-bottom-nav button:active {
@@ -2989,7 +3199,7 @@ h2 {
     overflow: hidden;
   }
 
-  .availability-window-list {
+  .availability-month-list {
     overflow: auto;
     padding-right: 0.25rem;
   }
@@ -3319,6 +3529,11 @@ h2 {
     font-size: 0.72rem;
   }
 
+  .admin-nav-icon {
+    width: 0.92rem;
+    height: 0.92rem;
+  }
+
   .admin-nav-pill {
     top: 0.24rem;
     bottom: 0.24rem;
@@ -3494,6 +3709,14 @@ h2 {
     min-height: 4.55rem;
   }
 
+  .work-preset-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .availability-month-toggle {
+    min-height: 3.15rem;
+  }
+
   .time-list {
     display: flex;
     gap: 0.5rem;
@@ -3554,5 +3777,12 @@ h2 {
 
   .confirm-button {
     min-height: 3.25rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .availability-maker .work-time-controls,
+  .work-time-controls.pro {
+    grid-template-columns: 1fr;
   }
 }

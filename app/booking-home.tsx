@@ -465,6 +465,7 @@ export function BookingHome() {
     startTime: "10:00",
     endTime: "13:00",
   }));
+  const [expandedAvailabilityMonth, setExpandedAvailabilityMonth] = useState<string | null>(null);
 
   const activeUser = currentUser;
   const isAdmin = Boolean(activeUser && adminUserIds.has(activeUser.uid));
@@ -583,12 +584,47 @@ export function BookingHome() {
     Number.isFinite(getServicePriceValue(serviceDraft.price)) &&
     getServicePriceValue(serviceDraft.price) > 0 &&
     Number(serviceDraft.durationMinutes) >= 15;
-  const availabilityWindows = Object.values(workSettings.availability)
-    .filter((windowItem) => windowItem.dateKey >= dayKey(today))
-    .sort((first, second) => {
-      if (first.dateKey !== second.dateKey) return first.dateKey.localeCompare(second.dateKey);
-      return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
+  const availabilityWindows = useMemo(
+    () =>
+      Object.values(workSettings.availability)
+        .filter((windowItem) => windowItem.dateKey >= dayKey(today))
+        .sort((first, second) => {
+          if (first.dateKey !== second.dateKey) return first.dateKey.localeCompare(second.dateKey);
+          return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
+        }),
+    [today, workSettings.availability],
+  );
+  const availabilityMonthGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      { key: string; label: string; items: AvailabilityWindow[]; totalMinutes: number }
+    >();
+
+    availabilityWindows.forEach((windowItem) => {
+      const monthKey = windowItem.dateKey.slice(0, 7);
+      const monthDate = dateFromKey(`${monthKey}-01`);
+      const existingGroup =
+        groups.get(monthKey) ??
+        ({
+          key: monthKey,
+          label: monthFormatter.format(monthDate),
+          items: [],
+          totalMinutes: 0,
+        } satisfies {
+          key: string;
+          label: string;
+          items: AvailabilityWindow[];
+          totalMinutes: number;
+        });
+
+      existingGroup.items.push(windowItem);
+      existingGroup.totalMinutes +=
+        timeToMinutes(windowItem.endTime) - timeToMinutes(windowItem.startTime);
+      groups.set(monthKey, existingGroup);
     });
+
+    return Array.from(groups.values());
+  }, [availabilityWindows]);
   const nearestAvailability = availabilityWindows[0] ?? null;
   const nextSaturdayOffset = (6 - today.getDay() + 7) % 7 || 7;
   const visibleStep = step === "admin" && !isAdmin ? "booking" : step;
@@ -600,6 +636,22 @@ export function BookingHome() {
 
     navigator.serviceWorker.register("/sw.js").catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (availabilityMonthGroups.length === 0) {
+      if (expandedAvailabilityMonth) {
+        setExpandedAvailabilityMonth(null);
+      }
+      return;
+    }
+
+    if (
+      !expandedAvailabilityMonth ||
+      !availabilityMonthGroups.some((group) => group.key === expandedAvailabilityMonth)
+    ) {
+      setExpandedAvailabilityMonth(availabilityMonthGroups[0].key);
+    }
+  }, [availabilityMonthGroups, expandedAvailabilityMonth]);
 
   useEffect(() => {
     const firebaseAuth = getAuth(firebaseApp);
@@ -1661,24 +1713,56 @@ export function BookingHome() {
                     </div>
                   </div>
 
-                  <div className="availability-window-list">
-                    {availabilityWindows.length > 0 ? (
-                      availabilityWindows.map((windowItem) => (
-                        <article className="availability-window-row" key={windowItem.id}>
-                          <div>
-                            <strong>
-                              {adminClientDateFormatter.format(dateFromKey(windowItem.dateKey))}
-                            </strong>
-                            <span>{formatWorkRange(windowItem)}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeAvailabilityDate(windowItem.dateKey)}
+                  <div className="availability-month-list">
+                    {availabilityMonthGroups.length > 0 ? (
+                      availabilityMonthGroups.map((monthGroup) => {
+                        const isExpanded = expandedAvailabilityMonth === monthGroup.key;
+
+                        return (
+                          <section
+                            className={`availability-month ${isExpanded ? "expanded" : ""}`}
+                            key={monthGroup.key}
                           >
-                            Usuń
-                          </button>
-                        </article>
-                      ))
+                            <button
+                              className="availability-month-toggle"
+                              type="button"
+                              aria-expanded={isExpanded}
+                              onClick={() =>
+                                setExpandedAvailabilityMonth(isExpanded ? null : monthGroup.key)
+                              }
+                            >
+                              <span>
+                                <strong>{monthGroup.label}</strong>
+                                <small>
+                                  {monthGroup.items.length}{" "}
+                                  {monthGroup.items.length === 1 ? "dzień" : "dni"} ·{" "}
+                                  {formatDuration(monthGroup.totalMinutes)}
+                                </small>
+                              </span>
+                              <b aria-hidden="true">⌄</b>
+                            </button>
+
+                            <div className="availability-window-list">
+                              {monthGroup.items.map((windowItem) => (
+                                <article className="availability-window-row" key={windowItem.id}>
+                                  <div>
+                                    <strong>
+                                      {adminClientDateFormatter.format(dateFromKey(windowItem.dateKey))}
+                                    </strong>
+                                    <span>{formatWorkRange(windowItem)}</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeAvailabilityDate(windowItem.dateKey)}
+                                  >
+                                    Usuń
+                                  </button>
+                                </article>
+                              ))}
+                            </div>
+                          </section>
+                        );
+                      })
                     ) : (
                       <p>Nie masz jeszcze żadnego dostępnego dnia.</p>
                     )}
@@ -1815,28 +1899,32 @@ export function BookingHome() {
               type="button"
               onClick={() => setAdminSection("schedule")}
             >
-              Terminarz
+              <span className="admin-nav-icon schedule-icon" aria-hidden="true" />
+              <span>Terminarz</span>
             </button>
             <button
               className={adminSection === "clients" ? "active" : ""}
               type="button"
               onClick={() => setAdminSection("clients")}
             >
-              Klienci
+              <span className="admin-nav-icon clients-icon" aria-hidden="true" />
+              <span>Klienci</span>
             </button>
             <button
               className={adminSection === "work" ? "active" : ""}
               type="button"
               onClick={() => setAdminSection("work")}
             >
-              Praca
+              <span className="admin-nav-icon work-icon" aria-hidden="true" />
+              <span>Praca</span>
             </button>
             <button
               className={adminSection === "services" ? "active" : ""}
               type="button"
               onClick={() => setAdminSection("services")}
             >
-              Usługi
+              <span className="admin-nav-icon services-icon" aria-hidden="true" />
+              <span>Usługi</span>
             </button>
           </nav>
         </section>
@@ -2279,7 +2367,9 @@ export function BookingHome() {
             <div className="modal-client-note">
               <strong>{selectedClientAppointment.clientName}</strong>
               <span>
-                W razie zmiany planów możesz przesunąć termin albo odwołać wizytę.
+                {normalizeAppointmentStatus(selectedClientAppointment.status) === "rescheduled"
+                  ? "Termin został przesunięty przez administratora. Jeśli nowa data Ci pasuje, potwierdź wizytę poniżej."
+                  : "W razie zmiany planów możesz przesunąć termin albo odwołać wizytę."}
               </span>
             </div>
 
