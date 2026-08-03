@@ -23,9 +23,13 @@ export type PushRegistrationResult =
         | "token_error";
     };
 
+const fallbackVapidKey =
+  "BGsfxDp9YC0FwBQOvxytQHKSy9-U5x15LCFl76w3Jlj3-dtPDADSV7VbKSc4q-JRyLXSOhwt9NAmX1H17aco5YU";
+
 const readVapidKey = () =>
   (import.meta.env.VITE_FIREBASE_VAPID_KEY ||
-    import.meta.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY) as string | undefined;
+    import.meta.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY ||
+    fallbackVapidKey) as string | undefined;
 
 const tokenPathKey = (token: string) =>
   token
