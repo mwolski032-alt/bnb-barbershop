@@ -2908,6 +2908,11 @@ h2 {
   cursor: pointer;
 }
 
+.calendar-save-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
 .calendar-save-button span,
 .calendar-save-button span::before,
 .calendar-save-button span::after {

@@ -162,6 +162,65 @@ const formatPhoneNumber = (value: string) => {
     .join(" ");
 };
 
+const padDatePart = (value: number) => String(value).padStart(2, "0");
+
+const formatCalendarDate = (date: Date) =>
+  `${date.getFullYear()}${padDatePart(date.getMonth() + 1)}${padDatePart(date.getDate())}T${padDatePart(
+    date.getHours(),
+  )}${padDatePart(date.getMinutes())}00`;
+
+const formatCalendarUtcDate = (date: Date) =>
+  `${date.getUTCFullYear()}${padDatePart(date.getUTCMonth() + 1)}${padDatePart(
+    date.getUTCDate(),
+  )}T${padDatePart(date.getUTCHours())}${padDatePart(date.getUTCMinutes())}${padDatePart(
+    date.getUTCSeconds(),
+  )}Z`;
+
+const escapeCalendarText = (value: string) =>
+  value
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+
+const getCalendarFileName = (summary: BookingSummary) =>
+  `bnb-wizyta-${dayKey(summary.date)}-${summary.time.replace(":", "")}.ics`;
+
+const buildCalendarEvent = (summary: BookingSummary) => {
+  const [hour, minute] = summary.time.split(":").map(Number);
+  const start = new Date(summary.date);
+  start.setHours(hour, minute, 0, 0);
+
+  const end = new Date(start);
+  end.setMinutes(end.getMinutes() + summary.durationMinutes);
+
+  const title = `BNB Barbershop - ${summary.serviceName}`;
+  const description = [
+    `Usługa: ${summary.serviceName}`,
+    `Cena: ${summary.servicePrice}`,
+    `Czas trwania: ${formatDuration(summary.durationMinutes)}`,
+    `Klient: ${summary.fullName}`,
+    `Telefon: ${summary.phone}`,
+  ].join("\n");
+
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//BNB Barbershop//Rezerwacje//PL",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:bnb-${dayKey(summary.date)}-${summary.time.replace(":", "")}@bnb-barbershop`,
+    `DTSTAMP:${formatCalendarUtcDate(new Date())}`,
+    `DTSTART:${formatCalendarDate(start)}`,
+    `DTEND:${formatCalendarDate(end)}`,
+    `SUMMARY:${escapeCalendarText(title)}`,
+    `DESCRIPTION:${escapeCalendarText(description)}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+};
+
 const buildTimeSlots = (startHour = 6, endHour = 22) => {
   const slots: string[] = [];
 
@@ -920,6 +979,48 @@ export function BookingHome() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const downloadCalendarFile = (calendarBlob: Blob, fileName: string) => {
+    const calendarUrl = window.URL.createObjectURL(calendarBlob);
+    const downloadLink = document.createElement("a");
+    downloadLink.href = calendarUrl;
+    downloadLink.download = fileName;
+    downloadLink.rel = "noopener";
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    downloadLink.remove();
+    window.setTimeout(() => window.URL.revokeObjectURL(calendarUrl), 1200);
+  };
+
+  const addBookingToCalendar = async () => {
+    if (!bookingSummary) return;
+
+    const calendarBlob = new Blob([buildCalendarEvent(bookingSummary)], {
+      type: "text/calendar;charset=utf-8",
+    });
+    const fileName = getCalendarFileName(bookingSummary);
+    const calendarFile = new File([calendarBlob], fileName, { type: "text/calendar" });
+    const shareData = {
+      title: "Wizyta BNB Barbershop",
+      text: `${bookingSummary.serviceName}, ${dayFormatter.format(bookingSummary.date)}, ${
+        bookingSummary.time
+      }`,
+      files: [calendarFile],
+    };
+
+    try {
+      if (navigator.canShare?.(shareData)) {
+        await navigator.share(shareData);
+        return;
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+    }
+
+    downloadCalendarFile(calendarBlob, fileName);
   };
 
   const moveAdminAppointment = (appointmentId: string, startTime: string) => {
@@ -1913,8 +2014,10 @@ export function BookingHome() {
             <button
               className="calendar-save-button"
               type="button"
-              aria-label="Dodaj do kalendarza"
-              title="Dodaj do kalendarza"
+              disabled={!bookingSummary}
+              onClick={addBookingToCalendar}
+              aria-label="Dodaj wizytę do kalendarza"
+              title="Dodaj wizytę do kalendarza"
             >
               <span aria-hidden="true" />
             </button>
