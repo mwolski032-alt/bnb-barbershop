@@ -92,12 +92,31 @@ const getAccessToken = async () => {
 };
 
 const readNotificationTokens = async (accessToken) => {
-  const response = await fetch(`${databaseUrl}/notificationTokens.json?access_token=${accessToken}`);
+  const response = await fetch(`${databaseUrl}/notificationTokens.json`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
   if (!response.ok) {
     throw new Error(`Token read failed: ${response.status}`);
   }
 
   return (await response.json()) ?? {};
+};
+
+const writePushLog = async (accessToken, payload) => {
+  try {
+    await fetch(`${databaseUrl}/pushDebugLogs/${Date.now()}.json`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    // Debug logs are best-effort only.
+  }
 };
 
 const collectTargetTokens = (tokensByUser, target, appointment) => {
@@ -189,17 +208,31 @@ export default async (request) => {
       tokens.map((token) => sendToToken(accessToken, token, notification, eventAppointment, siteUrl)),
     );
     const failed = results.filter((result) => !result.ok);
-
-    return Response.json({
+    const resultPayload = {
       ok: true,
+      event,
+      appointmentId: appointment.id,
+      target: copy.target,
+      appointmentUserId: appointment.userId ?? "",
       sent: results.filter((result) => result.ok).length,
       targets: tokens.length,
       failed: failed.length,
-      firstError: failed[0]?.error,
-    });
+      firstError: failed[0]?.error ?? "",
+      createdAt: new Date().toISOString(),
+    };
+
+    await writePushLog(accessToken, resultPayload);
+
+    return Response.json(resultPayload);
   } catch (error) {
+    const errorPayload = {
+      ok: false,
+      error: error instanceof Error ? error.message : "Unknown push error.",
+      createdAt: new Date().toISOString(),
+    };
+
     return Response.json(
-      { ok: false, error: error instanceof Error ? error.message : "Unknown push error." },
+      errorPayload,
       { status: 500 },
     );
   }
