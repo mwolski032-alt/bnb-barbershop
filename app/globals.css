@@ -89,10 +89,10 @@ input {
 .auth-logo {
   display: grid;
   place-items: center;
-  width: 3rem;
-  height: 3rem;
+  width: 6.9rem;
+  height: 3.15rem;
   border: 1px solid var(--line);
-  border-radius: 1.05rem;
+  border-radius: 999px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.035)),
     rgba(255, 255, 255, 0.04);
@@ -100,8 +100,8 @@ input {
 }
 
 .auth-logo img {
-  width: 2.1rem;
-  max-height: 1.2rem;
+  width: 5.45rem;
+  max-height: 2.15rem;
   object-fit: contain;
 }
 
@@ -270,12 +270,12 @@ input {
 }
 
 .topbar-logo-mark {
-  width: 3.05rem;
-  height: 3.05rem;
+  width: 4.55rem;
+  height: 2.65rem;
   flex: 0 0 auto;
-  padding: 0.54rem;
+  padding: 0.44rem 0.62rem;
   border: 1px solid var(--line);
-  border-radius: 50%;
+  border-radius: 999px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.035)),
     rgba(255, 255, 255, 0.045);
@@ -2788,8 +2788,8 @@ h2 {
 }
 
 .success-logo-mark {
-  width: 4.15rem;
-  height: 2.2rem;
+  width: 5.05rem;
+  height: 2.5rem;
   object-fit: contain;
   opacity: 0.94;
 }

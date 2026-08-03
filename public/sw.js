@@ -1,4 +1,4 @@
-const CACHE_NAME = "bnb-barbershop-v1";
+const CACHE_NAME = "bnb-barbershop-v2";
 const STATIC_ASSET_TYPES = new Set(["font", "image", "manifest", "script", "style"]);
 
 self.addEventListener("install", () => {
