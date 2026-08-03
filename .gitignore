@@ -34,6 +34,7 @@ dev.log
 
 # vercel
 .vercel
+.netlify
 
 # typescript
 next-env.d.ts
