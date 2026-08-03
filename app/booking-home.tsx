@@ -868,151 +868,206 @@ export function BookingHome() {
 
           <div className="admin-content-frame">
             <div className={`admin-tab-panel ${adminSection === "schedule" ? "active" : ""}`}>
-              <div className="admin-days" aria-label="Dni z wizytami">
-                {adminAppointmentDays.length > 0 ? (
-                  adminAppointmentDays.map((key) => {
-                    const date = dateFromKey(key);
-                    const appointmentsCount = adminAppointments.filter(
-                      (appointment) => appointment.dateKey === key,
-                    ).length;
-
-                    return (
-                      <button
-                        className={key === adminSelectedKey ? "active" : ""}
-                        key={key}
-                        type="button"
-                        onClick={() => setAdminSelectedKey(key)}
-                      >
-                        <span>
-                          {new Intl.DateTimeFormat("pl-PL", { weekday: "short" })
-                            .format(date)
-                            .replace(".", "")}
-                        </span>
-                        <strong>{String(date.getDate()).padStart(2, "0")}</strong>
-                        <small>
-                          {new Intl.DateTimeFormat("pl-PL", { month: "short" })
-                            .format(date)
-                            .replace(".", "")}
-                          {" - "}
-                          {appointmentsCount}
-                        </small>
-                      </button>
-                    );
-                  })
-                ) : (
-                  <p className="admin-days-empty">Brak zaplanowanych wizyt.</p>
-                )}
+              <div className="admin-section-header">
+                <div>
+                  <p className="eyebrow">Wybrany dzień</p>
+                  <h2>{adminClientDateFormatter.format(dateFromKey(adminSelectedKey))}</h2>
+                </div>
+                <div className="admin-section-stats" aria-label="Podsumowanie dnia">
+                  <span>
+                    <strong>{adminDayAppointments.length}</strong>
+                    wizyty
+                  </span>
+                  <span>
+                    <strong>
+                      {adminDayAvailability
+                        ? `${adminDayAvailability.startTime}-${adminDayAvailability.endTime}`
+                        : "brak"}
+                    </strong>
+                    dostępność
+                  </span>
+                </div>
               </div>
 
-          <div className="client-strip" aria-label="Klienci z wybranego dnia">
-            {adminDayAppointments.length > 0 ? (
-              adminDayAppointments.map((appointment) => (
-                <button className="client-chip" key={appointment.id} type="button">
-                  <span>{appointment.clientName.slice(0, 1)}</span>
-                  <strong>{appointment.clientName}</strong>
-                  <small>{appointment.startTime}</small>
-                </button>
-              ))
-            ) : (
-              <p>Brak klientów w tym dniu.</p>
-            )}
-          </div>
+              <div className="schedule-desktop-grid">
+                <aside className="schedule-side-panel">
+                  <div className="admin-days" aria-label="Dni z wizytami">
+                    {adminAppointmentDays.length > 0 ? (
+                      adminAppointmentDays.map((key) => {
+                        const date = dateFromKey(key);
+                        const appointmentsCount = adminAppointments.filter(
+                          (appointment) => appointment.dateKey === key,
+                        ).length;
 
-          <div
-            className="admin-schedule"
-            style={{ height: `${Math.max(8, adminScheduleSlots.length) * 2.8 + 1.5}rem` }}
-          >
-            {adminDayAppointments.length === 0 ? (
-              <p className="admin-empty-state">Brak wizyt w tym dniu.</p>
-            ) : null}
-            <div
-              className="time-axis"
-              aria-hidden="true"
-              style={{ gridTemplateRows: `repeat(${adminScheduleHours.length}, 11.2rem)` }}
-            >
-              {adminScheduleHours.map((time) => (
-                <span key={time}>{time}</span>
-              ))}
-            </div>
+                        return (
+                          <button
+                            className={key === adminSelectedKey ? "active" : ""}
+                            key={key}
+                            type="button"
+                            onClick={() => setAdminSelectedKey(key)}
+                          >
+                            <span>
+                              {new Intl.DateTimeFormat("pl-PL", { weekday: "short" })
+                                .format(date)
+                                .replace(".", "")}
+                            </span>
+                            <strong>{String(date.getDate()).padStart(2, "0")}</strong>
+                            <small>
+                              {new Intl.DateTimeFormat("pl-PL", { month: "short" })
+                                .format(date)
+                                .replace(".", "")}
+                              {" - "}
+                              {appointmentsCount}
+                            </small>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <p className="admin-days-empty">Brak zaplanowanych wizyt.</p>
+                    )}
+                  </div>
 
-            <div className="schedule-column">
-              {adminScheduleSlots.map((time) => (
+                  <div className="client-strip" aria-label="Klienci z wybranego dnia">
+                    {adminDayAppointments.length > 0 ? (
+                      adminDayAppointments.map((appointment) => (
+                        <button className="client-chip" key={appointment.id} type="button">
+                          <span>{appointment.clientName.slice(0, 1)}</span>
+                          <strong>{appointment.clientName}</strong>
+                          <small>{appointment.startTime}</small>
+                        </button>
+                      ))
+                    ) : (
+                      <p>Brak klientów w tym dniu.</p>
+                    )}
+                  </div>
+                </aside>
+
                 <div
-                  className="schedule-drop-zone"
-                  key={time}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => {
-                    if (draggedAppointmentId) moveAdminAppointment(draggedAppointmentId, time);
-                  }}
-                />
-              ))}
-
-              {adminDayAppointments.map((appointment) => {
-                const top =
-                  ((timeToMinutes(appointment.startTime) - adminScheduleStartMinutes) / 15) * 2.8;
-                const height = Math.max(4.8, (appointment.durationMinutes / 15) * 2.8 - 0.35);
-
-                return (
-                  <article
-                    className={`admin-appointment ${appointment.color}`}
-                    draggable
-                    key={appointment.id}
-                    onDragStart={() => setDraggedAppointmentId(appointment.id)}
-                    style={{ top: `${top}rem`, height: `${height}rem` }}
+                  className="admin-schedule"
+                  style={{ height: `${Math.max(8, adminScheduleSlots.length) * 2.8 + 1.5}rem` }}
+                >
+                  {adminDayAppointments.length === 0 ? (
+                    <p className="admin-empty-state">Brak wizyt w tym dniu.</p>
+                  ) : null}
+                  <div
+                    className="time-axis"
+                    aria-hidden="true"
+                    style={{ gridTemplateRows: `repeat(${adminScheduleHours.length}, 11.2rem)` }}
                   >
-                    <div>
-                      <strong>
-                        {appointment.startTime} -{" "}
-                        {addMinutesToTime(appointment.startTime, appointment.durationMinutes)}
-                      </strong>
-                      <span>
-                        {appointment.clientName} · {appointment.serviceName}
-                      </span>
-                    </div>
-                    <div className="appointment-actions">
-                      <button
-                        type="button"
-                        onClick={() => shiftAdminAppointment(appointment.id, -15)}
-                        disabled={
-                          !canMoveAdminAppointment(
-                            appointment,
-                            minutesToTime(timeToMinutes(appointment.startTime) - 15),
-                          )
-                        }
-                        aria-label={`Cofnij wizytę ${appointment.clientName} o 15 minut`}
-                      >
-                        -15
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => shiftAdminAppointment(appointment.id, 15)}
-                        disabled={
-                          !canMoveAdminAppointment(
-                            appointment,
-                            minutesToTime(timeToMinutes(appointment.startTime) + 15),
-                          )
-                        }
-                        aria-label={`Przesuń wizytę ${appointment.clientName} o 15 minut`}
-                      >
-                        +15
-                      </button>
-                      <button
-                        className="decline-button"
-                        type="button"
-                        onClick={() => declineAdminAppointment(appointment.id)}
-                        aria-label={`Odmów wizytę ${appointment.clientName}`}
-                      >
-                        Odmów
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </div>
+                    {adminScheduleHours.map((time) => (
+                      <span key={time}>{time}</span>
+                    ))}
+                  </div>
+
+                  <div className="schedule-column">
+                    {adminScheduleSlots.map((time) => (
+                      <div
+                        className="schedule-drop-zone"
+                        key={time}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={() => {
+                          if (draggedAppointmentId) moveAdminAppointment(draggedAppointmentId, time);
+                        }}
+                      />
+                    ))}
+
+                    {adminDayAppointments.map((appointment) => {
+                      const top =
+                        ((timeToMinutes(appointment.startTime) - adminScheduleStartMinutes) / 15) *
+                        2.8;
+                      const height = Math.max(4.8, (appointment.durationMinutes / 15) * 2.8 - 0.35);
+
+                      return (
+                        <article
+                          className={`admin-appointment ${appointment.color}`}
+                          draggable
+                          key={appointment.id}
+                          onDragStart={() => setDraggedAppointmentId(appointment.id)}
+                          style={{ top: `${top}rem`, height: `${height}rem` }}
+                        >
+                          <div>
+                            <strong>
+                              {appointment.startTime} -{" "}
+                              {addMinutesToTime(appointment.startTime, appointment.durationMinutes)}
+                            </strong>
+                            <span>
+                              {appointment.clientName} · {appointment.serviceName}
+                            </span>
+                          </div>
+                          <div className="appointment-actions">
+                            <button
+                              type="button"
+                              onClick={() => shiftAdminAppointment(appointment.id, -15)}
+                              disabled={
+                                !canMoveAdminAppointment(
+                                  appointment,
+                                  minutesToTime(timeToMinutes(appointment.startTime) - 15),
+                                )
+                              }
+                              aria-label={`Cofnij wizytę ${appointment.clientName} o 15 minut`}
+                            >
+                              -15
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => shiftAdminAppointment(appointment.id, 15)}
+                              disabled={
+                                !canMoveAdminAppointment(
+                                  appointment,
+                                  minutesToTime(timeToMinutes(appointment.startTime) + 15),
+                                )
+                              }
+                              aria-label={`Przesuń wizytę ${appointment.clientName} o 15 minut`}
+                            >
+                              +15
+                            </button>
+                            <button
+                              className="decline-button"
+                              type="button"
+                              onClick={() => declineAdminAppointment(appointment.id)}
+                              aria-label={`Odmów wizytę ${appointment.clientName}`}
+                            >
+                              Odmów
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className={`admin-tab-panel ${adminSection === "clients" ? "active" : ""}`}>
+              <div className="admin-section-header">
+                <div>
+                  <p className="eyebrow">Kontakty</p>
+                  <h2>Klienci z rezerwacji</h2>
+                </div>
+                <div className="admin-section-stats" aria-label="Podsumowanie klientów">
+                  <span>
+                    <strong>{adminClientAppointments.length}</strong>
+                    zapisów
+                  </span>
+                  <span>
+                    <strong>
+                      {
+                        new Set(
+                          adminClientAppointments
+                            .map(
+                              (appointment) =>
+                                getPhoneDigits(appointment.phone ?? "") ||
+                                appointment.clientName.trim().toLowerCase(),
+                            )
+                            .filter(Boolean),
+                        ).size
+                      }
+                    </strong>
+                    klientów
+                  </span>
+                </div>
+              </div>
+
               <div className="clients-view" aria-label="Lista klientów">
                 {adminClientAppointments.length > 0 ? (
                   adminClientAppointments.map((appointment) => {
@@ -1055,24 +1110,24 @@ export function BookingHome() {
             </div>
 
             <div className={`admin-tab-panel ${adminSection === "work" ? "active" : ""}`}>
-              <div className="work-view casual" aria-label="Moja dostępność">
-                <section className="work-hero casual">
-                  <div>
-                    <p className="eyebrow">Dorywczo</p>
-                    <h2>Moja dostępność</h2>
-                  </div>
-                  <div className="work-metrics" aria-label="Skrót pracy">
-                    <span>
-                      <strong>{availabilityWindows.length}</strong>
-                      dostępne
-                    </span>
-                    <span>
-                      <strong>{nearestAvailability?.startTime ?? "—"}</strong>
-                      najbliżej
-                    </span>
-                  </div>
-                </section>
+              <div className="admin-section-header">
+                <div>
+                  <p className="eyebrow">Dorywczo</p>
+                  <h2>Dni dostępne dla klientów</h2>
+                </div>
+                <div className="admin-section-stats" aria-label="Podsumowanie dostępności">
+                  <span>
+                    <strong>{availabilityWindows.length}</strong>
+                    dni
+                  </span>
+                  <span>
+                    <strong>{nearestAvailability?.startTime ?? "—"}</strong>
+                    najbliżej
+                  </span>
+                </div>
+              </div>
 
+              <div className="work-view casual" aria-label="Moja dostępność">
                 <section className="work-editor-card availability-maker">
                   <div className="work-editor-top">
                     <div>
