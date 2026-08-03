@@ -676,6 +676,20 @@ h2 {
   color: #ffb4ae;
 }
 
+.admin-appointment .appointment-status {
+  margin-top: 0.35rem;
+  background: rgba(7, 9, 15, 0.5);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.22);
+}
+
+.admin-appointment .appointment-status.rescheduled {
+  background: rgba(55, 35, 5, 0.62);
+  color: #ffe3af;
+  border-color: rgba(255, 208, 138, 0.5);
+}
+
 .client-visit-card.editing {
   cursor: default;
   background: linear-gradient(180deg, rgba(48, 209, 88, 0.13), rgba(76, 141, 255, 0.08));
@@ -717,6 +731,20 @@ h2 {
   color: #eef1f7;
   cursor: pointer;
   text-align: left;
+}
+
+.nearest-slot-block {
+  margin-top: 0.85rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.025)),
+    rgba(255, 255, 255, 0.025);
+}
+
+.nearest-slot-block .nearest-slot-button {
+  margin-top: 0.55rem;
 }
 
 .nearest-slot-button span {
@@ -1060,16 +1088,27 @@ h2 {
   line-height: 1;
 }
 
-.modal-calendar-button {
+.client-appointment-modal .modal-calendar-button {
   position: absolute;
   top: 0.9rem;
-  right: 3.75rem;
+  right: 3.55rem;
+  width: 2.35rem;
+  height: 2.35rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.055)),
+    rgba(76, 141, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.client-appointment-modal .modal-calendar-button span {
+  width: 1rem;
+  height: 0.95rem;
 }
 
 .modal-title {
   display: grid;
   gap: 0.35rem;
-  padding-right: 5.75rem;
+  padding-right: 6.35rem;
 }
 
 .modal-title h2 {

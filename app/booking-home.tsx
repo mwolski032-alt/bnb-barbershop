@@ -2019,6 +2019,10 @@ export function BookingHome() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="summary-block nearest-slot-block">
+              <p className="section-label">Szybki wybór</p>
               <button
                 className="nearest-slot-button"
                 type="button"
