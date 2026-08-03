@@ -12,6 +12,7 @@ import {
 import { onValue, ref, remove, set, update } from "firebase/database";
 
 import { firebaseApp, realtimeDb } from "./lib/firebase";
+import { registerPushNotifications, sendAppointmentNotification } from "./lib/notifications";
 
 type Availability = "high" | "medium" | "low" | "none";
 type Step = "booking" | "confirm" | "success" | "admin";
@@ -495,6 +496,7 @@ export function BookingHome() {
   const [successReady, setSuccessReady] = useState(false);
   const [draggedAppointmentId, setDraggedAppointmentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [pushStatus, setPushStatus] = useState<"idle" | "saving" | "enabled" | "blocked">("idle");
   const [heroScrollProgress, setHeroScrollProgress] = useState(0);
   const [availabilityDraft, setAvailabilityDraft] = useState(() => ({
     start: dayKey(today),
@@ -1056,6 +1058,25 @@ export function BookingHome() {
     setReschedulingAppointmentId(null);
   };
 
+  const handleEnablePushNotifications = async () => {
+    if (!activeUser || pushStatus === "saving") return;
+
+    try {
+      setPushStatus("saving");
+      const enabled = await registerPushNotifications(
+        {
+          uid: activeUser.uid,
+          displayName: activeUser.displayName ?? null,
+          email: activeUser.email ?? null,
+        },
+        isAdmin,
+      );
+      setPushStatus(enabled ? "enabled" : "blocked");
+    } catch {
+      setPushStatus("blocked");
+    }
+  };
+
   const getServiceForAppointment = (appointment: AdminAppointment) =>
     services.find((service) => service.name === appointment.serviceName) ??
     services.find((service) => service.durationMinutes === appointment.durationMinutes) ??
@@ -1076,6 +1097,7 @@ export function BookingHome() {
   };
 
   const cancelClientAppointment = (appointmentId: string) => {
+    const appointment = adminAppointments.find((item) => item.id === appointmentId);
     setClientAppointmentId(null);
     setClientAppointmentsListOpen(false);
     if (reschedulingAppointmentId === appointmentId) {
@@ -1083,7 +1105,11 @@ export function BookingHome() {
       setSelectedTime("");
     }
 
-    void remove(ref(realtimeDb, `appointments/${appointmentId}`));
+    void remove(ref(realtimeDb, `appointments/${appointmentId}`)).then(() => {
+      if (appointment) {
+        void sendAppointmentNotification("client_cancelled", appointment);
+      }
+    });
   };
 
   const confirmClientRescheduledAppointment = async (appointmentId: string) => {
@@ -1108,6 +1134,11 @@ export function BookingHome() {
         dateKey: selectedDayKey,
         startTime: selectedTime,
         status: "rescheduled",
+      });
+      await sendAppointmentNotification("client_rescheduled", {
+        ...reschedulingAppointment,
+        dateKey: selectedDayKey,
+        startTime: selectedTime,
       });
       setReschedulingAppointmentId(null);
       setSelectedTime("");
@@ -1177,6 +1208,7 @@ export function BookingHome() {
     try {
       setIsSaving(true);
       await set(ref(realtimeDb, `appointments/${appointmentId}`), adminAppointment);
+      await sendAppointmentNotification("new_booking", adminAppointment);
       setForm({ fullName: "", phone: "" });
       setStep("success");
     } finally {
@@ -1249,6 +1281,11 @@ export function BookingHome() {
         startTime: adminEditDraft.startTime,
         status: "rescheduled",
       });
+      await sendAppointmentNotification("admin_rescheduled", {
+        ...selectedAdminEditAppointment,
+        dateKey: adminEditDraft.dateKey,
+        startTime: adminEditDraft.startTime,
+      });
       setAdminSelectedKey(adminEditDraft.dateKey);
       setAdminEditAppointmentId(null);
     } finally {
@@ -1267,6 +1304,12 @@ export function BookingHome() {
       dateKey: adminSelectedKey,
       startTime,
       status: "rescheduled",
+    }).then(() => {
+      void sendAppointmentNotification("admin_rescheduled", {
+        ...appointment,
+        dateKey: adminSelectedKey,
+        startTime,
+      });
     });
     setDraggedAppointmentId(null);
   };
@@ -1282,7 +1325,13 @@ export function BookingHome() {
   };
 
   const declineAdminAppointment = (appointmentId: string) => {
-    void remove(ref(realtimeDb, `appointments/${appointmentId}`));
+    const appointment = adminAppointments.find((item) => item.id === appointmentId);
+
+    void remove(ref(realtimeDb, `appointments/${appointmentId}`)).then(() => {
+      if (appointment) {
+        void sendAppointmentNotification("admin_cancelled", appointment);
+      }
+    });
   };
 
   const footerLabel =
@@ -1305,6 +1354,14 @@ export function BookingHome() {
       ? "ready"
       : ""
   }`;
+  const pushButtonLabel =
+    pushStatus === "saving"
+      ? "Włączanie..."
+      : pushStatus === "enabled"
+        ? "Powiadomienia włączone"
+        : pushStatus === "blocked"
+          ? "Powiadomienia zablokowane"
+          : "Włącz powiadomienia";
   const heroStyle = {
     opacity: 1 - heroScrollProgress,
     transform: `translateY(${-18 * heroScrollProgress}px) scale(${1 - 0.035 * heroScrollProgress})`,
@@ -1403,6 +1460,16 @@ export function BookingHome() {
                       : "Usługi"}
               </h1>
             </div>
+            <button
+              className={`push-toggle ${pushStatus === "enabled" ? "enabled" : ""}`}
+              type="button"
+              disabled={pushStatus === "saving" || pushStatus === "enabled"}
+              onClick={() => {
+                void handleEnablePushNotifications();
+              }}
+            >
+              {pushButtonLabel}
+            </button>
           </div>
 
           <div className="admin-content-frame">
@@ -2073,6 +2140,16 @@ export function BookingHome() {
                   Wyloguj
                 </button>
               </div>
+              <button
+                className={`push-toggle ${pushStatus === "enabled" ? "enabled" : ""}`}
+                type="button"
+                disabled={pushStatus === "saving" || pushStatus === "enabled"}
+                onClick={() => {
+                  void handleEnablePushNotifications();
+                }}
+              >
+                {pushButtonLabel}
+              </button>
               {isAdmin ? (
                 <button
                   className="avatar-button"
