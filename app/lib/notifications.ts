@@ -119,11 +119,15 @@ export const sendAppointmentNotification = async (
   },
 ) => {
   try {
-    await fetch("/.netlify/functions/send-push", {
+    const response = await fetch("/.netlify/functions/send-push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ event, appointment }),
     });
+
+    if (!response.ok) {
+      console.warn("Push notification request failed", await response.text());
+    }
   } catch {
     // Powiadomienia nie mogą blokować rezerwacji ani edycji wizyty.
   }

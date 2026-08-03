@@ -4,6 +4,13 @@ const databaseUrl =
   process.env.FIREBASE_DATABASE_URL ??
   "https://bnbbarber-9a7bd-default-rtdb.europe-west1.firebasedatabase.app";
 
+const getSiteUrl = (request) => {
+  const netlifyUrl = process.env.URL || process.env.DEPLOY_PRIME_URL;
+  if (netlifyUrl) return netlifyUrl;
+
+  return new URL(request.url).origin;
+};
+
 const eventCopy = {
   new_booking: {
     target: "admin",
@@ -113,7 +120,7 @@ const collectTargetTokens = (tokensByUser, target, appointment) => {
   return [...new Set(collected)];
 };
 
-const sendToToken = async (accessToken, token, notification, appointment) => {
+const sendToToken = async (accessToken, token, notification, appointment, siteUrl) => {
   const projectId = process.env.FIREBASE_PROJECT_ID;
   if (!projectId) {
     throw new Error("Missing FIREBASE_PROJECT_ID.");
@@ -135,7 +142,7 @@ const sendToToken = async (accessToken, token, notification, appointment) => {
         },
         webpush: {
           fcm_options: {
-            link: "/",
+            link: siteUrl,
           },
           notification: {
             ...notification,
@@ -148,7 +155,12 @@ const sendToToken = async (accessToken, token, notification, appointment) => {
     }),
   });
 
-  return response.ok;
+  if (response.ok) {
+    return { ok: true };
+  }
+
+  const errorText = await response.text();
+  return { ok: false, error: errorText || `FCM error ${response.status}` };
 };
 
 export default async (request) => {
@@ -167,19 +179,23 @@ export default async (request) => {
     const accessToken = await getAccessToken();
     const tokensByUser = await readNotificationTokens(accessToken);
     const tokens = collectTargetTokens(tokensByUser, copy.target, appointment);
+    const siteUrl = getSiteUrl(request);
     const notification = {
       title: copy.title,
       body: copy.body(appointment),
     };
     const eventAppointment = { ...appointment, event };
     const results = await Promise.all(
-      tokens.map((token) => sendToToken(accessToken, token, notification, eventAppointment)),
+      tokens.map((token) => sendToToken(accessToken, token, notification, eventAppointment, siteUrl)),
     );
+    const failed = results.filter((result) => !result.ok);
 
     return Response.json({
       ok: true,
-      sent: results.filter(Boolean).length,
+      sent: results.filter((result) => result.ok).length,
       targets: tokens.length,
+      failed: failed.length,
+      firstError: failed[0]?.error,
     });
   } catch (error) {
     return Response.json(
