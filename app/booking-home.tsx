@@ -1041,13 +1041,15 @@ export function BookingHome() {
   }
 
   return (
-    <main
-      className={`app-shell ${
-        visibleStep === "confirm" || visibleStep === "success" ? "confirm-page" : ""
-      } ${
-        visibleStep === "admin" ? "admin-page" : ""
-      }`}
-    >
+      <main
+        className={`app-shell ${
+          visibleStep === "confirm" || visibleStep === "success" ? "confirm-page" : ""
+        } ${
+          visibleStep === "admin" ? "admin-page" : ""
+        } ${
+          visibleStep === "booking" && heroScrollProgress > 0.48 ? "hero-collapsed" : ""
+        }`}
+      >
       {visibleStep === "admin" ? (
         <section className="admin-view" aria-label="Panel admina">
           <div className="admin-topbar">
