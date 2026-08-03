@@ -2175,11 +2175,14 @@ h2 {
 
 .availability-month-list {
   display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: 0.6rem;
 }
 
 .availability-month {
   overflow: hidden;
+  min-height: 3.35rem;
   border: 1px solid rgba(255, 255, 255, 0.075);
   border-radius: 1.12rem;
   background: rgba(255, 255, 255, 0.045);
@@ -3503,6 +3506,26 @@ h2 {
     height: auto;
     min-height: 0;
     padding-bottom: calc(6.8rem + env(safe-area-inset-bottom));
+  }
+
+  .availability-list-card {
+    grid-template-rows: auto minmax(0, 1fr);
+    max-height: clamp(18rem, 40svh, 34rem);
+    overflow: hidden;
+  }
+
+  .availability-month-list {
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .availability-month-list::-webkit-scrollbar {
+    display: none;
   }
 
   .admin-bottom-nav {
