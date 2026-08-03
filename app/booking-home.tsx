@@ -465,7 +465,9 @@ export function BookingHome() {
     startTime: "10:00",
     endTime: "13:00",
   }));
-  const [expandedAvailabilityMonth, setExpandedAvailabilityMonth] = useState<string | null>(null);
+  const [expandedAvailabilityMonth, setExpandedAvailabilityMonth] = useState<
+    string | null | undefined
+  >(undefined);
 
   const activeUser = currentUser;
   const isAdmin = Boolean(activeUser && adminUserIds.has(activeUser.uid));
@@ -639,14 +641,19 @@ export function BookingHome() {
 
   useEffect(() => {
     if (availabilityMonthGroups.length === 0) {
-      if (expandedAvailabilityMonth) {
-        setExpandedAvailabilityMonth(null);
+      if (expandedAvailabilityMonth !== undefined) {
+        setExpandedAvailabilityMonth(undefined);
       }
       return;
     }
 
+    if (expandedAvailabilityMonth === undefined) {
+      setExpandedAvailabilityMonth(availabilityMonthGroups[0].key);
+      return;
+    }
+
     if (
-      !expandedAvailabilityMonth ||
+      expandedAvailabilityMonth &&
       !availabilityMonthGroups.some((group) => group.key === expandedAvailabilityMonth)
     ) {
       setExpandedAvailabilityMonth(availabilityMonthGroups[0].key);
