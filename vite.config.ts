@@ -45,6 +45,7 @@ export default defineConfig(async () => {
     const tailwindcss = (await import("@tailwindcss/vite")).default;
 
     return {
+      envPrefix: ["VITE_", "NEXT_PUBLIC_"],
       server: isCodexSeatbeltSandbox
         ? { watch: { useFsEvents: false, usePolling: true } }
         : undefined,
@@ -56,6 +57,7 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    envPrefix: ["VITE_", "NEXT_PUBLIC_"],
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,

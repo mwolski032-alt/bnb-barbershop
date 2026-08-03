@@ -23,7 +23,9 @@ export type PushRegistrationResult =
         | "token_error";
     };
 
-const readVapidKey = () => import.meta.env.VITE_FIREBASE_VAPID_KEY as string | undefined;
+const readVapidKey = () =>
+  (import.meta.env.VITE_FIREBASE_VAPID_KEY ||
+    import.meta.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY) as string | undefined;
 
 const tokenPathKey = (token: string) =>
   token
