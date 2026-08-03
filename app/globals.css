@@ -1922,6 +1922,168 @@ h2 {
   font-weight: 800;
 }
 
+.services-admin-view {
+  display: grid;
+  gap: 0.8rem;
+  align-content: start;
+  height: calc(100vh - 16.5rem - env(safe-area-inset-bottom));
+  overflow: auto;
+  padding: 0.8rem 0.9rem 1rem;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.services-admin-view::-webkit-scrollbar {
+  display: none;
+}
+
+.service-editor-panel,
+.service-management-card {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.065);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
+}
+
+.service-editor-panel {
+  display: grid;
+  gap: 0.9rem;
+  padding: 0.9rem;
+  border-radius: 1.35rem;
+}
+
+.service-cancel-button {
+  min-height: 2.35rem;
+  padding: 0 0.85rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.095);
+  color: #dfe5f2;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 820;
+}
+
+.service-form-grid {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.service-form-grid label {
+  display: grid;
+  gap: 0.32rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 820;
+}
+
+.service-form-grid input {
+  width: 100%;
+  min-height: 2.7rem;
+  border: 0;
+  border-radius: 999px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.075);
+  color: #eef1f7;
+  padding: 0 0.9rem;
+  font: inherit;
+  font-weight: 800;
+}
+
+.service-editor-summary {
+  display: grid;
+  gap: 0.62rem;
+  padding: 0.82rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.service-editor-summary span {
+  min-width: 0;
+  overflow: hidden;
+  color: #c3cad8;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-editor-summary button {
+  min-height: 2.9rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--green);
+  color: #031006;
+  cursor: pointer;
+  font-weight: 840;
+}
+
+.service-editor-summary button:disabled {
+  cursor: not-allowed;
+  opacity: 0.36;
+}
+
+.service-management-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.service-management-card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border-radius: 1.25rem;
+}
+
+.service-management-card > div:first-child {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.service-management-card strong,
+.service-management-card span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-management-card strong {
+  color: #eef1f7;
+  font-size: 0.98rem;
+}
+
+.service-management-card span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 780;
+}
+
+.service-management-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.service-management-actions button {
+  flex: 1 1 0;
+  min-height: 2.45rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.095);
+  color: #dfe5f2;
+  cursor: pointer;
+  font-weight: 820;
+}
+
+.service-management-actions button.danger {
+  background: rgba(255, 69, 58, 0.16);
+  color: #ffb4ae;
+}
+
+.service-management-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.34;
+}
+
 .work-duplicate-panel {
   display: grid;
   gap: 0.45rem;
@@ -2204,7 +2366,7 @@ h2 {
   left: max(0.85rem, calc((100vw - 29rem) / 2 + 0.85rem));
   z-index: 40;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0;
   padding: 0.3rem;
   border: 1px solid var(--line);
@@ -2258,7 +2420,7 @@ h2 {
   top: 0.3rem;
   bottom: 0.3rem;
   left: 0.3rem;
-  width: calc(33.333% - 0.3rem);
+  width: calc(25% - 0.3rem);
   border-radius: 999px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08)),
@@ -2275,6 +2437,10 @@ h2 {
 
 .admin-nav-pill.work {
   transform: translateX(200%);
+}
+
+.admin-nav-pill.services {
+  transform: translateX(300%);
 }
 
 @media (min-width: 901px) {
@@ -2463,7 +2629,8 @@ h2 {
   .client-strip::-webkit-scrollbar,
   .admin-schedule::-webkit-scrollbar,
   .clients-view::-webkit-scrollbar,
-  .work-view::-webkit-scrollbar {
+  .work-view::-webkit-scrollbar,
+  .services-admin-view::-webkit-scrollbar {
     display: block;
     width: 0.45rem;
   }
@@ -2472,7 +2639,8 @@ h2 {
   .client-strip::-webkit-scrollbar-thumb,
   .admin-schedule::-webkit-scrollbar-thumb,
   .clients-view::-webkit-scrollbar-thumb,
-  .work-view::-webkit-scrollbar-thumb {
+  .work-view::-webkit-scrollbar-thumb,
+  .services-admin-view::-webkit-scrollbar-thumb {
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.14);
   }
@@ -2502,7 +2670,8 @@ h2 {
   }
 
   .clients-view,
-  .work-view {
+  .work-view,
+  .services-admin-view {
     height: 100%;
     padding: 1.05rem;
   }
@@ -2515,6 +2684,34 @@ h2 {
   .client-row {
     min-height: 5.4rem;
     padding: 0.85rem;
+  }
+
+  .services-admin-view {
+    grid-template-columns: minmax(22rem, 0.8fr) minmax(26rem, 1.2fr);
+    align-items: start;
+    gap: 1rem;
+  }
+
+  .service-form-grid {
+    grid-template-columns: 1fr 0.72fr;
+  }
+
+  .service-form-grid label:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .service-management-list {
+    gap: 0.75rem;
+  }
+
+  .service-management-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    min-height: 5.2rem;
+  }
+
+  .service-management-actions {
+    width: 11rem;
   }
 
   .work-view.casual {

@@ -15,13 +15,14 @@ import { firebaseApp, realtimeDb } from "./lib/firebase";
 
 type Availability = "high" | "medium" | "low" | "none";
 type Step = "booking" | "confirm" | "success" | "admin";
-type AdminSection = "schedule" | "clients" | "work";
+type AdminSection = "schedule" | "clients" | "work" | "services";
 
 type Service = {
   id: string;
   name: string;
   price: string;
   durationMinutes: number;
+  order?: number;
 };
 
 type Appointment = {
@@ -43,6 +44,12 @@ type DayCell = {
 type FormState = {
   fullName: string;
   phone: string;
+};
+
+type ServiceDraft = {
+  name: string;
+  price: string;
+  durationMinutes: string;
 };
 
 type BookingSummary = {
@@ -81,18 +88,20 @@ type AuthUser = Pick<User, "uid" | "displayName" | "email" | "photoURL">;
 
 const adminUserIds = new Set(["XxBe4dwVYWZPtl004J4tWq6AMZ73"]);
 
-const services: Service[] = [
+const defaultServices: Service[] = [
   {
     id: "mens-haircut",
     name: "Strzyżenie męskie",
     price: "30 zł",
     durationMinutes: 90,
+    order: 0,
   },
   {
     id: "beard-trim",
     name: "Trymowanie brody",
     price: "20 zł",
     durationMinutes: 60,
+    order: 1,
   },
 ];
 
@@ -143,6 +152,9 @@ const formatDuration = (minutes: number) => {
 
 const getPhoneDigits = (value: string) => value.replace(/\D/g, "").slice(0, 9);
 
+const getServicePriceValue = (value: string) =>
+  Number(value.trim().replace(",", ".").replace(/[^\d.]/g, ""));
+
 const formatPhoneNumber = (value: string) => {
   const digits = getPhoneDigits(value);
   return [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6, 9)]
@@ -179,6 +191,42 @@ const rangesOverlap = (
 const normalizeWorkSettings = (value: Partial<WorkSettings> | null): WorkSettings => ({
   availability: value?.availability ?? {},
 });
+
+const normalizeServices = (value: Record<string, Partial<Service>> | null): Service[] => {
+  const loadedServices = Object.entries(value ?? {})
+    .map(([id, service], index) => ({
+      id: service.id ?? id,
+      name: service.name?.trim() || "Usługa",
+      price: service.price?.trim() || "0 zł",
+      durationMinutes: Number(service.durationMinutes) || 30,
+      order: Number(service.order ?? index),
+    }))
+    .sort((first, second) => (first.order ?? 0) - (second.order ?? 0));
+
+  return loadedServices.length > 0 ? loadedServices : defaultServices;
+};
+
+const servicesToRecord = (items: Service[]) =>
+  Object.fromEntries(items.map((service, index) => [service.id, { ...service, order: index }]));
+
+const createServiceId = (name: string) => {
+  const slug = name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 34);
+
+  return `${slug || "usluga"}-${Date.now()}`;
+};
+
+const formatServicePrice = (value: string) => {
+  const normalizedValue = value.trim().replace(",", ".");
+  const numericValue = getServicePriceValue(normalizedValue);
+  if (!Number.isFinite(numericValue)) return value.trim();
+  return `${numericValue % 1 === 0 ? numericValue.toFixed(0) : numericValue.toFixed(2)} zł`;
+};
 
 const getAvailabilityForDate = (dateKeyValue: string, settings: WorkSettings) =>
   settings.availability[dateKeyValue] ?? null;
@@ -310,12 +358,19 @@ export function BookingHome() {
   );
   const [selectedKey, setSelectedKey] = useState(() => dayKey(today));
   const [adminSelectedKey, setAdminSelectedKey] = useState(() => dayKey(today));
-  const [selectedServiceId, setSelectedServiceId] = useState(services[0].id);
+  const [services, setServices] = useState<Service[]>(defaultServices);
+  const [selectedServiceId, setSelectedServiceId] = useState(defaultServices[0].id);
   const [selectedTime, setSelectedTime] = useState("");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [adminAppointments, setAdminAppointments] = useState<AdminAppointment[]>([]);
   const [workSettings, setWorkSettings] = useState<WorkSettings>(defaultWorkSettings);
   const [form, setForm] = useState<FormState>({ fullName: "", phone: "" });
+  const [serviceDraft, setServiceDraft] = useState<ServiceDraft>({
+    name: "",
+    price: "",
+    durationMinutes: "60",
+  });
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [bookingSummary, setBookingSummary] = useState<BookingSummary | null>(null);
   const [clientAppointmentId, setClientAppointmentId] = useState<string | null>(null);
   const [reschedulingAppointmentId, setReschedulingAppointmentId] = useState<string | null>(null);
@@ -336,7 +391,8 @@ export function BookingHome() {
   const schedulingAppointments = reschedulingAppointment
     ? appointments.filter((appointment) => appointment.id !== reschedulingAppointment.id)
     : appointments;
-  const selectedService = services.find((item) => item.id === selectedServiceId) ?? services[0];
+  const selectedService =
+    services.find((item) => item.id === selectedServiceId) ?? services[0] ?? defaultServices[0];
   const days = useMemo(
     () => buildCalendarDays(visibleMonth, selectedService, schedulingAppointments, workSettings, today),
     [schedulingAppointments, selectedService, visibleMonth, workSettings, today],
@@ -411,9 +467,15 @@ export function BookingHome() {
   const nearestClientAppointment = clientAppointments[0] ?? null;
   const selectedClientAppointment =
     adminAppointments.find((appointment) => appointment.id === clientAppointmentId) ?? null;
+  const editingService = services.find((service) => service.id === editingServiceId) ?? null;
   const canContinue = Boolean(selectedServiceId && selectedKey && selectedTime);
   const canConfirm =
     Boolean(activeUser) && form.fullName.trim().length >= 3 && getPhoneDigits(form.phone).length === 9;
+  const canSaveService =
+    serviceDraft.name.trim().length >= 2 &&
+    Number.isFinite(getServicePriceValue(serviceDraft.price)) &&
+    getServicePriceValue(serviceDraft.price) > 0 &&
+    Number(serviceDraft.durationMinutes) >= 15;
   const availabilityWindows = Object.values(workSettings.availability)
     .filter((windowItem) => windowItem.dateKey >= dayKey(today))
     .sort((first, second) => {
@@ -495,10 +557,35 @@ export function BookingHome() {
   }, [activeUser]);
 
   useEffect(() => {
+    if (!activeUser) {
+      setServices(defaultServices);
+      return undefined;
+    }
+
+    const servicesRef = ref(realtimeDb, "services");
+
+    return onValue(servicesRef, (snapshot) => {
+      const value = snapshot.val() as Record<string, Partial<Service>> | null;
+      setServices(normalizeServices(value));
+
+      if (!value && isAdmin) {
+        void set(servicesRef, servicesToRecord(defaultServices));
+      }
+    });
+  }, [activeUser, isAdmin]);
+
+  useEffect(() => {
     if (selectedTime && !availableTimes.includes(selectedTime)) {
       setSelectedTime("");
     }
   }, [availableTimes, selectedTime]);
+
+  useEffect(() => {
+    if (!services.some((service) => service.id === selectedServiceId)) {
+      setSelectedServiceId(services[0]?.id ?? defaultServices[0].id);
+      setSelectedTime("");
+    }
+  }, [selectedServiceId, services]);
 
   useEffect(() => {
     if (adminAppointmentDays.length === 0) return;
@@ -585,6 +672,80 @@ export function BookingHome() {
       startTime,
       endTime,
     });
+  };
+
+  const updateServiceDraft = (field: keyof ServiceDraft, value: string) => {
+    setServiceDraft((current) => ({
+      ...current,
+      [field]: field === "durationMinutes" ? value.replace(/\D/g, "").slice(0, 3) : value,
+    }));
+  };
+
+  const resetServiceDraft = () => {
+    setEditingServiceId(null);
+    setServiceDraft({
+      name: "",
+      price: "",
+      durationMinutes: "60",
+    });
+  };
+
+  const editService = (service: Service) => {
+    setEditingServiceId(service.id);
+    setServiceDraft({
+      name: service.name,
+      price: String(getServicePriceValue(service.price) || ""),
+      durationMinutes: String(service.durationMinutes),
+    });
+    setAdminSection("services");
+  };
+
+  const saveService = async () => {
+    if (!canSaveService || isSaving) return;
+
+    const durationMinutes = Math.max(15, Math.round(Number(serviceDraft.durationMinutes) / 15) * 15);
+    const serviceId = editingServiceId ?? createServiceId(serviceDraft.name);
+    const nextService: Service = {
+      id: serviceId,
+      name: serviceDraft.name.trim(),
+      price: formatServicePrice(serviceDraft.price),
+      durationMinutes,
+      order: editingService?.order ?? services.length,
+    };
+    const nextServices = editingServiceId
+      ? services.map((service) => (service.id === editingServiceId ? nextService : service))
+      : [...services, nextService];
+
+    try {
+      setIsSaving(true);
+      await set(ref(realtimeDb, "services"), servicesToRecord(nextServices));
+      if (!editingServiceId) {
+        setSelectedServiceId(serviceId);
+      }
+      resetServiceDraft();
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteService = async (serviceId: string) => {
+    if (services.length <= 1 || isSaving) return;
+
+    const nextServices = services.filter((service) => service.id !== serviceId);
+
+    try {
+      setIsSaving(true);
+      await set(ref(realtimeDb, "services"), servicesToRecord(nextServices));
+      if (selectedServiceId === serviceId) {
+        setSelectedServiceId(nextServices[0]?.id ?? defaultServices[0].id);
+        setSelectedTime("");
+      }
+      if (editingServiceId === serviceId) {
+        resetServiceDraft();
+      }
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleGoogleSignIn = async () => {
@@ -861,7 +1022,9 @@ export function BookingHome() {
                   ? "Terminarz"
                   : adminSection === "clients"
                     ? "Klienci"
-                    : "Praca"}
+                    : adminSection === "work"
+                      ? "Praca"
+                      : "Usługi"}
               </h1>
             </div>
           </div>
@@ -1286,6 +1449,126 @@ export function BookingHome() {
                 </section>
               </div>
             </div>
+
+            <div className={`admin-tab-panel ${adminSection === "services" ? "active" : ""}`}>
+              <div className="admin-section-header">
+                <div>
+                  <p className="eyebrow">Oferta</p>
+                  <h2>Usługi w aplikacji</h2>
+                </div>
+                <div className="admin-section-stats" aria-label="Podsumowanie usług">
+                  <span>
+                    <strong>{services.length}</strong>
+                    usług
+                  </span>
+                  <span>
+                    <strong>
+                      {formatDuration(
+                        Math.round(
+                          services.reduce((sum, service) => sum + service.durationMinutes, 0) /
+                            Math.max(services.length, 1),
+                        ),
+                      )}
+                    </strong>
+                    średnio
+                  </span>
+                </div>
+              </div>
+
+              <div className="services-admin-view" aria-label="Zarządzanie usługami">
+                <section className="service-editor-panel">
+                  <div className="work-editor-top">
+                    <div>
+                      <p className="eyebrow">{editingService ? "Edycja" : "Nowa usługa"}</p>
+                      <h2>{editingService ? editingService.name : "Dodaj usługę"}</h2>
+                    </div>
+                    {editingService ? (
+                      <button className="service-cancel-button" type="button" onClick={resetServiceDraft}>
+                        Anuluj
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="service-form-grid">
+                    <label>
+                      Nazwa usługi
+                      <input
+                        type="text"
+                        value={serviceDraft.name}
+                        onChange={(event) => updateServiceDraft("name", event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Cena
+                      <input
+                        inputMode="decimal"
+                        type="text"
+                        value={serviceDraft.price}
+                        onChange={(event) => updateServiceDraft("price", event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Czas trwania
+                      <input
+                        inputMode="numeric"
+                        min="15"
+                        step="15"
+                        type="number"
+                        value={serviceDraft.durationMinutes}
+                        onChange={(event) =>
+                          updateServiceDraft("durationMinutes", event.target.value)
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <div className="service-editor-summary">
+                    <span>
+                      {serviceDraft.name.trim() || "Nazwa usługi"} ·{" "}
+                      {serviceDraft.price.trim() ? formatServicePrice(serviceDraft.price) : "0 zł"} ·{" "}
+                      {formatDuration(Number(serviceDraft.durationMinutes) || 0) || "0min"}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={!canSaveService || isSaving}
+                      onClick={() => {
+                        void saveService();
+                      }}
+                    >
+                      {editingService ? "Zapisz zmiany" : "Dodaj usługę"}
+                    </button>
+                  </div>
+                </section>
+
+                <section className="service-management-list">
+                  {services.map((service) => (
+                    <article className="service-management-card" key={service.id}>
+                      <div>
+                        <strong>{service.name}</strong>
+                        <span>
+                          {service.price} · {formatDuration(service.durationMinutes)}
+                        </span>
+                      </div>
+                      <div className="service-management-actions">
+                        <button type="button" onClick={() => editService(service)}>
+                          Edytuj
+                        </button>
+                        <button
+                          className="danger"
+                          type="button"
+                          disabled={services.length <= 1}
+                          onClick={() => {
+                            void deleteService(service.id);
+                          }}
+                        >
+                          Usuń
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </section>
+              </div>
+            </div>
           </div>
 
           <nav className="admin-bottom-nav" aria-label="Sekcje admina">
@@ -1310,6 +1593,13 @@ export function BookingHome() {
               onClick={() => setAdminSection("work")}
             >
               Praca
+            </button>
+            <button
+              className={adminSection === "services" ? "active" : ""}
+              type="button"
+              onClick={() => setAdminSection("services")}
+            >
+              Usługi
             </button>
           </nav>
         </section>
