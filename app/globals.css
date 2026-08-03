@@ -1686,6 +1686,44 @@ h2 {
   border-bottom: 1px dashed rgba(255, 255, 255, 0.045);
 }
 
+.current-time-line {
+  position: absolute;
+  right: 0.2rem;
+  left: 0.2rem;
+  z-index: 6;
+  height: 0;
+  border-top: 2px solid #ff453a;
+  pointer-events: none;
+}
+
+.current-time-line::before {
+  content: "";
+  position: absolute;
+  top: -0.38rem;
+  left: -0.08rem;
+  width: 0.68rem;
+  height: 0.68rem;
+  border: 2px solid rgba(255, 255, 255, 0.88);
+  border-radius: 50%;
+  background: #ff453a;
+  box-shadow: 0 0 0 4px rgba(255, 69, 58, 0.18);
+}
+
+.current-time-line span {
+  position: absolute;
+  top: -0.78rem;
+  right: 0;
+  min-height: 1.42rem;
+  padding: 0.22rem 0.52rem;
+  border-radius: 999px;
+  background: rgba(255, 69, 58, 0.95);
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 860;
+  line-height: 1;
+  box-shadow: 0 8px 18px rgba(255, 69, 58, 0.24);
+}
+
 .admin-appointment {
   position: absolute;
   right: 0.16rem;
@@ -1842,6 +1880,20 @@ h2 {
   min-width: 0;
 }
 
+.client-row-edit {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.client-row-edit:hover strong {
+  color: #ffffff;
+}
+
 .client-row-main strong,
 .client-row-main span,
 .client-row-main small {
@@ -1895,6 +1947,61 @@ h2 {
   font-size: 0.9rem;
   font-weight: 750;
   text-align: center;
+}
+
+.admin-edit-recap {
+  display: grid;
+  gap: 0.22rem;
+  margin-top: 1rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.admin-edit-recap span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 780;
+}
+
+.admin-edit-recap strong {
+  color: #eef1f7;
+  font-size: 0.94rem;
+}
+
+.admin-edit-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+  margin-top: 0.75rem;
+}
+
+.admin-edit-form label {
+  display: grid;
+  gap: 0.34rem;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 820;
+}
+
+.admin-edit-form input,
+.admin-edit-form select {
+  width: 100%;
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 999px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.085);
+  color: #eef1f7;
+  padding: 0 0.9rem;
+  font: inherit;
+  font-weight: 820;
+}
+
+.admin-edit-form select option {
+  background: #11131a;
+  color: #eef1f7;
 }
 
 .work-view {
@@ -3540,6 +3647,10 @@ h2 {
     white-space: nowrap;
   }
 
+  .admin-edit-form {
+    grid-template-columns: 1fr;
+  }
+
 }
 
 @media (max-width: 560px) {
@@ -3779,6 +3890,10 @@ h2 {
   .service-card {
     border-radius: 999px;
     min-height: 4.55rem;
+  }
+
+  .admin-edit-form {
+    grid-template-columns: 1fr;
   }
 
   .work-preset-grid {

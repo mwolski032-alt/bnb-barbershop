@@ -52,6 +52,11 @@ type ServiceDraft = {
   durationMinutes: string;
 };
 
+type AdminEditDraft = {
+  dateKey: string;
+  startTime: string;
+};
+
 type AppointmentStatus = "confirmed" | "rescheduled" | "cancelled";
 type AppointmentColor = "blue" | "mint" | "pink" | "violet" | "amber" | "coral" | "sky" | "lime";
 
@@ -457,6 +462,7 @@ const availabilityLabel: Record<Availability, string> = {
 
 export function BookingHome() {
   const today = useMemo(() => new Date(), []);
+  const [currentDate, setCurrentDate] = useState(() => new Date());
   const [authReady, setAuthReady] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [authError, setAuthError] = useState("");
@@ -484,6 +490,7 @@ export function BookingHome() {
   const [bookingSummary, setBookingSummary] = useState<BookingSummary | null>(null);
   const [clientAppointmentId, setClientAppointmentId] = useState<string | null>(null);
   const [clientAppointmentsListOpen, setClientAppointmentsListOpen] = useState(false);
+  const [adminEditAppointmentId, setAdminEditAppointmentId] = useState<string | null>(null);
   const [reschedulingAppointmentId, setReschedulingAppointmentId] = useState<string | null>(null);
   const [successReady, setSuccessReady] = useState(false);
   const [draggedAppointmentId, setDraggedAppointmentId] = useState<string | null>(null);
@@ -495,6 +502,10 @@ export function BookingHome() {
     startTime: "10:00",
     endTime: "13:00",
   }));
+  const [adminEditDraft, setAdminEditDraft] = useState<AdminEditDraft>({
+    dateKey: dayKey(today),
+    startTime: "10:00",
+  });
   const [expandedAvailabilityMonth, setExpandedAvailabilityMonth] = useState<
     string | null | undefined
   >(undefined);
@@ -607,6 +618,8 @@ export function BookingHome() {
   const nearestClientAppointment = clientAppointments[0] ?? null;
   const selectedClientAppointment =
     clientAppointments.find((appointment) => appointment.id === clientAppointmentId) ?? null;
+  const selectedAdminEditAppointment =
+    adminAppointments.find((appointment) => appointment.id === adminEditAppointmentId) ?? null;
   const editingService = services.find((service) => service.id === editingServiceId) ?? null;
   const canContinue = Boolean(selectedServiceId && selectedKey && selectedTime);
   const canConfirm =
@@ -660,6 +673,24 @@ export function BookingHome() {
   const nearestAvailability = availabilityWindows[0] ?? null;
   const nextSaturdayOffset = (6 - today.getDay() + 7) % 7 || 7;
   const visibleStep = step === "admin" && !isAdmin ? "booking" : step;
+  const currentTimeLineMinutes =
+    adminSelectedKey === dayKey(currentDate)
+      ? currentDate.getHours() * 60 + currentDate.getMinutes()
+      : null;
+  const currentTimeLineVisible =
+    currentTimeLineMinutes !== null &&
+    currentTimeLineMinutes >= adminScheduleStartMinutes &&
+    currentTimeLineMinutes <= adminScheduleEndMinutes;
+  const currentTimeLineTop =
+    currentTimeLineMinutes !== null
+      ? ((currentTimeLineMinutes - adminScheduleStartMinutes) / 15) * 2.8
+      : 0;
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setCurrentDate(new Date()), 30000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) {
@@ -1200,6 +1231,31 @@ export function BookingHome() {
     await saveSummaryToCalendar(appointmentToBookingSummary(appointment));
   };
 
+  const openAdminAppointmentEdit = (appointment: AdminAppointment) => {
+    setAdminEditAppointmentId(appointment.id);
+    setAdminEditDraft({
+      dateKey: appointment.dateKey,
+      startTime: appointment.startTime,
+    });
+  };
+
+  const saveAdminAppointmentEdit = async () => {
+    if (!selectedAdminEditAppointment || isSaving) return;
+
+    try {
+      setIsSaving(true);
+      await update(ref(realtimeDb, `appointments/${selectedAdminEditAppointment.id}`), {
+        dateKey: adminEditDraft.dateKey,
+        startTime: adminEditDraft.startTime,
+        status: "rescheduled",
+      });
+      setAdminSelectedKey(adminEditDraft.dateKey);
+      setAdminEditAppointmentId(null);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const moveAdminAppointment = (appointmentId: string, startTime: string) => {
     const appointment = adminAppointments.find((item) => item.id === appointmentId);
     if (!appointment || !canMoveAdminAppointment(appointment, startTime)) {
@@ -1454,6 +1510,16 @@ export function BookingHome() {
                       />
                     ))}
 
+                    {currentTimeLineVisible ? (
+                      <div
+                        className="current-time-line"
+                        style={{ top: `${currentTimeLineTop}rem` }}
+                        aria-label={`Aktualna godzina ${minutesToTime(currentTimeLineMinutes ?? 0)}`}
+                      >
+                        <span>{minutesToTime(currentTimeLineMinutes ?? 0)}</span>
+                      </div>
+                    ) : null}
+
                     {adminDayAppointments.map((appointment) => {
                       const top =
                         ((timeToMinutes(appointment.startTime) - adminScheduleStartMinutes) / 15) *
@@ -1565,7 +1631,12 @@ export function BookingHome() {
                         <div className="client-row-avatar">
                           {appointment.clientName.slice(0, 1)}
                         </div>
-                        <div className="client-row-main">
+                        <button
+                          className="client-row-main client-row-edit"
+                          type="button"
+                          onClick={() => openAdminAppointmentEdit(appointment)}
+                          aria-label={`Edytuj wizytę ${appointment.clientName}`}
+                        >
                           <strong>{appointment.clientName}</strong>
                           <span>
                             {adminClientDateFormatter.format(dateFromKey(appointment.dateKey))},{" "}
@@ -1575,7 +1646,7 @@ export function BookingHome() {
                           <em className={`appointment-status ${normalizeAppointmentStatus(appointment.status)}`}>
                             {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
                           </em>
-                        </div>
+                        </button>
                         {hasPhone ? (
                           <a
                             className="sms-button"
@@ -2286,6 +2357,101 @@ export function BookingHome() {
           ) : null}
         </section>
       )}
+
+      {selectedAdminEditAppointment && visibleStep === "admin" ? (
+        <div className="client-modal-backdrop" role="presentation">
+          <section
+            className="client-appointment-modal admin-edit-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Edytuj wizytę klienta"
+          >
+            <button
+              className="modal-close-button"
+              type="button"
+              onClick={() => setAdminEditAppointmentId(null)}
+              aria-label="Zamknij edycję wizyty"
+            >
+              ×
+            </button>
+            <div className="modal-title">
+              <p className="eyebrow">Edycja wizyty</p>
+              <h2>{selectedAdminEditAppointment.clientName}</h2>
+            </div>
+
+            <div className="admin-edit-recap">
+              <span>{selectedAdminEditAppointment.serviceName}</span>
+              <strong>
+                {adminClientDateFormatter.format(dateFromKey(selectedAdminEditAppointment.dateKey))},{" "}
+                {selectedAdminEditAppointment.startTime}
+              </strong>
+            </div>
+
+            <div className="admin-edit-form">
+              <label>
+                Dzień
+                <input
+                  type="date"
+                  min={dayKey(today)}
+                  value={adminEditDraft.dateKey}
+                  onChange={(event) =>
+                    setAdminEditDraft((current) => ({
+                      ...current,
+                      dateKey: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Godzina
+                <select
+                  value={adminEditDraft.startTime}
+                  onChange={(event) =>
+                    setAdminEditDraft((current) => ({
+                      ...current,
+                      startTime: event.target.value,
+                    }))
+                  }
+                >
+                  {workTimeOptions.slice(0, -1).map((time) => (
+                    <option key={time} value={time}>
+                      {time}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="modal-client-note">
+              <strong>Ręczna zmiana admina</strong>
+              <span>
+                Możesz wybrać dzień bez dostępności publicznej. Klient zobaczy wizytę jako
+                przesuniętą.
+              </span>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                disabled={isSaving || !adminEditDraft.dateKey || !adminEditDraft.startTime}
+                onClick={() => {
+                  void saveAdminAppointmentEdit();
+                }}
+              >
+                Zapisz zmianę
+              </button>
+              <button
+                className="danger"
+                type="button"
+                disabled={isSaving}
+                onClick={() => setAdminEditAppointmentId(null)}
+              >
+                Anuluj
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {clientAppointmentsListOpen && visibleStep !== "admin" ? (
         <div className="client-modal-backdrop" role="presentation">
