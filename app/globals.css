@@ -973,6 +973,65 @@ h2 {
   margin-top: 1rem;
 }
 
+.client-appointment-list {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+
+.client-appointment-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  width: 100%;
+  min-height: 4.1rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--foreground);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.client-appointment-option:hover {
+  transform: translateY(-1px);
+  border-color: rgba(76, 141, 255, 0.46);
+  background: rgba(76, 141, 255, 0.1);
+}
+
+.client-appointment-option span {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+}
+
+.client-appointment-option strong {
+  overflow: hidden;
+  font-size: 0.96rem;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-appointment-option small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 620;
+  line-height: 1.35;
+}
+
+.client-appointment-option b {
+  flex: 0 0 auto;
+  color: var(--green);
+  font-size: 0.92rem;
+}
+
 .modal-details span,
 .modal-client-note {
   display: grid;

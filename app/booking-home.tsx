@@ -373,6 +373,7 @@ export function BookingHome() {
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [bookingSummary, setBookingSummary] = useState<BookingSummary | null>(null);
   const [clientAppointmentId, setClientAppointmentId] = useState<string | null>(null);
+  const [clientAppointmentsListOpen, setClientAppointmentsListOpen] = useState(false);
   const [reschedulingAppointmentId, setReschedulingAppointmentId] = useState<string | null>(null);
   const [successReady, setSuccessReady] = useState(false);
   const [draggedAppointmentId, setDraggedAppointmentId] = useState<string | null>(null);
@@ -466,7 +467,7 @@ export function BookingHome() {
   );
   const nearestClientAppointment = clientAppointments[0] ?? null;
   const selectedClientAppointment =
-    adminAppointments.find((appointment) => appointment.id === clientAppointmentId) ?? null;
+    clientAppointments.find((appointment) => appointment.id === clientAppointmentId) ?? null;
   const editingService = services.find((service) => service.id === editingServiceId) ?? null;
   const canContinue = Boolean(selectedServiceId && selectedKey && selectedTime);
   const canConfirm =
@@ -776,6 +777,7 @@ export function BookingHome() {
     setSelectedTime("");
     setBookingSummary(null);
     setClientAppointmentId(null);
+    setClientAppointmentsListOpen(false);
     setReschedulingAppointmentId(null);
   };
 
@@ -793,12 +795,14 @@ export function BookingHome() {
     setSelectedKey(appointment.dateKey);
     setSelectedTime(appointment.startTime);
     setClientAppointmentId(null);
+    setClientAppointmentsListOpen(false);
     setReschedulingAppointmentId(appointment.id);
     setStep("booking");
   };
 
   const cancelClientAppointment = (appointmentId: string) => {
     setClientAppointmentId(null);
+    setClientAppointmentsListOpen(false);
     if (reschedulingAppointmentId === appointmentId) {
       setReschedulingAppointmentId(null);
       setSelectedTime("");
@@ -1727,7 +1731,14 @@ export function BookingHome() {
                 <button
                   className="client-visit-card"
                   type="button"
-                  onClick={() => setClientAppointmentId(nearestClientAppointment.id)}
+                  onClick={() => {
+                    if (clientAppointments.length > 1) {
+                      setClientAppointmentsListOpen(true);
+                      return;
+                    }
+
+                    setClientAppointmentId(nearestClientAppointment.id);
+                  }}
                 >
                   <span>
                     <strong>{nearestClientAppointment.serviceName}</strong>
@@ -1885,6 +1896,54 @@ export function BookingHome() {
           ) : null}
         </section>
       )}
+
+      {clientAppointmentsListOpen && visibleStep !== "admin" ? (
+        <div className="client-modal-backdrop" role="presentation">
+          <section
+            className="client-appointment-modal appointment-list-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Wybierz swoją wizytę"
+          >
+            <button
+              className="modal-close-button"
+              type="button"
+              onClick={() => setClientAppointmentsListOpen(false)}
+              aria-label="Zamknij listę wizyt"
+            >
+              ×
+            </button>
+            <div className="modal-title">
+              <p className="eyebrow">Twoje wizyty</p>
+              <h2>Wybierz termin</h2>
+            </div>
+
+            <div className="client-appointment-list">
+              {clientAppointments.map((appointment) => (
+                <button
+                  className="client-appointment-option"
+                  key={appointment.id}
+                  type="button"
+                  onClick={() => {
+                    setClientAppointmentId(appointment.id);
+                    setClientAppointmentsListOpen(false);
+                  }}
+                >
+                  <span>
+                    <strong>{appointment.serviceName}</strong>
+                    <small>
+                      {dayFormatter.format(dateFromKey(appointment.dateKey))},{" "}
+                      {appointment.startTime} -{" "}
+                      {addMinutesToTime(appointment.startTime, appointment.durationMinutes)}
+                    </small>
+                  </span>
+                  <b>{appointment.price}</b>
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {selectedClientAppointment && visibleStep !== "admin" ? (
         <div className="client-modal-backdrop" role="presentation">
