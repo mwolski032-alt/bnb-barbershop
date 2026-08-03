@@ -1758,22 +1758,42 @@ h2 {
 
 .admin-appointment.pink {
   border-left-color: #ff6b9f;
-  background: linear-gradient(180deg, #ffe6ee, #ffd4e3);
+  background: linear-gradient(180deg, #ffe8f0, #ffcfe0);
 }
 
 .admin-appointment.mint {
   border-left-color: #08a8b8;
-  background: linear-gradient(180deg, #dff6f7, #c9f1ed);
+  background: linear-gradient(180deg, #e1fbf8, #c7f1ea);
 }
 
 .admin-appointment.blue {
   border-left-color: #6d8cff;
-  background: linear-gradient(180deg, #dbe6ff, #cbdcff);
+  background: linear-gradient(180deg, #e2ebff, #cbdcff);
 }
 
 .admin-appointment.violet {
   border-left-color: #8f63ff;
-  background: linear-gradient(180deg, #e9ddff, #dbccff);
+  background: linear-gradient(180deg, #eee3ff, #dcccff);
+}
+
+.admin-appointment.amber {
+  border-left-color: #f3a21b;
+  background: linear-gradient(180deg, #fff0cf, #ffdfa0);
+}
+
+.admin-appointment.coral {
+  border-left-color: #ff735f;
+  background: linear-gradient(180deg, #ffe5dd, #ffcbbb);
+}
+
+.admin-appointment.sky {
+  border-left-color: #2fafff;
+  background: linear-gradient(180deg, #ddf4ff, #bde7ff);
+}
+
+.admin-appointment.lime {
+  border-left-color: #51b95d;
+  background: linear-gradient(180deg, #e6f8d7, #d1efb9);
 }
 
 .clients-view {
@@ -2775,52 +2795,75 @@ h2 {
 .admin-nav-icon {
   position: relative;
   display: block;
-  width: 1rem;
-  height: 1rem;
+  width: 1.08rem;
+  height: 1.08rem;
   color: currentColor;
-  opacity: 0.84;
+  opacity: 0.9;
 }
 
 .schedule-icon {
-  border: 0.12rem solid currentColor;
-  border-radius: 0.2rem;
+  border: 0.11rem solid currentColor;
+  border-radius: 0.24rem;
 }
 
 .schedule-icon::before {
   content: "";
   position: absolute;
-  top: 0.24rem;
-  right: -0.12rem;
-  left: -0.12rem;
-  height: 0.12rem;
+  top: 0.25rem;
+  right: -0.11rem;
+  left: -0.11rem;
+  height: 0.11rem;
   background: currentColor;
 }
 
-.clients-icon::before,
-.clients-icon::after {
+.schedule-icon::after {
   content: "";
   position: absolute;
-  border: 0.12rem solid currentColor;
+  top: 0.52rem;
+  left: 0.25rem;
+  width: 0.12rem;
+  height: 0.12rem;
   border-radius: 50%;
+  background: currentColor;
+  box-shadow:
+    0.3rem 0 currentColor,
+    0 0.28rem currentColor,
+    0.3rem 0.28rem currentColor;
+}
+
+.clients-icon {
+  background:
+    radial-gradient(circle at 50% 28%, currentColor 0 0.19rem, transparent 0.2rem),
+    radial-gradient(circle at 78% 42%, currentColor 0 0.13rem, transparent 0.14rem);
 }
 
 .clients-icon::before {
-  top: 0.08rem;
-  left: 0.32rem;
-  width: 0.38rem;
-  height: 0.38rem;
+  content: "";
+  position: absolute;
+  right: 0.2rem;
+  bottom: 0.12rem;
+  left: 0.2rem;
+  height: 0.42rem;
+  border: 0.11rem solid currentColor;
+  border-bottom: 0;
+  border-radius: 999px 999px 0 0;
 }
 
 .clients-icon::after {
-  right: 0.08rem;
-  bottom: 0.08rem;
-  left: 0.08rem;
-  height: 0.45rem;
-  border-radius: 999px 999px 0.28rem 0.28rem;
+  content: "";
+  position: absolute;
+  right: 0.02rem;
+  bottom: 0.18rem;
+  width: 0.35rem;
+  height: 0.3rem;
+  border: 0.1rem solid currentColor;
+  border-bottom: 0;
+  border-radius: 999px 999px 0 0;
+  opacity: 0.72;
 }
 
 .work-icon {
-  border: 0.12rem solid currentColor;
+  border: 0.11rem solid currentColor;
   border-radius: 50%;
 }
 
@@ -2835,36 +2878,42 @@ h2 {
 
 .work-icon::before {
   top: 0.22rem;
-  left: 0.42rem;
-  width: 0.12rem;
+  left: 0.46rem;
+  width: 0.11rem;
   height: 0.34rem;
 }
 
 .work-icon::after {
-  top: 0.45rem;
-  left: 0.43rem;
-  width: 0.34rem;
-  height: 0.12rem;
+  top: 0.48rem;
+  left: 0.47rem;
+  width: 0.32rem;
+  height: 0.11rem;
+}
+
+.services-icon {
+  background:
+    radial-gradient(circle at 24% 76%, transparent 0 0.12rem, currentColor 0.13rem 0.23rem, transparent 0.24rem),
+    radial-gradient(circle at 76% 76%, transparent 0 0.12rem, currentColor 0.13rem 0.23rem, transparent 0.24rem);
 }
 
 .services-icon::before,
 .services-icon::after {
   content: "";
   position: absolute;
-  top: 0.15rem;
-  left: 0.44rem;
-  width: 0.12rem;
-  height: 0.76rem;
+  top: 0.04rem;
+  left: 0.48rem;
+  width: 0.11rem;
+  height: 0.72rem;
   border-radius: 999px;
   background: currentColor;
 }
 
 .services-icon::before {
-  transform: rotate(38deg);
+  transform: rotate(42deg);
 }
 
 .services-icon::after {
-  transform: rotate(-38deg);
+  transform: rotate(-42deg);
 }
 
 .admin-bottom-nav button:active {

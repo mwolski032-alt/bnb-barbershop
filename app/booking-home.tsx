@@ -53,6 +53,7 @@ type ServiceDraft = {
 };
 
 type AppointmentStatus = "confirmed" | "rescheduled" | "cancelled";
+type AppointmentColor = "blue" | "mint" | "pink" | "violet" | "amber" | "coral" | "sky" | "lime";
 
 type BookingSummary = {
   serviceName: string;
@@ -72,7 +73,7 @@ type AdminAppointment = Appointment & {
   userId?: string;
   serviceName: string;
   price: string;
-  color: "blue" | "mint";
+  color: AppointmentColor;
   status?: AppointmentStatus;
 };
 
@@ -128,9 +129,38 @@ const appointmentStatusLabels: Record<AppointmentStatus, string> = {
   rescheduled: "Przesunięta",
   cancelled: "Odwołana",
 };
+const appointmentColorPalette: AppointmentColor[] = [
+  "blue",
+  "mint",
+  "pink",
+  "violet",
+  "amber",
+  "coral",
+  "sky",
+  "lime",
+];
 
 const normalizeAppointmentStatus = (status?: string): AppointmentStatus =>
   status === "rescheduled" || status === "cancelled" ? status : "confirmed";
+
+const normalizeAppointmentColor = (color?: string): AppointmentColor =>
+  appointmentColorPalette.includes(color as AppointmentColor)
+    ? (color as AppointmentColor)
+    : "blue";
+
+const getNextAppointmentColor = (
+  dateKeyValue: string,
+  appointments: Pick<AdminAppointment, "dateKey" | "startTime" | "color">[],
+) => {
+  const dayColors = appointments
+    .filter((appointment) => appointment.dateKey === dateKeyValue)
+    .sort((first, second) => timeToMinutes(first.startTime) - timeToMinutes(second.startTime))
+    .map((appointment) => normalizeAppointmentColor(appointment.color));
+  const usedColors = new Set(dayColors);
+  const freeColor = appointmentColorPalette.find((color) => !usedColors.has(color));
+
+  return freeColor ?? appointmentColorPalette[dayColors.length % appointmentColorPalette.length];
+};
 
 const dayKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
@@ -700,7 +730,7 @@ export function BookingHome() {
           userId: appointment.userId ?? "",
           serviceName: appointment.serviceName ?? "Usługa",
           price: appointment.price ?? "0 zł",
-          color: appointment.color === "mint" ? "mint" : "blue",
+          color: normalizeAppointmentColor(appointment.color),
           status: normalizeAppointmentStatus(appointment.status),
         }))
         .filter((appointment) => appointment.status !== "cancelled")
@@ -1087,7 +1117,7 @@ export function BookingHome() {
     if (!canConfirm || !selectedTime || isSaving || !activeUser) return;
 
     const appointmentId = window.crypto?.randomUUID?.() ?? `${Date.now()}`;
-    const appointmentColor = selectedService.id === "mens-haircut" ? "blue" : "mint";
+    const appointmentColor = getNextAppointmentColor(selectedDayKey, adminAppointments);
     const adminAppointment: AdminAppointment = {
       id: appointmentId,
       userId: activeUser.uid,
