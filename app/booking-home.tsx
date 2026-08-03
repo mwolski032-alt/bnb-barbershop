@@ -79,6 +79,8 @@ type WorkSettings = {
 
 type AuthUser = Pick<User, "uid" | "displayName" | "email" | "photoURL">;
 
+const adminUserIds = new Set(["XxBe4dwVYWZPtl004J4tWq6AMZ73"]);
+
 const services: Service[] = [
   {
     id: "mens-haircut",
@@ -349,6 +351,7 @@ export function BookingHome() {
         : null),
     [currentUser, isTestMode],
   );
+  const isAdmin = Boolean(activeUser && adminUserIds.has(activeUser.uid));
   const adminAppointmentDays = useMemo(
     () =>
       Array.from(new Set(adminAppointments.map((appointment) => appointment.dateKey))).sort(
@@ -482,6 +485,12 @@ export function BookingHome() {
       setAdminSelectedKey(adminAppointmentDays[0]);
     }
   }, [adminAppointmentDays, adminSelectedKey]);
+
+  useEffect(() => {
+    if (step === "admin" && !isAdmin) {
+      setStep("booking");
+    }
+  }, [isAdmin, step]);
 
   useEffect(() => {
     if (step !== "success") return undefined;
@@ -771,7 +780,7 @@ export function BookingHome() {
         step === "admin" ? "admin-page" : ""
       }`}
     >
-      {step === "admin" ? (
+      {step === "admin" && isAdmin ? (
         <section className="admin-view" aria-label="Panel admina">
           <div className="admin-topbar">
             <button className="back-button" type="button" onClick={() => setStep("booking")}>
@@ -1205,16 +1214,18 @@ export function BookingHome() {
                   Wyloguj
                 </button>
               </div>
-              <button
-                className="avatar-button"
-                type="button"
-                onClick={() => setStep("admin")}
-                aria-label="Otwórz profil admina"
-              >
-                <span className="avatar-icon" aria-hidden="true">
-                  <span />
-                </span>
-              </button>
+              {isAdmin ? (
+                <button
+                  className="avatar-button"
+                  type="button"
+                  onClick={() => setStep("admin")}
+                  aria-label="Otwórz profil admina"
+                >
+                  <span className="avatar-icon" aria-hidden="true">
+                    <span />
+                  </span>
+                </button>
+              ) : null}
             </div>
 
             <div className="calendar-header">
