@@ -301,7 +301,6 @@ export function BookingHome() {
   const today = useMemo(() => new Date(), []);
   const [authReady, setAuthReady] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
-  const [isTestMode, setIsTestMode] = useState(false);
   const [authError, setAuthError] = useState("");
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [step, setStep] = useState<Step>("booking");
@@ -318,6 +317,8 @@ export function BookingHome() {
   const [workSettings, setWorkSettings] = useState<WorkSettings>(defaultWorkSettings);
   const [form, setForm] = useState<FormState>({ fullName: "", phone: "" });
   const [bookingSummary, setBookingSummary] = useState<BookingSummary | null>(null);
+  const [clientAppointmentId, setClientAppointmentId] = useState<string | null>(null);
+  const [reschedulingAppointmentId, setReschedulingAppointmentId] = useState<string | null>(null);
   const [successReady, setSuccessReady] = useState(false);
   const [draggedAppointmentId, setDraggedAppointmentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -328,30 +329,23 @@ export function BookingHome() {
     endTime: "13:00",
   }));
 
+  const activeUser = currentUser;
+  const isAdmin = Boolean(activeUser && adminUserIds.has(activeUser.uid));
+  const reschedulingAppointment =
+    adminAppointments.find((appointment) => appointment.id === reschedulingAppointmentId) ?? null;
+  const schedulingAppointments = reschedulingAppointment
+    ? appointments.filter((appointment) => appointment.id !== reschedulingAppointment.id)
+    : appointments;
   const selectedService = services.find((item) => item.id === selectedServiceId) ?? services[0];
   const days = useMemo(
-    () => buildCalendarDays(visibleMonth, selectedService, appointments, workSettings, today),
-    [appointments, selectedService, visibleMonth, workSettings, today],
+    () => buildCalendarDays(visibleMonth, selectedService, schedulingAppointments, workSettings, today),
+    [schedulingAppointments, selectedService, visibleMonth, workSettings, today],
   );
   const selectedDay =
     days.find((day) => dayKey(day.date) === selectedKey) ??
     days.find((day) => day.monthOffset === 0) ??
     days[0];
   const selectedDayKey = dayKey(selectedDay.date);
-  const activeUser = useMemo<AuthUser | null>(
-    () =>
-      currentUser ??
-      (isTestMode
-        ? {
-            uid: "test-user",
-            displayName: "Tryb testowy",
-            email: "test@bnb.local",
-            photoURL: null,
-          }
-        : null),
-    [currentUser, isTestMode],
-  );
-  const isAdmin = Boolean(activeUser && adminUserIds.has(activeUser.uid));
   const adminAppointmentDays = useMemo(
     () =>
       Array.from(new Set(adminAppointments.map((appointment) => appointment.dateKey))).sort(
@@ -394,11 +388,29 @@ export function BookingHome() {
       getAvailableTimes(
         selectedDayKey,
         selectedService.durationMinutes,
-        appointments,
+        schedulingAppointments,
         workSettings,
       ),
-    [appointments, selectedDayKey, selectedService, workSettings],
+    [schedulingAppointments, selectedDayKey, selectedService, workSettings],
   );
+  const clientAppointments = useMemo(
+    () =>
+      activeUser
+        ? adminAppointments
+            .filter(
+              (appointment) =>
+                appointment.userId === activeUser.uid && appointment.dateKey >= dayKey(today),
+            )
+            .sort((first, second) => {
+              if (first.dateKey !== second.dateKey) return first.dateKey.localeCompare(second.dateKey);
+              return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
+            })
+        : [],
+    [activeUser, adminAppointments, today],
+  );
+  const nearestClientAppointment = clientAppointments[0] ?? null;
+  const selectedClientAppointment =
+    adminAppointments.find((appointment) => appointment.id === clientAppointmentId) ?? null;
   const canContinue = Boolean(selectedServiceId && selectedKey && selectedTime);
   const canConfirm =
     Boolean(activeUser) && form.fullName.trim().length >= 3 && getPhoneDigits(form.phone).length === 9;
@@ -410,6 +422,7 @@ export function BookingHome() {
     });
   const nearestAvailability = availabilityWindows[0] ?? null;
   const nextSaturdayOffset = (6 - today.getDay() + 7) % 7 || 7;
+  const visibleStep = step === "admin" && !isAdmin ? "booking" : step;
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) {
@@ -501,11 +514,11 @@ export function BookingHome() {
   }, [isAdmin, step]);
 
   useEffect(() => {
-    if (step !== "success") return undefined;
+    if (visibleStep !== "success") return undefined;
     setSuccessReady(false);
     const timer = window.setTimeout(() => setSuccessReady(true), 3000);
     return () => window.clearTimeout(timer);
-  }, [step]);
+  }, [visibleStep]);
 
   const shiftMonth = (direction: -1 | 1) => {
     setVisibleMonth(
@@ -576,7 +589,6 @@ export function BookingHome() {
 
   const handleGoogleSignIn = async () => {
     setAuthError("");
-    setIsTestMode(false);
     setIsSigningIn(true);
 
     try {
@@ -599,10 +611,55 @@ export function BookingHome() {
     if (currentUser) {
       await signOut(getAuth(firebaseApp));
     }
-    setIsTestMode(false);
     setStep("booking");
     setSelectedTime("");
     setBookingSummary(null);
+    setClientAppointmentId(null);
+    setReschedulingAppointmentId(null);
+  };
+
+  const getServiceForAppointment = (appointment: AdminAppointment) =>
+    services.find((service) => service.name === appointment.serviceName) ??
+    services.find((service) => service.durationMinutes === appointment.durationMinutes) ??
+    services[0];
+
+  const beginClientReschedule = (appointment: AdminAppointment) => {
+    const service = getServiceForAppointment(appointment);
+    const appointmentDate = dateFromKey(appointment.dateKey);
+
+    setSelectedServiceId(service.id);
+    setVisibleMonth(new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), 1));
+    setSelectedKey(appointment.dateKey);
+    setSelectedTime(appointment.startTime);
+    setClientAppointmentId(null);
+    setReschedulingAppointmentId(appointment.id);
+    setStep("booking");
+  };
+
+  const cancelClientAppointment = (appointmentId: string) => {
+    setClientAppointmentId(null);
+    if (reschedulingAppointmentId === appointmentId) {
+      setReschedulingAppointmentId(null);
+      setSelectedTime("");
+    }
+
+    void remove(ref(realtimeDb, `appointments/${appointmentId}`));
+  };
+
+  const saveClientReschedule = async () => {
+    if (!reschedulingAppointment || !selectedTime || isSaving) return;
+
+    try {
+      setIsSaving(true);
+      await update(ref(realtimeDb, `appointments/${reschedulingAppointment.id}`), {
+        dateKey: selectedDayKey,
+        startTime: selectedTime,
+      });
+      setReschedulingAppointmentId(null);
+      setSelectedTime("");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const canMoveAdminAppointment = (
@@ -700,10 +757,26 @@ export function BookingHome() {
     void remove(ref(realtimeDb, `appointments/${appointmentId}`));
   };
 
-  const footerLabel = step === "booking" ? "Dalej" : step === "confirm" ? "Potwierdź" : "Gotowe";
+  const footerLabel =
+    visibleStep === "booking"
+      ? reschedulingAppointment
+        ? "Zapisz zmianę"
+        : "Dalej"
+      : visibleStep === "confirm"
+        ? "Potwierdź"
+        : "Gotowe";
   const footerDisabled =
-    step === "booking" ? !canContinue : step === "confirm" ? !canConfirm || isSaving : !successReady;
-  const footerClassName = `bottom-action ${step === "confirm" && canConfirm ? "ready" : ""}`;
+    visibleStep === "booking"
+      ? !canContinue || isSaving
+      : visibleStep === "confirm"
+        ? !canConfirm || isSaving
+        : !successReady;
+  const footerClassName = `bottom-action ${
+    (visibleStep === "confirm" && canConfirm) ||
+    (visibleStep === "booking" && reschedulingAppointment && canContinue)
+      ? "ready"
+      : ""
+  }`;
 
   if (!authReady) {
     return (
@@ -761,21 +834,6 @@ export function BookingHome() {
             {isSigningIn ? "Łączenie..." : "Kontynuuj z Google"}
           </button>
 
-          <button
-            className="test-login-button"
-            type="button"
-            onClick={() => {
-              setAuthError("");
-              setIsTestMode(true);
-              setForm((current) => ({
-                ...current,
-                fullName: current.fullName || "Tryb testowy",
-              }));
-            }}
-          >
-            Wejdź testowo
-          </button>
-
           {authError ? <p className="auth-error">{authError}</p> : null}
         </section>
       </main>
@@ -784,11 +842,13 @@ export function BookingHome() {
 
   return (
     <main
-      className={`app-shell ${step === "confirm" || step === "success" ? "confirm-page" : ""} ${
-        step === "admin" ? "admin-page" : ""
+      className={`app-shell ${
+        visibleStep === "confirm" || visibleStep === "success" ? "confirm-page" : ""
+      } ${
+        visibleStep === "admin" ? "admin-page" : ""
       }`}
     >
-      {step === "admin" && isAdmin ? (
+      {visibleStep === "admin" ? (
         <section className="admin-view" aria-label="Panel admina">
           <div className="admin-topbar">
             <button className="back-button" type="button" onClick={() => setStep("booking")}>
@@ -1198,7 +1258,7 @@ export function BookingHome() {
             </button>
           </nav>
         </section>
-      ) : step === "booking" ? (
+      ) : visibleStep === "booking" ? (
         <>
           <section className="booking-panel" aria-label="Kalendarz rezerwacji">
             <div className="topbar">
@@ -1289,6 +1349,58 @@ export function BookingHome() {
                 );
               })}
             </div>
+
+            <section className="client-visit-panel" aria-label="Twoja wizyta">
+              <div className="client-visit-heading">
+                <p className="section-label">Twoja wizyta</p>
+                {clientAppointments.length > 1 ? <span>{clientAppointments.length}</span> : null}
+              </div>
+
+              {reschedulingAppointment ? (
+                <div className="client-visit-card editing">
+                  <div>
+                    <strong>Zmieniasz termin</strong>
+                    <span>
+                      Wybierz nowy dzień i godzinę dla usługi{" "}
+                      {reschedulingAppointment.serviceName}.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReschedulingAppointmentId(null);
+                      setSelectedTime("");
+                    }}
+                  >
+                    Anuluj
+                  </button>
+                </div>
+              ) : nearestClientAppointment ? (
+                <button
+                  className="client-visit-card"
+                  type="button"
+                  onClick={() => setClientAppointmentId(nearestClientAppointment.id)}
+                >
+                  <span>
+                    <strong>{nearestClientAppointment.serviceName}</strong>
+                    <small>
+                      {dayFormatter.format(dateFromKey(nearestClientAppointment.dateKey))},{" "}
+                      {nearestClientAppointment.startTime} -{" "}
+                      {addMinutesToTime(
+                        nearestClientAppointment.startTime,
+                        nearestClientAppointment.durationMinutes,
+                      )}
+                    </small>
+                  </span>
+                  <b>{nearestClientAppointment.price}</b>
+                </button>
+              ) : (
+                <div className="client-visit-empty">
+                  <strong>Nie masz zaplanowanej wizyty</strong>
+                  <span>Wybierz usługę, dzień i godzinę, żeby dodać pierwszą rezerwację.</span>
+                </div>
+              )}
+            </section>
           </section>
 
           <aside className="day-summary" aria-label="Szczegóły rezerwacji">
@@ -1300,6 +1412,7 @@ export function BookingHome() {
                     className={`service-card ${selectedServiceId === item.id ? "selected" : ""}`}
                     key={item.id}
                     type="button"
+                    disabled={Boolean(reschedulingAppointment)}
                     onClick={() => {
                       setSelectedServiceId(item.id);
                       setSelectedTime("");
@@ -1343,7 +1456,7 @@ export function BookingHome() {
             </div>
           </aside>
         </>
-      ) : step === "confirm" ? (
+      ) : visibleStep === "confirm" ? (
         <section className="confirm-view" aria-label="Wypełnij i potwierdź">
           <button className="back-button" type="button" onClick={() => setStep("booking")}>
             ‹ Wróć
@@ -1424,19 +1537,96 @@ export function BookingHome() {
         </section>
       )}
 
-      {step !== "admin" ? (
+      {selectedClientAppointment && visibleStep !== "admin" ? (
+        <div className="client-modal-backdrop" role="presentation">
+          <section
+            className="client-appointment-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Szczegóły Twojej wizyty"
+          >
+            <button
+              className="modal-close-button"
+              type="button"
+              onClick={() => setClientAppointmentId(null)}
+              aria-label="Zamknij szczegóły wizyty"
+            >
+              ×
+            </button>
+            <div className="modal-title">
+              <p className="eyebrow">Twoja wizyta</p>
+              <h2>{selectedClientAppointment.serviceName}</h2>
+            </div>
+
+            <div className="modal-details">
+              <span>
+                <small>Dzień</small>
+                <strong>{dayFormatter.format(dateFromKey(selectedClientAppointment.dateKey))}</strong>
+              </span>
+              <span>
+                <small>Godzina</small>
+                <strong>
+                  {selectedClientAppointment.startTime} -{" "}
+                  {addMinutesToTime(
+                    selectedClientAppointment.startTime,
+                    selectedClientAppointment.durationMinutes,
+                  )}
+                </strong>
+              </span>
+              <span>
+                <small>Czas trwania</small>
+                <strong>{formatDuration(selectedClientAppointment.durationMinutes)}</strong>
+              </span>
+              <span>
+                <small>Cena</small>
+                <strong>{selectedClientAppointment.price}</strong>
+              </span>
+            </div>
+
+            <div className="modal-client-note">
+              <strong>{selectedClientAppointment.clientName}</strong>
+              <span>
+                W razie zmiany planów możesz przesunąć termin albo odwołać wizytę.
+              </span>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                onClick={() => beginClientReschedule(selectedClientAppointment)}
+              >
+                Zmień
+              </button>
+              <button
+                className="danger"
+                type="button"
+                onClick={() => cancelClientAppointment(selectedClientAppointment.id)}
+              >
+                Odmów
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {visibleStep !== "admin" ? (
         <footer className="bottom-footer" aria-label="Akcja rezerwacji">
           <button
             className={footerClassName}
             type="button"
             disabled={footerDisabled}
             onClick={() => {
-              if (step === "booking") {
+              if (visibleStep === "booking") {
+                if (reschedulingAppointment) {
+                  void saveClientReschedule();
+                  return;
+                }
+
                 setStep("confirm");
                 return;
               }
 
-              if (step === "confirm") {
+              if (visibleStep === "confirm") {
                 void confirmBooking();
                 return;
               }
