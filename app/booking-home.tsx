@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   getAuth,
   GoogleAuthProvider,
@@ -378,6 +378,7 @@ export function BookingHome() {
   const [successReady, setSuccessReady] = useState(false);
   const [draggedAppointmentId, setDraggedAppointmentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [heroScrollProgress, setHeroScrollProgress] = useState(0);
   const [availabilityDraft, setAvailabilityDraft] = useState(() => ({
     start: dayKey(today),
     end: dayKey(today),
@@ -606,6 +607,33 @@ export function BookingHome() {
     setSuccessReady(false);
     const timer = window.setTimeout(() => setSuccessReady(true), 3000);
     return () => window.clearTimeout(timer);
+  }, [visibleStep]);
+
+  useEffect(() => {
+    if (visibleStep !== "booking") {
+      setHeroScrollProgress(0);
+      return undefined;
+    }
+
+    let frame = 0;
+    const updateHeroProgress = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const heroHeight = Math.max(1, window.innerWidth * 0.5625);
+        const progress = Math.min(1, Math.max(0, window.scrollY / (heroHeight * 0.62)));
+        setHeroScrollProgress(Number(progress.toFixed(3)));
+      });
+    };
+
+    updateHeroProgress();
+    window.addEventListener("scroll", updateHeroProgress, { passive: true });
+    window.addEventListener("resize", updateHeroProgress);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", updateHeroProgress);
+      window.removeEventListener("resize", updateHeroProgress);
+    };
   }, [visibleStep]);
 
   const shiftMonth = (direction: -1 | 1) => {
@@ -942,6 +970,13 @@ export function BookingHome() {
       ? "ready"
       : ""
   }`;
+  const heroStyle = {
+    opacity: 1 - heroScrollProgress,
+    transform: `translateY(${-18 * heroScrollProgress}px) scale(${1 - 0.035 * heroScrollProgress})`,
+    filter: `saturate(${1 - 0.28 * heroScrollProgress}) brightness(${
+      1 - 0.38 * heroScrollProgress
+    })`,
+  } as CSSProperties;
 
   if (!authReady) {
     return (
@@ -1609,7 +1644,7 @@ export function BookingHome() {
         </section>
       ) : visibleStep === "booking" ? (
         <>
-          <div className="home-hero" aria-hidden="true">
+          <div className="home-hero" style={heroStyle} aria-hidden="true">
             <img
               src="/brand/bnb-hero.png"
               alt=""
