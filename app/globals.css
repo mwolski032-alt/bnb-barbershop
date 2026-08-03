@@ -203,7 +203,7 @@ input {
   animation: spin-ring 900ms linear infinite;
 }
 
-@media (min-width: 901px) {
+@media (min-width: 1200px) {
   .auth-shell {
     width: min(100%, 58rem);
   }
@@ -2948,7 +2948,7 @@ h2 {
   transform: translateX(300%);
 }
 
-@media (min-width: 901px) {
+@media (min-width: 1200px) {
   .app-shell.admin-page {
     width: min(1380px, calc(100% - 2rem));
     min-height: 100vh;
@@ -3425,7 +3425,7 @@ h2 {
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1199px) {
   body {
     background: #07080c;
   }
