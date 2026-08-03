@@ -651,6 +651,31 @@ h2 {
   font-size: 0.95rem;
 }
 
+.appointment-status {
+  display: inline-grid;
+  justify-self: start;
+  width: fit-content;
+  min-height: 1.45rem;
+  padding: 0.24rem 0.58rem;
+  border-radius: 999px;
+  background: rgba(48, 209, 88, 0.15);
+  color: #7df09c;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 820;
+  line-height: 1;
+}
+
+.appointment-status.rescheduled {
+  background: rgba(255, 159, 10, 0.16);
+  color: #ffd08a;
+}
+
+.appointment-status.cancelled {
+  background: rgba(255, 69, 58, 0.16);
+  color: #ffb4ae;
+}
+
 .client-visit-card.editing {
   cursor: default;
   background: linear-gradient(180deg, rgba(48, 209, 88, 0.13), rgba(76, 141, 255, 0.08));
@@ -675,6 +700,42 @@ h2 {
 
 .client-visit-empty {
   padding: 0.95rem;
+}
+
+.nearest-slot-button {
+  display: grid;
+  gap: 0.18rem;
+  width: 100%;
+  min-height: 3.65rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.95rem;
+  border: 1px solid rgba(76, 141, 255, 0.28);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(76, 141, 255, 0.14), rgba(48, 209, 88, 0.07)),
+    rgba(255, 255, 255, 0.045);
+  color: #eef1f7;
+  cursor: pointer;
+  text-align: left;
+}
+
+.nearest-slot-button span {
+  color: #8db7ff;
+  font-size: 0.75rem;
+  font-weight: 820;
+}
+
+.nearest-slot-button strong {
+  overflow: hidden;
+  font-size: 0.9rem;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nearest-slot-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
 }
 
 .day-tile {
@@ -999,10 +1060,16 @@ h2 {
   line-height: 1;
 }
 
+.modal-calendar-button {
+  position: absolute;
+  top: 0.9rem;
+  right: 3.75rem;
+}
+
 .modal-title {
   display: grid;
   gap: 0.35rem;
-  padding-right: 2.9rem;
+  padding-right: 5.75rem;
 }
 
 .modal-title h2 {

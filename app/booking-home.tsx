@@ -52,6 +52,8 @@ type ServiceDraft = {
   durationMinutes: string;
 };
 
+type AppointmentStatus = "confirmed" | "rescheduled" | "cancelled";
+
 type BookingSummary = {
   serviceName: string;
   servicePrice: string;
@@ -71,6 +73,7 @@ type AdminAppointment = Appointment & {
   serviceName: string;
   price: string;
   color: "blue" | "mint";
+  status?: AppointmentStatus;
 };
 
 type AvailabilityWindow = {
@@ -120,6 +123,14 @@ const adminClientDateFormatter = new Intl.DateTimeFormat("pl-PL", {
   day: "2-digit",
   month: "2-digit",
 });
+const appointmentStatusLabels: Record<AppointmentStatus, string> = {
+  confirmed: "Potwierdzona",
+  rescheduled: "Przesunięta",
+  cancelled: "Odwołana",
+};
+
+const normalizeAppointmentStatus = (status?: string): AppointmentStatus =>
+  status === "rescheduled" || status === "cancelled" ? status : "confirmed";
 
 const dayKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
@@ -220,6 +231,16 @@ const buildCalendarEvent = (summary: BookingSummary) => {
     "END:VCALENDAR",
   ].join("\r\n");
 };
+
+const appointmentToBookingSummary = (appointment: AdminAppointment): BookingSummary => ({
+  serviceName: appointment.serviceName,
+  servicePrice: appointment.price,
+  durationMinutes: appointment.durationMinutes,
+  date: dateFromKey(appointment.dateKey),
+  time: appointment.startTime,
+  fullName: appointment.clientName,
+  phone: appointment.phone ?? "",
+});
 
 const buildTimeSlots = (startHour = 6, endHour = 22) => {
   const slots: string[] = [];
@@ -510,6 +531,31 @@ export function BookingHome() {
       ),
     [schedulingAppointments, selectedDayKey, selectedService, workSettings],
   );
+  const nearestFreeSlot = useMemo(() => {
+    const searchDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    for (let offset = 0; offset < 180; offset += 1) {
+      const date = new Date(searchDate);
+      date.setDate(searchDate.getDate() + offset);
+      const dateKeyValue = dayKey(date);
+      const times = getAvailableTimes(
+        dateKeyValue,
+        selectedService.durationMinutes,
+        schedulingAppointments,
+        workSettings,
+      );
+
+      if (times.length > 0) {
+        return {
+          date,
+          dateKey: dateKeyValue,
+          time: times[0],
+        };
+      }
+    }
+
+    return null;
+  }, [schedulingAppointments, selectedService, today, workSettings]);
   const clientAppointments = useMemo(
     () =>
       activeUser
@@ -581,12 +627,24 @@ export function BookingHome() {
     const appointmentsRef = ref(realtimeDb, "appointments");
 
     return onValue(appointmentsRef, (snapshot) => {
-      const value = snapshot.val() as Record<string, AdminAppointment> | null;
+      const value = snapshot.val() as Record<string, Partial<AdminAppointment>> | null;
       const loadedAppointments = Object.entries(value ?? {})
         .map(([id, appointment]) => ({
-          ...appointment,
           id: appointment.id ?? id,
+          dateKey: appointment.dateKey ?? dayKey(today),
+          startTime: appointment.startTime ?? "00:00",
+          durationMinutes: Number(appointment.durationMinutes) || 30,
+          clientName: appointment.clientName ?? "Klient",
+          clientEmail: appointment.clientEmail ?? "",
+          clientPhotoUrl: appointment.clientPhotoUrl ?? "",
+          phone: appointment.phone ?? "",
+          userId: appointment.userId ?? "",
+          serviceName: appointment.serviceName ?? "Usługa",
+          price: appointment.price ?? "0 zł",
+          color: appointment.color === "mint" ? "mint" : "blue",
+          status: normalizeAppointmentStatus(appointment.status),
         }))
+        .filter((appointment) => appointment.status !== "cancelled")
         .sort((first, second) => {
           if (first.dateKey !== second.dateKey) return first.dateKey.localeCompare(second.dateKey);
           return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
@@ -699,6 +757,16 @@ export function BookingHome() {
     setVisibleMonth(
       (current) => new Date(current.getFullYear(), current.getMonth() + direction, 1),
     );
+  };
+
+  const selectNearestFreeSlot = () => {
+    if (!nearestFreeSlot) return;
+
+    setVisibleMonth(
+      new Date(nearestFreeSlot.date.getFullYear(), nearestFreeSlot.date.getMonth(), 1),
+    );
+    setSelectedKey(nearestFreeSlot.dateKey);
+    setSelectedTime(nearestFreeSlot.time);
   };
 
   const updateForm = (field: keyof FormState, value: string) => {
@@ -906,6 +974,7 @@ export function BookingHome() {
       await update(ref(realtimeDb, `appointments/${reschedulingAppointment.id}`), {
         dateKey: selectedDayKey,
         startTime: selectedTime,
+        status: "rescheduled",
       });
       setReschedulingAppointmentId(null);
       setSelectedTime("");
@@ -960,6 +1029,7 @@ export function BookingHome() {
       serviceName: selectedService.name,
       price: selectedService.price,
       color: appointmentColor,
+      status: "confirmed",
     };
 
     setBookingSummary({
@@ -993,19 +1063,15 @@ export function BookingHome() {
     window.setTimeout(() => window.URL.revokeObjectURL(calendarUrl), 1200);
   };
 
-  const addBookingToCalendar = async () => {
-    if (!bookingSummary) return;
-
-    const calendarBlob = new Blob([buildCalendarEvent(bookingSummary)], {
+  const saveSummaryToCalendar = async (summary: BookingSummary) => {
+    const calendarBlob = new Blob([buildCalendarEvent(summary)], {
       type: "text/calendar;charset=utf-8",
     });
-    const fileName = getCalendarFileName(bookingSummary);
+    const fileName = getCalendarFileName(summary);
     const calendarFile = new File([calendarBlob], fileName, { type: "text/calendar" });
     const shareData = {
       title: "Wizyta BNB Barbershop",
-      text: `${bookingSummary.serviceName}, ${dayFormatter.format(bookingSummary.date)}, ${
-        bookingSummary.time
-      }`,
+      text: `${summary.serviceName}, ${dayFormatter.format(summary.date)}, ${summary.time}`,
       files: [calendarFile],
     };
 
@@ -1023,6 +1089,15 @@ export function BookingHome() {
     downloadCalendarFile(calendarBlob, fileName);
   };
 
+  const addBookingToCalendar = async () => {
+    if (!bookingSummary) return;
+    await saveSummaryToCalendar(bookingSummary);
+  };
+
+  const addAppointmentToCalendar = async (appointment: AdminAppointment) => {
+    await saveSummaryToCalendar(appointmentToBookingSummary(appointment));
+  };
+
   const moveAdminAppointment = (appointmentId: string, startTime: string) => {
     const appointment = adminAppointments.find((item) => item.id === appointmentId);
     if (!appointment || !canMoveAdminAppointment(appointment, startTime)) {
@@ -1033,6 +1108,7 @@ export function BookingHome() {
     void update(ref(realtimeDb, `appointments/${appointmentId}`), {
       dateKey: adminSelectedKey,
       startTime,
+      status: "rescheduled",
     });
     setDraggedAppointmentId(null);
   };
@@ -1298,6 +1374,9 @@ export function BookingHome() {
                             <span>
                               {appointment.clientName} · {appointment.serviceName}
                             </span>
+                            <small className={`appointment-status ${normalizeAppointmentStatus(appointment.status)}`}>
+                              {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
+                            </small>
                           </div>
                           <div className="appointment-actions">
                             <button
@@ -1391,6 +1470,9 @@ export function BookingHome() {
                             {appointment.startTime} · {appointment.serviceName}
                           </span>
                           <small>{hasPhone ? formatPhoneNumber(phoneDigits) : "Brak numeru"}</small>
+                          <em className={`appointment-status ${normalizeAppointmentStatus(appointment.status)}`}>
+                            {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
+                          </em>
                         </div>
                         {hasPhone ? (
                           <a
@@ -1898,6 +1980,9 @@ export function BookingHome() {
                         nearestClientAppointment.durationMinutes,
                       )}
                     </small>
+                    <em className={`appointment-status ${normalizeAppointmentStatus(nearestClientAppointment.status)}`}>
+                      {appointmentStatusLabels[normalizeAppointmentStatus(nearestClientAppointment.status)]}
+                    </em>
                   </span>
                   <b>{nearestClientAppointment.price}</b>
                 </button>
@@ -1934,6 +2019,19 @@ export function BookingHome() {
                   </button>
                 ))}
               </div>
+              <button
+                className="nearest-slot-button"
+                type="button"
+                disabled={!nearestFreeSlot}
+                onClick={selectNearestFreeSlot}
+              >
+                <span>Najbliższy wolny termin</span>
+                <strong>
+                  {nearestFreeSlot
+                    ? `${dayFormatter.format(nearestFreeSlot.date)}, ${nearestFreeSlot.time}`
+                    : "Brak wolnych terminów"}
+                </strong>
+              </button>
             </div>
 
             <div className="summary-heading">
@@ -2086,6 +2184,9 @@ export function BookingHome() {
                       {appointment.startTime} -{" "}
                       {addMinutesToTime(appointment.startTime, appointment.durationMinutes)}
                     </small>
+                    <em className={`appointment-status ${normalizeAppointmentStatus(appointment.status)}`}>
+                      {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
+                    </em>
                   </span>
                   <b>{appointment.price}</b>
                 </button>
@@ -2103,6 +2204,17 @@ export function BookingHome() {
             aria-modal="true"
             aria-label="Szczegóły Twojej wizyty"
           >
+            <button
+              className="modal-calendar-button calendar-save-button"
+              type="button"
+              onClick={() => {
+                void addAppointmentToCalendar(selectedClientAppointment);
+              }}
+              aria-label="Dodaj tę wizytę do kalendarza"
+              title="Dodaj tę wizytę do kalendarza"
+            >
+              <span aria-hidden="true" />
+            </button>
             <button
               className="modal-close-button"
               type="button"
@@ -2138,6 +2250,12 @@ export function BookingHome() {
               <span>
                 <small>Cena</small>
                 <strong>{selectedClientAppointment.price}</strong>
+              </span>
+              <span>
+                <small>Status</small>
+                <strong>
+                  {appointmentStatusLabels[normalizeAppointmentStatus(selectedClientAppointment.status)]}
+                </strong>
               </span>
             </div>
 
