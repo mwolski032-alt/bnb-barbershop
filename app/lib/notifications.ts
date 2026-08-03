@@ -9,6 +9,20 @@ type NotificationUser = {
   email: string | null;
 };
 
+export type PushRegistrationResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason:
+        | "unsupported_browser"
+        | "missing_vapid_key"
+        | "unsupported_firebase_messaging"
+        | "permission_denied"
+        | "service_worker_unavailable"
+        | "token_unavailable"
+        | "token_error";
+    };
+
 const readVapidKey = () => import.meta.env.VITE_FIREBASE_VAPID_KEY as string | undefined;
 
 const tokenPathKey = (token: string) =>
@@ -20,14 +34,25 @@ const tokenPathKey = (token: string) =>
     .replaceAll("]", "_")
     .replaceAll("/", "_");
 
-export const registerPushNotifications = async (user: NotificationUser, isAdmin: boolean) => {
-  if (typeof window === "undefined" || !("Notification" in window)) {
-    return false;
+export const registerPushNotifications = async (
+  user: NotificationUser,
+  isAdmin: boolean,
+): Promise<PushRegistrationResult> => {
+  if (
+    typeof window === "undefined" ||
+    !("Notification" in window) ||
+    !("PushManager" in window)
+  ) {
+    return { ok: false, reason: "unsupported_browser" };
   }
 
   const vapidKey = readVapidKey();
-  if (!vapidKey || !(await isSupported())) {
-    return false;
+  if (!vapidKey) {
+    return { ok: false, reason: "missing_vapid_key" };
+  }
+
+  if (!(await isSupported())) {
+    return { ok: false, reason: "unsupported_firebase_messaging" };
   }
 
   const permission =
@@ -36,18 +61,28 @@ export const registerPushNotifications = async (user: NotificationUser, isAdmin:
       : Notification.permission;
 
   if (permission !== "granted") {
-    return false;
+    return { ok: false, reason: "permission_denied" };
+  }
+
+  if (!("serviceWorker" in navigator)) {
+    return { ok: false, reason: "service_worker_unavailable" };
   }
 
   const serviceWorkerRegistration = await navigator.serviceWorker.ready;
   const messaging = getMessaging(firebaseApp);
-  const token = await getToken(messaging, {
-    vapidKey,
-    serviceWorkerRegistration,
-  });
+  let token = "";
+
+  try {
+    token = await getToken(messaging, {
+      vapidKey,
+      serviceWorkerRegistration,
+    });
+  } catch {
+    return { ok: false, reason: "token_error" };
+  }
 
   if (!token) {
-    return false;
+    return { ok: false, reason: "token_unavailable" };
   }
 
   await set(ref(realtimeDb, `notificationTokens/${user.uid}/${tokenPathKey(token)}`), {
@@ -58,7 +93,7 @@ export const registerPushNotifications = async (user: NotificationUser, isAdmin:
     updatedAt: Date.now(),
   });
 
-  return true;
+  return { ok: true };
 };
 
 export const sendAppointmentNotification = async (

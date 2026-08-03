@@ -496,7 +496,18 @@ export function BookingHome() {
   const [successReady, setSuccessReady] = useState(false);
   const [draggedAppointmentId, setDraggedAppointmentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [pushStatus, setPushStatus] = useState<"idle" | "saving" | "enabled" | "blocked">("idle");
+  const [pushStatus, setPushStatus] = useState<
+    | "idle"
+    | "saving"
+    | "enabled"
+    | "permission_denied"
+    | "missing_vapid_key"
+    | "unsupported_browser"
+    | "unsupported_firebase_messaging"
+    | "service_worker_unavailable"
+    | "token_unavailable"
+    | "token_error"
+  >("idle");
   const [heroScrollProgress, setHeroScrollProgress] = useState(0);
   const [availabilityDraft, setAvailabilityDraft] = useState(() => ({
     start: dayKey(today),
@@ -1063,7 +1074,7 @@ export function BookingHome() {
 
     try {
       setPushStatus("saving");
-      const enabled = await registerPushNotifications(
+      const result = await registerPushNotifications(
         {
           uid: activeUser.uid,
           displayName: activeUser.displayName ?? null,
@@ -1071,9 +1082,9 @@ export function BookingHome() {
         },
         isAdmin,
       );
-      setPushStatus(enabled ? "enabled" : "blocked");
+      setPushStatus(result.ok ? "enabled" : result.reason);
     } catch {
-      setPushStatus("blocked");
+      setPushStatus("token_error");
     }
   };
 
@@ -1359,9 +1370,21 @@ export function BookingHome() {
       ? "Włączanie..."
       : pushStatus === "enabled"
         ? "Powiadomienia włączone"
-        : pushStatus === "blocked"
-          ? "Powiadomienia zablokowane"
-          : "Włącz powiadomienia";
+        : pushStatus === "permission_denied"
+          ? "Brak zgody w telefonie"
+          : pushStatus === "missing_vapid_key"
+            ? "Brak VAPID w Netlify"
+            : pushStatus === "unsupported_firebase_messaging"
+              ? "Brak wsparcia FCM"
+              : pushStatus === "unsupported_browser"
+                ? "Brak wsparcia przeglądarki"
+                : pushStatus === "service_worker_unavailable"
+                  ? "Brak service workera"
+                  : pushStatus === "token_unavailable"
+                    ? "Brak tokenu"
+                    : pushStatus === "token_error"
+                      ? "Błąd tokenu"
+                      : "Włącz powiadomienia";
   const heroStyle = {
     opacity: 1 - heroScrollProgress,
     transform: `translateY(${-18 * heroScrollProgress}px) scale(${1 - 0.035 * heroScrollProgress})`,
