@@ -242,6 +242,7 @@ input {
 }
 
 .home-hero {
+  display: none;
   position: sticky;
   top: 0;
   z-index: 0;
@@ -276,7 +277,7 @@ input {
 }
 
 .home-hero + .booking-panel {
-  border-top: 0;
+  border-top: 1px solid var(--line);
 }
 
 .topbar {
@@ -3051,9 +3052,14 @@ h2 {
   }
 
   .home-hero {
+    display: block;
     position: relative;
     top: auto;
     margin-top: -0.5rem;
+  }
+
+  .home-hero + .booking-panel {
+    border-top: 0;
   }
 
   .app-shell.confirm-page {
