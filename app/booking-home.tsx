@@ -412,6 +412,14 @@ export function BookingHome() {
   const nextSaturdayOffset = (6 - today.getDay() + 7) % 7 || 7;
 
   useEffect(() => {
+    if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) {
+      return;
+    }
+
+    navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     const firebaseAuth = getAuth(firebaseApp);
 
     return onAuthStateChanged(firebaseAuth, (user) => {
