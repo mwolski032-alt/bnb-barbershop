@@ -89,15 +89,20 @@ input {
 .auth-logo {
   display: grid;
   place-items: center;
-  width: 2.6rem;
-  height: 2.6rem;
-  border-radius: 50%;
+  width: 3rem;
+  height: 3rem;
+  border: 1px solid var(--line);
+  border-radius: 1.05rem;
   background:
-    radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.45), transparent 26%),
-    linear-gradient(135deg, #4c8dff, #30d158);
-  color: #ffffff;
-  font-weight: 860;
-  box-shadow: 0 14px 30px rgba(76, 141, 255, 0.28);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.035)),
+    rgba(255, 255, 255, 0.04);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
+}
+
+.auth-logo img {
+  width: 2.1rem;
+  max-height: 1.2rem;
+  object-fit: contain;
 }
 
 .auth-hero {
@@ -251,6 +256,31 @@ input {
 
 .topbar {
   align-items: flex-end;
+}
+
+.topbar-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.8rem;
+}
+
+.topbar-title > div {
+  min-width: 0;
+}
+
+.topbar-logo-mark {
+  width: 3.05rem;
+  height: 3.05rem;
+  flex: 0 0 auto;
+  padding: 0.54rem;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.035)),
+    rgba(255, 255, 255, 0.045);
+  object-fit: contain;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.24);
 }
 
 .avatar-button {
@@ -2752,7 +2782,16 @@ h2 {
 
 .success-topbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.success-logo-mark {
+  width: 4.15rem;
+  height: 2.2rem;
+  object-fit: contain;
+  opacity: 0.94;
 }
 
 .calendar-save-button {

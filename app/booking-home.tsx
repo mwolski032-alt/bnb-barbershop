@@ -945,7 +945,7 @@ export function BookingHome() {
         <section className="auth-card">
           <div className="auth-brand">
             <span className="auth-logo" aria-hidden="true">
-              B
+              <img src="/brand/bnb-logo.png" alt="" />
             </span>
             <p>BNB Barbershop</p>
           </div>
@@ -963,7 +963,7 @@ export function BookingHome() {
         <section className="auth-card">
           <div className="auth-brand">
             <span className="auth-logo" aria-hidden="true">
-              B
+              <img src="/brand/bnb-logo.png" alt="" />
             </span>
             <p>BNB Barbershop</p>
           </div>
@@ -1607,9 +1607,12 @@ export function BookingHome() {
         <>
           <section className="booking-panel" aria-label="Kalendarz rezerwacji">
             <div className="topbar">
-              <div>
-                <p className="eyebrow">BNB Barbershop</p>
-                <h1>Umów wizytę</h1>
+              <div className="topbar-title">
+                <img className="topbar-logo-mark" src="/brand/bnb-logo.png" alt="" aria-hidden="true" />
+                <div>
+                  <p className="eyebrow">BNB Barbershop</p>
+                  <h1>Umów wizytę</h1>
+                </div>
               </div>
               <div className="session-pill">
                 {activeUser.photoURL ? (
@@ -1848,6 +1851,7 @@ export function BookingHome() {
       ) : (
         <section className="success-view" aria-label="Potwierdzenie wizyty">
           <div className="success-topbar">
+            <img className="success-logo-mark" src="/brand/bnb-logo.png" alt="BNB Barbershop" />
             <button
               className="calendar-save-button"
               type="button"
