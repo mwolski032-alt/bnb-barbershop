@@ -2151,6 +2151,11 @@ h2 {
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
 }
 
+.sms-menu.drop-up .sms-template-list {
+  top: auto;
+  bottom: calc(100% + 0.45rem);
+}
+
 .sms-template-list a {
   padding: 0.68rem 0.75rem;
   border-radius: 0.72rem;

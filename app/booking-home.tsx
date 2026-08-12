@@ -579,6 +579,7 @@ export function BookingHome() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [activeNotification, setActiveNotification] = useState<AppNotification | null>(null);
+  const [smsMenuDirections, setSmsMenuDirections] = useState<Record<string, "up" | "down">>({});
   const previousAppointmentsRef = useRef<Map<string, AdminAppointment> | null>(null);
   const [heroScrollProgress, setHeroScrollProgress] = useState(0);
   const [availabilityDraft, setAvailabilityDraft] = useState(() => ({
@@ -1554,6 +1555,20 @@ export function BookingHome() {
     });
     setActiveNotification((current) => (current?.id === notificationId ? null : current));
   };
+  const updateSmsMenuDirection = (appointmentId: string, trigger: HTMLElement) => {
+    const row = trigger.closest(".client-row");
+    const list = trigger.closest(".clients-view");
+    const rowRect = row?.getBoundingClientRect();
+    const listRect = list?.getBoundingClientRect();
+    const estimatedMenuHeight = 190;
+    const spaceBelow = listRect && rowRect ? listRect.bottom - rowRect.bottom : estimatedMenuHeight;
+    const spaceAbove = listRect && rowRect ? rowRect.top - listRect.top : 0;
+    const direction = spaceBelow < estimatedMenuHeight && spaceAbove > spaceBelow ? "up" : "down";
+
+    setSmsMenuDirections((current) =>
+      current[appointmentId] === direction ? current : { ...current, [appointmentId]: direction },
+    );
+  };
   const notificationButton = (
     <button
       className={`notification-bell ${notifications.length > 0 ? "has-items" : ""}`}
@@ -1917,9 +1932,12 @@ export function BookingHome() {
                           </button>
                         ) : null}
                         {hasPhone ? (
-                          <details className="sms-menu">
+                          <details
+                            className={`sms-menu ${smsMenuDirections[appointment.id] === "up" ? "drop-up" : ""}`}
+                          >
                             <summary
                               className="sms-button"
+                              onClick={(event) => updateSmsMenuDirection(appointment.id, event.currentTarget)}
                               aria-label={`Wyślij SMS do ${appointment.clientName}`}
                             >
                               💬
