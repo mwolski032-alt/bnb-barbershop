@@ -64,6 +64,13 @@ const normalizePrivateKey = () => {
 
 const normalizeSmsPhone = (phone) => phone?.replace(/[^\d+]/g, "").replace(/^\+/, "");
 
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+
 const getAccessToken = async () => {
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = normalizePrivateKey();
@@ -364,6 +371,73 @@ const sendAdminWhatsApp = async (copy, appointment) => {
   };
 };
 
+const sendAdminEmail = async (copy, appointment) => {
+  if (!copy.sms) {
+    return { enabled: false, sent: 0, failed: 0, error: "" };
+  }
+
+  const apiKey = process.env.RESEND_API_KEY;
+  const to = process.env.ADMIN_EMAIL;
+  const from = process.env.RESEND_FROM_EMAIL;
+
+  if (!apiKey || !to || !from) {
+    return {
+      enabled: false,
+      sent: 0,
+      failed: 1,
+      error: "Missing RESEND_API_KEY, ADMIN_EMAIL or RESEND_FROM_EMAIL.",
+    };
+  }
+
+  const text = buildWhatsAppMessageBody(copy, appointment);
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
+      <h2 style="margin: 0 0 12px;">${escapeHtml(copy.title)}</h2>
+      <p>${escapeHtml(copy.body(appointment))}</p>
+      <table style="border-collapse: collapse; margin-top: 16px;">
+        <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Klient</td><td>${escapeHtml(appointment.clientName)}</td></tr>
+        <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Telefon</td><td>${escapeHtml(appointment.phone ?? "brak")}</td></tr>
+        <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Usluga</td><td>${escapeHtml(appointment.serviceName)}</td></tr>
+        <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Termin</td><td>${escapeHtml(`${appointment.dateKey} ${appointment.startTime}`)}</td></tr>
+      </table>
+    </div>
+  `;
+  const payload = {
+    from,
+    to,
+    subject: `BNB: ${copy.title}`,
+    text,
+    html,
+  };
+  const replyTo = process.env.RESEND_REPLY_TO;
+
+  if (replyTo) {
+    payload.reply_to = replyTo;
+  }
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": `${appointment.id}-${appointment.event ?? "event"}-admin-email`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const responseText = await response.text();
+
+  if (!response.ok) {
+    return {
+      enabled: true,
+      sent: 0,
+      failed: 1,
+      error: responseText || `Resend error ${response.status}`,
+    };
+  }
+
+  return { enabled: true, sent: 1, failed: 0, error: "" };
+};
+
 const sendPushNotifications = async (copy, appointment, notification, siteUrl) => {
   try {
     const accessToken = await getAccessToken();
@@ -418,13 +492,14 @@ const handler = async (request) => {
       body: copy.body(appointment),
     };
     const eventAppointment = { ...appointment, event };
-    const [sms, whatsapp, push] = await Promise.all([
+    const [sms, whatsapp, email, push] = await Promise.all([
       sendAdminSms(copy, appointment),
       sendAdminWhatsApp(copy, appointment),
+      sendAdminEmail(copy, eventAppointment),
       sendPushNotifications(copy, eventAppointment, notification, siteUrl),
     ]);
     const resultPayload = {
-      ok: sms.sent > 0 || whatsapp.sent > 0 || push.result.sent > 0,
+      ok: sms.sent > 0 || whatsapp.sent > 0 || email.sent > 0 || push.result.sent > 0,
       event,
       appointmentId: appointment.id,
       target: copy.target,
@@ -436,6 +511,7 @@ const handler = async (request) => {
       firstErrorCode: push.result.firstErrorCode,
       sms,
       whatsapp,
+      email,
       createdAt: new Date().toISOString(),
     };
 
