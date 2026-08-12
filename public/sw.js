@@ -1,5 +1,47 @@
 const CACHE_NAME = "bnb-barbershop-v3";
 const STATIC_ASSET_TYPES = new Set(["font", "image", "manifest", "script", "style"]);
+let firebaseMessagingReady = false;
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyATrBnGXzcxUR8r6Y-AeAeXDVPeKAjrymU",
+  authDomain: "bnbbarber-9a7bd.firebaseapp.com",
+  databaseURL: "https://bnbbarber-9a7bd-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "bnbbarber-9a7bd",
+  storageBucket: "bnbbarber-9a7bd.firebasestorage.app",
+  messagingSenderId: "100630377058",
+  appId: "1:100630377058:web:6cb84e6a208220153f173b",
+  measurementId: "G-KJCB540XC8",
+};
+
+const showPushNotification = (payload = {}) => {
+  const notification = payload.notification ?? {};
+  const data = payload.data ?? {};
+  const title = notification.title ?? data.title ?? "BNB Barbershop";
+  const options = {
+    body: notification.body ?? data.body ?? "Masz nowe powiadomienie.",
+    icon: notification.icon ?? data.icon ?? "/icons/icon-192.png",
+    badge: notification.badge ?? data.badge ?? "/icons/icon-192.png",
+    tag: notification.tag ?? data.tag ?? "bnb-barbershop",
+    data: {
+      url: payload.fcmOptions?.link ?? data.link ?? "/",
+    },
+  };
+
+  return self.registration.showNotification(title, options);
+};
+
+try {
+  importScripts("https://www.gstatic.com/firebasejs/12.17.0/firebase-app-compat.js");
+  importScripts("https://www.gstatic.com/firebasejs/12.17.0/firebase-messaging-compat.js");
+
+  firebase.initializeApp(FIREBASE_CONFIG);
+  firebase.messaging().onBackgroundMessage((payload) => {
+    return showPushNotification(payload);
+  });
+  firebaseMessagingReady = true;
+} catch {
+  // The plain Push API fallback below still handles notifications if Firebase
+  // cannot be loaded in the service worker.
+}
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -44,6 +86,10 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("push", (event) => {
+  if (firebaseMessagingReady) {
+    return;
+  }
+
   let payload = {};
 
   try {
@@ -52,19 +98,7 @@ self.addEventListener("push", (event) => {
     payload = {};
   }
 
-  const notification = payload.notification ?? payload.data ?? {};
-  const title = notification.title ?? "BNB Barbershop";
-  const options = {
-    body: notification.body ?? "Masz nowe powiadomienie.",
-    icon: notification.icon ?? "/icons/icon-192.png",
-    badge: notification.badge ?? "/icons/icon-192.png",
-    tag: notification.tag ?? "bnb-barbershop",
-    data: {
-      url: payload.fcmOptions?.link ?? payload.data?.link ?? "/",
-    },
-  };
-
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(showPushNotification(payload));
 });
 
 self.addEventListener("notificationclick", (event) => {

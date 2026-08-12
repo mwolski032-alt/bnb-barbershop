@@ -13,6 +13,7 @@ import { onValue, ref, remove, set, update } from "firebase/database";
 
 import { firebaseApp, realtimeDb } from "./lib/firebase";
 import {
+  listenForForegroundPushNotifications,
   registerPushNotifications,
   sendAppointmentNotification,
   sendTestNotification,
@@ -512,6 +513,8 @@ export function BookingHome() {
     | "service_worker_unavailable"
     | "token_unavailable"
     | "token_error"
+    | "no_push_targets"
+    | "test_failed"
   >("idle");
   const [heroScrollProgress, setHeroScrollProgress] = useState(0);
   const [availabilityDraft, setAvailabilityDraft] = useState(() => ({
@@ -717,6 +720,25 @@ export function BookingHome() {
 
     navigator.serviceWorker.register("/sw.js").catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
+
+    listenForForegroundPushNotifications().then((listener) => {
+      if (cancelled) {
+        listener();
+        return;
+      }
+
+      unsubscribe = listener;
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [pushStatus]);
 
   useEffect(() => {
     if (availabilityMonthGroups.length === 0) {
@@ -1103,7 +1125,14 @@ export function BookingHome() {
           uid: activeUser.uid,
           displayName: activeUser.displayName ?? null,
           email: activeUser.email ?? null,
-        }).finally(() => setPushStatus("enabled"));
+        }).then((result) => {
+          if (!result.ok || result.failed > 0) {
+            setPushStatus("test_failed");
+            return;
+          }
+
+          setPushStatus(result.sent > 0 ? "enabled" : "no_push_targets");
+        });
       }, 5000);
       return;
     }
@@ -1410,6 +1439,12 @@ export function BookingHome() {
                     : pushStatus === "token_error"
                       ? "Błąd tokenu"
                       : "Włącz powiadomienia";
+  const visiblePushButtonLabel =
+    pushStatus === "no_push_targets"
+      ? "Brak urzadzenia"
+      : pushStatus === "test_failed"
+        ? "Test nie wyszedl"
+        : pushButtonLabel;
   const heroStyle = {
     opacity: 1 - heroScrollProgress,
     transform: `translateY(${-18 * heroScrollProgress}px) scale(${1 - 0.035 * heroScrollProgress})`,
@@ -1516,7 +1551,7 @@ export function BookingHome() {
                 void handlePushButtonClick();
               }}
             >
-              {pushButtonLabel}
+              {visiblePushButtonLabel}
             </button>
           </div>
 
@@ -2196,7 +2231,7 @@ export function BookingHome() {
                   void handlePushButtonClick();
                 }}
               >
-                {pushButtonLabel}
+                {visiblePushButtonLabel}
               </button>
               {isAdmin ? (
                 <button

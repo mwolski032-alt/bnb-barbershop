@@ -1,5 +1,11 @@
-import { getToken, getMessaging, isSupported } from "firebase/messaging";
 import { ref, set } from "firebase/database";
+import {
+  getMessaging,
+  getToken,
+  isSupported,
+  onMessage,
+  type MessagePayload,
+} from "firebase/messaging";
 
 import { firebaseApp, realtimeDb } from "./firebase";
 
@@ -22,6 +28,15 @@ export type PushRegistrationResult =
         | "token_unavailable"
         | "token_error";
     };
+
+export type SendPushResult = {
+  ok: boolean;
+  sent: number;
+  targets: number;
+  failed: number;
+  error?: string;
+  firstError?: string;
+};
 
 const fallbackVapidKey =
   "BGsfxDp9YC0FwBQOvxytQHKSy9-U5x15LCFl76w3Jlj3-dtPDADSV7VbKSc4q-JRyLXSOhwt9NAmX1H17aco5YU";
@@ -96,6 +111,7 @@ export const registerPushNotifications = async (
     isAdmin,
     displayName: user.displayName ?? "",
     email: user.email ?? "",
+    userAgent: navigator.userAgent,
     updatedAt: Date.now(),
   });
 
@@ -118,29 +134,81 @@ export const sendAppointmentNotification = async (
     dateKey: string;
     startTime: string;
   },
-) => {
+): Promise<SendPushResult> => {
   try {
     const response = await fetch("/.netlify/functions/send-push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ event, appointment }),
     });
+    const result = (await response.json().catch(() => null)) as Partial<SendPushResult> | null;
 
     if (!response.ok) {
-      console.warn("Push notification request failed", await response.text());
+      return {
+        ok: false,
+        sent: 0,
+        targets: 0,
+        failed: 0,
+        error: result?.error ?? "Push notification request failed.",
+      };
     }
+
+    return {
+      ok: result?.ok ?? true,
+      sent: result?.sent ?? 0,
+      targets: result?.targets ?? 0,
+      failed: result?.failed ?? 0,
+      firstError: result?.firstError,
+      error: result?.error,
+    };
   } catch {
-    // Powiadomienia nie mogą blokować rezerwacji ani edycji wizyty.
+    return { ok: false, sent: 0, targets: 0, failed: 0, error: "Push request failed." };
   }
 };
 
-export const sendTestNotification = async (user: NotificationUser) => {
-  await sendAppointmentNotification("test_push", {
+export const sendTestNotification = async (user: NotificationUser) =>
+  sendAppointmentNotification("test_push", {
     id: `test-${Date.now()}`,
     userId: user.uid,
     clientName: user.displayName ?? "Klient",
     serviceName: "Test powiadomienia",
     dateKey: new Date().toISOString().slice(0, 10),
     startTime: new Date().toTimeString().slice(0, 5),
+  });
+
+export const listenForForegroundPushNotifications = async () => {
+  if (
+    typeof window === "undefined" ||
+    !("Notification" in window) ||
+    Notification.permission !== "granted" ||
+    !(await isSupported())
+  ) {
+    return () => undefined;
+  }
+
+  const messaging = getMessaging(firebaseApp);
+
+  return onMessage(messaging, (payload: MessagePayload) => {
+    const notification = payload.notification ?? {};
+    const data = payload.data ?? {};
+    const title = notification.title ?? data.title ?? "BNB Barbershop";
+    const options = {
+      body: notification.body ?? data.body ?? "Masz nowe powiadomienie.",
+      icon: notification.icon ?? data.icon ?? "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag: data.tag ?? "bnb-barbershop",
+      data: {
+        url: data.link ?? "/",
+      },
+    };
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.ready
+        .then((registration) => registration.showNotification(title, options))
+        .catch(() => new Notification(title, options));
+      return;
+    }
+
+    new Notification(title, options);
   });
 };
