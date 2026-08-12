@@ -13,10 +13,7 @@ import { onValue, ref, remove, set, update } from "firebase/database";
 
 import { firebaseApp, realtimeDb } from "./lib/firebase";
 import {
-  listenForForegroundPushNotifications,
-  registerPushNotifications,
   sendAppointmentNotification,
-  sendTestNotification,
 } from "./lib/notifications";
 
 type Availability = "high" | "medium" | "low" | "none";
@@ -501,21 +498,6 @@ export function BookingHome() {
   const [successReady, setSuccessReady] = useState(false);
   const [draggedAppointmentId, setDraggedAppointmentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [pushStatus, setPushStatus] = useState<
-    | "idle"
-    | "saving"
-    | "testing"
-    | "enabled"
-    | "permission_denied"
-    | "missing_vapid_key"
-    | "unsupported_browser"
-    | "unsupported_firebase_messaging"
-    | "service_worker_unavailable"
-    | "token_unavailable"
-    | "token_error"
-    | "no_push_targets"
-    | "test_failed"
-  >("idle");
   const [heroScrollProgress, setHeroScrollProgress] = useState(0);
   const [availabilityDraft, setAvailabilityDraft] = useState(() => ({
     start: dayKey(today),
@@ -720,25 +702,6 @@ export function BookingHome() {
 
     navigator.serviceWorker.register("/sw.js").catch(() => undefined);
   }, []);
-
-  useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
-    let cancelled = false;
-
-    listenForForegroundPushNotifications().then((listener) => {
-      if (cancelled) {
-        listener();
-        return;
-      }
-
-      unsubscribe = listener;
-    });
-
-    return () => {
-      cancelled = true;
-      unsubscribe?.();
-    };
-  }, [pushStatus]);
 
   useEffect(() => {
     if (availabilityMonthGroups.length === 0) {
@@ -1096,50 +1059,6 @@ export function BookingHome() {
     setReschedulingAppointmentId(null);
   };
 
-  const handleEnablePushNotifications = async () => {
-    if (!activeUser || pushStatus === "saving") return;
-
-    try {
-      setPushStatus("saving");
-      const result = await registerPushNotifications(
-        {
-          uid: activeUser.uid,
-          displayName: activeUser.displayName ?? null,
-          email: activeUser.email ?? null,
-        },
-        isAdmin,
-      );
-      setPushStatus(result.ok ? "enabled" : result.reason);
-    } catch {
-      setPushStatus("token_error");
-    }
-  };
-
-  const handlePushButtonClick = async () => {
-    if (!activeUser || pushStatus === "saving" || pushStatus === "testing") return;
-
-    if (pushStatus === "enabled") {
-      setPushStatus("testing");
-      window.setTimeout(() => {
-        void sendTestNotification({
-          uid: activeUser.uid,
-          displayName: activeUser.displayName ?? null,
-          email: activeUser.email ?? null,
-        }).then((result) => {
-          if (!result.ok || result.failed > 0) {
-            setPushStatus("test_failed");
-            return;
-          }
-
-          setPushStatus(result.sent > 0 ? "enabled" : "no_push_targets");
-        });
-      }, 5000);
-      return;
-    }
-
-    await handleEnablePushNotifications();
-  };
-
   const getServiceForAppointment = (appointment: AdminAppointment) =>
     services.find((service) => service.name === appointment.serviceName) ??
     services.find((service) => service.durationMinutes === appointment.durationMinutes) ??
@@ -1417,34 +1336,6 @@ export function BookingHome() {
       ? "ready"
       : ""
   }`;
-  const pushButtonLabel =
-    pushStatus === "saving"
-      ? "Włączanie..."
-      : pushStatus === "testing"
-        ? "Test za 5 s..."
-      : pushStatus === "enabled"
-        ? "Test powiadomienia"
-        : pushStatus === "permission_denied"
-          ? "Brak zgody w telefonie"
-          : pushStatus === "missing_vapid_key"
-            ? "Brak VAPID w Netlify"
-            : pushStatus === "unsupported_firebase_messaging"
-              ? "Brak wsparcia FCM"
-              : pushStatus === "unsupported_browser"
-                ? "Brak wsparcia przeglądarki"
-                : pushStatus === "service_worker_unavailable"
-                  ? "Brak service workera"
-                  : pushStatus === "token_unavailable"
-                    ? "Brak tokenu"
-                    : pushStatus === "token_error"
-                      ? "Błąd tokenu"
-                      : "Włącz powiadomienia";
-  const visiblePushButtonLabel =
-    pushStatus === "no_push_targets"
-      ? "Brak urzadzenia"
-      : pushStatus === "test_failed"
-        ? "Test nie wyszedl"
-        : pushButtonLabel;
   const heroStyle = {
     opacity: 1 - heroScrollProgress,
     transform: `translateY(${-18 * heroScrollProgress}px) scale(${1 - 0.035 * heroScrollProgress})`,
@@ -2227,16 +2118,6 @@ export function BookingHome() {
                   Wyloguj
                 </button>
               </div>
-              <button
-                className={`push-toggle ${pushStatus === "enabled" ? "enabled" : ""}`}
-                type="button"
-                disabled={pushStatus === "saving" || pushStatus === "testing"}
-                onClick={() => {
-                  void handlePushButtonClick();
-                }}
-              >
-                {visiblePushButtonLabel}
-              </button>
               {isAdmin ? (
                 <button
                   className="avatar-button"
