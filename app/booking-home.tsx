@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   getAuth,
   GoogleAuthProvider,
@@ -98,7 +98,16 @@ type WorkSettings = {
 
 type AuthUser = Pick<User, "uid" | "displayName" | "email" | "photoURL">;
 
+type AppNotification = {
+  id: string;
+  appointmentId: string;
+  createdAt: number;
+  title: string;
+  body: string;
+};
+
 const adminUserIds = new Set(["XxBe4dwVYWZPtl004J4tWq6AMZ73"]);
+const maxStoredNotifications = 40;
 
 const defaultServices: Service[] = [
   {
@@ -136,6 +145,39 @@ const appointmentStatusLabels: Record<AppointmentStatus, string> = {
   confirmed: "Potwierdzona",
   rescheduled: "Przesunięta",
   cancelled: "Odwołana",
+};
+
+const getNotificationStorageKey = (uid: string) => `bnb-notifications-${uid}`;
+
+const readStoredNotifications = (uid: string): AppNotification[] => {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(getNotificationStorageKey(uid)) ?? "[]");
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .filter(
+        (item): item is AppNotification =>
+          typeof item?.id === "string" &&
+          typeof item?.appointmentId === "string" &&
+          typeof item?.createdAt === "number" &&
+          typeof item?.title === "string" &&
+          typeof item?.body === "string",
+      )
+      .slice(0, maxStoredNotifications);
+  } catch {
+    return [];
+  }
+};
+
+const writeStoredNotifications = (uid: string, notifications: AppNotification[]) => {
+  if (typeof window === "undefined") return;
+
+  window.localStorage.setItem(
+    getNotificationStorageKey(uid),
+    JSON.stringify(notifications.slice(0, maxStoredNotifications)),
+  );
 };
 const appointmentColorPalette: AppointmentColor[] = [
   "blue",
@@ -498,6 +540,10 @@ export function BookingHome() {
   const [successReady, setSuccessReady] = useState(false);
   const [draggedAppointmentId, setDraggedAppointmentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
+  const [activeNotification, setActiveNotification] = useState<AppNotification | null>(null);
+  const previousAppointmentsRef = useRef<Map<string, AdminAppointment> | null>(null);
   const [heroScrollProgress, setHeroScrollProgress] = useState(0);
   const [availabilityDraft, setAvailabilityDraft] = useState(() => ({
     start: dayKey(today),
@@ -741,6 +787,13 @@ export function BookingHome() {
   }, []);
 
   useEffect(() => {
+    previousAppointmentsRef.current = null;
+    setNotificationPanelOpen(false);
+    setActiveNotification(null);
+    setNotifications(activeUser ? readStoredNotifications(activeUser.uid) : []);
+  }, [activeUser]);
+
+  useEffect(() => {
     if (!activeUser) {
       setAppointments([]);
       setAdminAppointments([]);
@@ -784,6 +837,118 @@ export function BookingHome() {
       );
     });
   }, [activeUser]);
+
+  useEffect(() => {
+    if (!activeUser) return;
+
+    const previousAppointments = previousAppointmentsRef.current;
+    const currentAppointments = new Map(adminAppointments.map((appointment) => [appointment.id, appointment]));
+
+    if (!previousAppointments) {
+      previousAppointmentsRef.current = currentAppointments;
+      return;
+    }
+
+    const nextNotifications: AppNotification[] = [];
+    const createNotification = (
+      appointment: AdminAppointment,
+      event: "new" | "rescheduled" | "cancelled",
+    ): AppNotification | null => {
+      const isClientAppointment = appointment.userId === activeUser.uid;
+
+      if (!isAdmin && !isClientAppointment) return null;
+
+      const audience = isAdmin ? "admin" : "client";
+      const eventId = `${audience}-${event}-${appointment.id}-${appointment.dateKey}-${appointment.startTime}`;
+      const serviceLine = `${appointment.serviceName}, ${appointment.dateKey}, ${appointment.startTime}`;
+
+      if (event === "new") {
+        return {
+          id: eventId,
+          appointmentId: appointment.id,
+          createdAt: Date.now(),
+          title: isAdmin ? "Nowa wizyta" : "Wizyta potwierdzona",
+          body: isAdmin ? `${appointment.clientName}: ${serviceLine}` : serviceLine,
+        };
+      }
+
+      if (event === "rescheduled") {
+        return {
+          id: eventId,
+          appointmentId: appointment.id,
+          createdAt: Date.now(),
+          title: "Wizyta przesunieta",
+          body: isAdmin ? `${appointment.clientName}: ${serviceLine}` : `Nowy termin: ${serviceLine}`,
+        };
+      }
+
+      return {
+        id: eventId,
+        appointmentId: appointment.id,
+        createdAt: Date.now(),
+        title: "Wizyta odwolana",
+        body: isAdmin ? `${appointment.clientName}: ${serviceLine}` : serviceLine,
+      };
+    };
+
+    for (const appointment of currentAppointments.values()) {
+      const previousAppointment = previousAppointments.get(appointment.id);
+      const currentStatus = normalizeAppointmentStatus(appointment.status);
+      const previousStatus = previousAppointment
+        ? normalizeAppointmentStatus(previousAppointment.status)
+        : null;
+
+      if (!previousAppointment) {
+        const notification = createNotification(appointment, "new");
+        if (notification) nextNotifications.push(notification);
+        continue;
+      }
+
+      if (
+        currentStatus === "rescheduled" &&
+        (previousStatus !== "rescheduled" ||
+          previousAppointment.dateKey !== appointment.dateKey ||
+          previousAppointment.startTime !== appointment.startTime)
+      ) {
+        const notification = createNotification(appointment, "rescheduled");
+        if (notification) nextNotifications.push(notification);
+      }
+    }
+
+    for (const previousAppointment of previousAppointments.values()) {
+      if (!currentAppointments.has(previousAppointment.id)) {
+        const notification = createNotification(previousAppointment, "cancelled");
+        if (notification) nextNotifications.push(notification);
+      }
+    }
+
+    if (nextNotifications.length > 0) {
+      const existingIds = new Set(notifications.map((notification) => notification.id));
+      const uniqueNotifications = nextNotifications.filter(
+        (notification) => !existingIds.has(notification.id),
+      );
+
+      if (uniqueNotifications.length > 0) {
+        const updatedNotifications = [...uniqueNotifications, ...notifications].slice(
+          0,
+          maxStoredNotifications,
+        );
+
+        writeStoredNotifications(activeUser.uid, updatedNotifications);
+        setNotifications(updatedNotifications);
+        setActiveNotification(uniqueNotifications[0]);
+      }
+    }
+
+    previousAppointmentsRef.current = currentAppointments;
+  }, [activeUser, adminAppointments, isAdmin, notifications]);
+
+  useEffect(() => {
+    if (!activeNotification) return undefined;
+
+    const timer = window.setTimeout(() => setActiveNotification(null), 5200);
+    return () => window.clearTimeout(timer);
+  }, [activeNotification]);
 
   useEffect(() => {
     if (!activeUser) {
@@ -1343,6 +1508,18 @@ export function BookingHome() {
       1 - 0.38 * heroScrollProgress
     })`,
   } as CSSProperties;
+  const notificationButton = (
+    <button
+      className={`notification-bell ${notifications.length > 0 ? "has-items" : ""}`}
+      type="button"
+      onClick={() => setNotificationPanelOpen((isOpen) => !isOpen)}
+      aria-label="Otwórz listę powiadomień"
+      aria-expanded={notificationPanelOpen}
+    >
+      <span aria-hidden="true">🔔</span>
+      {notifications.length > 0 ? <b>{Math.min(notifications.length, 9)}</b> : null}
+    </button>
+  );
 
   if (!authReady) {
     return (
@@ -1434,6 +1611,7 @@ export function BookingHome() {
                       : "Usługi"}
               </h1>
             </div>
+            {notificationButton}
           </div>
 
           <div className="admin-content-frame">
@@ -2101,6 +2279,7 @@ export function BookingHome() {
                   <p className="eyebrow">BNB Barbershop</p>
                   <h1>Umów wizytę</h1>
                 </div>
+                {notificationButton}
               </div>
               <div className="session-pill">
                 {activeUser.photoURL ? (
@@ -2402,6 +2581,44 @@ export function BookingHome() {
           ) : null}
         </section>
       )}
+
+      {notificationPanelOpen ? (
+        <aside className="notification-panel" aria-label="Lista powiadomień">
+          <div className="notification-panel-header">
+            <strong>Powiadomienia</strong>
+            <button type="button" onClick={() => setNotificationPanelOpen(false)} aria-label="Zamknij">
+              ×
+            </button>
+          </div>
+          {notifications.length > 0 ? (
+            <div className="notification-list">
+              {notifications.map((notification) => (
+                <article className="notification-item" key={notification.id}>
+                  <strong>{notification.title}</strong>
+                  <span>{notification.body}</span>
+                  <small>
+                    {new Intl.DateTimeFormat("pl-PL", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    }).format(new Date(notification.createdAt))}
+                  </small>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="notification-empty">Brak powiadomień.</p>
+          )}
+        </aside>
+      ) : null}
+
+      {activeNotification ? (
+        <div className="notification-toast" role="status" aria-live="polite">
+          <strong>{activeNotification.title}</strong>
+          <span>{activeNotification.body}</span>
+        </div>
+      ) : null}
 
       {selectedAdminEditAppointment && visibleStep === "admin" ? (
         <div className="client-modal-backdrop" role="presentation">
