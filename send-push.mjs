@@ -280,6 +280,90 @@ const sendAdminSms = async (copy, appointment) => {
   return { enabled: true, sent: 1, failed: 0, error: "" };
 };
 
+const buildWhatsAppMessageBody = (copy, appointment) => copy.sms?.(appointment) ?? copy.body(appointment);
+
+const sendAdminWhatsApp = async (copy, appointment) => {
+  if (!copy.sms) {
+    return { enabled: false, mode: "", sent: 0, failed: 0, error: "" };
+  }
+
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const to = normalizeSmsPhone(process.env.ADMIN_WHATSAPP_PHONE);
+
+  if (!token || !phoneNumberId || !to) {
+    return {
+      enabled: false,
+      mode: "",
+      sent: 0,
+      failed: 1,
+      error: "Missing WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID or ADMIN_WHATSAPP_PHONE.",
+    };
+  }
+
+  const apiVersion = process.env.WHATSAPP_API_VERSION || "v23.0";
+  const templateName = process.env.WHATSAPP_TEMPLATE_NAME;
+  const templateLanguage = process.env.WHATSAPP_TEMPLATE_LANGUAGE || "pl";
+  const message = buildWhatsAppMessageBody(copy, appointment).slice(0, 1024);
+  const payload = templateName
+    ? {
+        messaging_product: "whatsapp",
+        to,
+        type: "template",
+        template: {
+          name: templateName,
+          language: { code: templateLanguage },
+          components: [
+            {
+              type: "body",
+              parameters: [{ type: "text", text: message }],
+            },
+          ],
+        },
+      }
+    : {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "text",
+        text: {
+          preview_url: false,
+          body: message,
+        },
+      };
+
+  const response = await fetch(
+    `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+  const responseText = await response.text();
+
+  if (!response.ok) {
+    return {
+      enabled: true,
+      mode: templateName ? "template" : "text",
+      sent: 0,
+      failed: 1,
+      error: responseText || `WhatsApp API error ${response.status}`,
+    };
+  }
+
+  return {
+    enabled: true,
+    mode: templateName ? "template" : "text",
+    sent: 1,
+    failed: 0,
+    error: "",
+  };
+};
+
 const sendPushNotifications = async (copy, appointment, notification, siteUrl) => {
   try {
     const accessToken = await getAccessToken();
@@ -334,12 +418,13 @@ const handler = async (request) => {
       body: copy.body(appointment),
     };
     const eventAppointment = { ...appointment, event };
-    const [sms, push] = await Promise.all([
+    const [sms, whatsapp, push] = await Promise.all([
       sendAdminSms(copy, appointment),
+      sendAdminWhatsApp(copy, appointment),
       sendPushNotifications(copy, eventAppointment, notification, siteUrl),
     ]);
     const resultPayload = {
-      ok: sms.sent > 0 || push.result.sent > 0,
+      ok: sms.sent > 0 || whatsapp.sent > 0 || push.result.sent > 0,
       event,
       appointmentId: appointment.id,
       target: copy.target,
@@ -350,6 +435,7 @@ const handler = async (request) => {
       firstError: push.result.firstError,
       firstErrorCode: push.result.firstErrorCode,
       sms,
+      whatsapp,
       createdAt: new Date().toISOString(),
     };
 
