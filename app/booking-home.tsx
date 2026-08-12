@@ -1508,6 +1508,16 @@ export function BookingHome() {
       1 - 0.38 * heroScrollProgress
     })`,
   } as CSSProperties;
+  const deleteNotification = (notificationId: string) => {
+    if (!activeUser) return;
+
+    setNotifications((current) => {
+      const updatedNotifications = current.filter((notification) => notification.id !== notificationId);
+      writeStoredNotifications(activeUser.uid, updatedNotifications);
+      return updatedNotifications;
+    });
+    setActiveNotification((current) => (current?.id === notificationId ? null : current));
+  };
   const notificationButton = (
     <button
       className={`notification-bell ${notifications.length > 0 ? "has-items" : ""}`}
@@ -2594,7 +2604,16 @@ export function BookingHome() {
             <div className="notification-list">
               {notifications.map((notification) => (
                 <article className="notification-item" key={notification.id}>
-                  <strong>{notification.title}</strong>
+                  <div className="notification-item-title">
+                    <strong>{notification.title}</strong>
+                    <button
+                      type="button"
+                      onClick={() => deleteNotification(notification.id)}
+                      aria-label="Usuń powiadomienie"
+                    >
+                      ×
+                    </button>
+                  </div>
                   <span>{notification.body}</span>
                   <small>
                     {new Intl.DateTimeFormat("pl-PL", {
