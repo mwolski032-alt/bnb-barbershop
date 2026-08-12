@@ -2124,6 +2124,47 @@ h2 {
   box-shadow: 0 10px 26px rgba(48, 209, 88, 0.12);
 }
 
+.sms-menu {
+  position: relative;
+}
+
+.sms-menu summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.sms-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.sms-template-list {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  display: grid;
+  min-width: 12rem;
+  padding: 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  background: rgba(16, 18, 24, 0.96);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+}
+
+.sms-template-list a {
+  padding: 0.68rem 0.75rem;
+  border-radius: 0.72rem;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 820;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sms-template-list a:hover {
+  background: rgba(48, 209, 88, 0.18);
+}
+
 .sms-button.disabled {
   opacity: 0.28;
 }

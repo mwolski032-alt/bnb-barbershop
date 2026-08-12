@@ -106,6 +106,8 @@ type AppNotification = {
   body: string;
 };
 
+type SmsTemplate = "confirmation" | "reschedule" | "reminder" | "custom";
+
 const adminUserIds = new Set(["XxBe4dwVYWZPtl004J4tWq6AMZ73"]);
 const maxStoredNotifications = 40;
 
@@ -321,6 +323,40 @@ const appointmentToBookingSummary = (appointment: AdminAppointment): BookingSumm
   fullName: appointment.clientName,
   phone: appointment.phone ?? "",
 });
+
+const smsTemplateLabels: Record<SmsTemplate, string> = {
+  confirmation: "Potwierdzenie",
+  reschedule: "Zmiana terminu",
+  reminder: "Przypomnienie",
+  custom: "Custom",
+};
+
+const smsTemplates: SmsTemplate[] = ["confirmation", "reschedule", "reminder", "custom"];
+
+const buildClientSmsMessage = (template: SmsTemplate, appointment: AdminAppointment) => {
+  const date = adminClientDateFormatter.format(dateFromKey(appointment.dateKey));
+  const visit = `${date} o ${appointment.startTime}`;
+
+  if (template === "confirmation") {
+    return `Siema! Potwierdzam Twoja wizyte: ${visit}. Usluga: ${appointment.serviceName}. Do zobaczenia!`;
+  }
+
+  if (template === "reschedule") {
+    return `Siema! Zmienilem termin Twojej wizyty. Nowy termin: ${visit}. Usluga: ${appointment.serviceName}. W razie pytan odpisz na ta wiadomosc.`;
+  }
+
+  if (template === "reminder") {
+    return `Siema! Przypominam o Twojej wizycie jutro, ${visit}. Usluga: ${appointment.serviceName}. Do zobaczenia!`;
+  }
+
+  return "";
+};
+
+const buildSmsHref = (phoneDigits: string, message: string) => {
+  const cleanMessage = message.trim();
+
+  return cleanMessage ? `sms:${phoneDigits}?body=${encodeURIComponent(cleanMessage)}` : `sms:${phoneDigits}`;
+};
 
 const buildTimeSlots = (startHour = 6, endHour = 22) => {
   const slots: string[] = [];
@@ -1881,13 +1917,24 @@ export function BookingHome() {
                           </button>
                         ) : null}
                         {hasPhone ? (
-                          <a
-                            className="sms-button"
-                            href={`sms:${phoneDigits}`}
-                            aria-label={`Wyślij SMS do ${appointment.clientName}`}
-                          >
-                            💬
-                          </a>
+                          <details className="sms-menu">
+                            <summary
+                              className="sms-button"
+                              aria-label={`Wyślij SMS do ${appointment.clientName}`}
+                            >
+                              💬
+                            </summary>
+                            <div className="sms-template-list">
+                              {smsTemplates.map((template) => (
+                                <a
+                                  key={template}
+                                  href={buildSmsHref(phoneDigits, buildClientSmsMessage(template, appointment))}
+                                >
+                                  {smsTemplateLabels[template]}
+                                </a>
+                              ))}
+                            </div>
+                          </details>
                         ) : (
                           <span className="sms-button disabled" aria-label="Brak numeru telefonu">
                             💬
