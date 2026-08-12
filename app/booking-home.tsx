@@ -2279,7 +2279,6 @@ export function BookingHome() {
                   <p className="eyebrow">BNB Barbershop</p>
                   <h1>Umów wizytę</h1>
                 </div>
-                {notificationButton}
               </div>
               <div className="session-pill">
                 {activeUser.photoURL ? (
@@ -2288,6 +2287,7 @@ export function BookingHome() {
                   <span aria-hidden="true">{(activeUser.displayName ?? "K").slice(0, 1)}</span>
                 )}
                 <strong>{activeUser.displayName ?? activeUser.email ?? "Klient"}</strong>
+                {notificationButton}
                 <button
                   type="button"
                   onClick={() => {

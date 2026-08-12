@@ -401,6 +401,16 @@ input {
   box-shadow: 0 8px 18px rgba(255, 77, 95, 0.28);
 }
 
+.session-pill .notification-bell {
+  width: 2rem;
+  height: 2rem;
+  box-shadow: none;
+}
+
+.session-pill .notification-bell span {
+  font-size: 0.84rem;
+}
+
 .notification-panel {
   position: fixed;
   z-index: 80;
