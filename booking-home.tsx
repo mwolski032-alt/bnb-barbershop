@@ -1543,16 +1543,6 @@ export function BookingHome() {
                       : "Usługi"}
               </h1>
             </div>
-            <button
-              className={`push-toggle ${pushStatus === "enabled" ? "enabled" : ""}`}
-              type="button"
-              disabled={pushStatus === "saving" || pushStatus === "testing"}
-              onClick={() => {
-                void handlePushButtonClick();
-              }}
-            >
-              {visiblePushButtonLabel}
-            </button>
           </div>
 
           <div className="admin-content-frame">
@@ -1775,6 +1765,8 @@ export function BookingHome() {
                   adminClientAppointments.map((appointment) => {
                     const phoneDigits = getPhoneDigits(appointment.phone ?? "");
                     const hasPhone = phoneDigits.length === 9;
+                    const isRescheduled =
+                      normalizeAppointmentStatus(appointment.status) === "rescheduled";
 
                     return (
                       <article className="client-row" key={appointment.id}>
@@ -1797,6 +1789,18 @@ export function BookingHome() {
                             {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
                           </em>
                         </button>
+                        {isRescheduled ? (
+                          <button
+                            className="client-confirm-button"
+                            type="button"
+                            disabled={isSaving}
+                            onClick={() => {
+                              void confirmClientRescheduledAppointment(appointment.id);
+                            }}
+                          >
+                            Potwierdz
+                          </button>
+                        ) : null}
                         {hasPhone ? (
                           <a
                             className="sms-button"
