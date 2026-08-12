@@ -426,6 +426,12 @@ const sendResendEmail = async ({ to, subject, text, html, idempotencyKey }) => {
     subject,
     text,
     html,
+    headers: {
+      Importance: "high",
+      Priority: "urgent",
+      "X-Priority": "1",
+      "X-MSMail-Priority": "High",
+    },
   };
   const replyTo = process.env.RESEND_REPLY_TO;
 
@@ -463,7 +469,7 @@ const sendAdminEmail = async (copy, appointment) => {
 
   return sendResendEmail({
     to: process.env.ADMIN_EMAIL,
-    subject: `BNB: ${copy.title}`,
+    subject: `PILNE BNB: ${copy.title}`,
     text: buildWhatsAppMessageBody(copy, appointment),
     html: renderAppointmentEmail(copy, appointment),
     idempotencyKey: `${appointment.id}-${appointment.event ?? "event"}-admin-email`,
