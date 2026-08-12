@@ -50,6 +50,29 @@ const eventCopy = {
   },
 };
 
+const clientEmailCopy = {
+  new_booking: {
+    title: "Potwierdzenie wizyty",
+    body: (appointment) =>
+      `Twoja wizyta w BNB Barbershop zostala potwierdzona: ${appointment.serviceName}, ${appointment.dateKey}, ${appointment.startTime}.`,
+  },
+  client_rescheduled: {
+    title: "Potwierdzenie zmiany terminu",
+    body: (appointment) =>
+      `Zmienilismy termin Twojej wizyty: ${appointment.serviceName}, ${appointment.dateKey}, ${appointment.startTime}.`,
+  },
+  admin_rescheduled: {
+    title: "Wizyta zostala przesunieta",
+    body: (appointment) =>
+      `Administrator przesunal Twoja wizyte. Nowy termin: ${appointment.serviceName}, ${appointment.dateKey}, ${appointment.startTime}.`,
+  },
+  admin_cancelled: {
+    title: "Wizyta zostala odwolana",
+    body: (appointment) =>
+      `Twoja wizyta ${appointment.serviceName}, ${appointment.dateKey}, ${appointment.startTime} zostala odwolana przez administratora.`,
+  },
+};
+
 const base64Url = (value) =>
   Buffer.from(value)
     .toString("base64")
@@ -70,6 +93,19 @@ const escapeHtml = (value) =>
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+
+const renderAppointmentEmail = (copy, appointment, intro) => `
+  <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
+    <h2 style="margin: 0 0 12px;">${escapeHtml(copy.title)}</h2>
+    <p>${escapeHtml(intro ?? copy.body(appointment))}</p>
+    <table style="border-collapse: collapse; margin-top: 16px;">
+      <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Klient</td><td>${escapeHtml(appointment.clientName)}</td></tr>
+      <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Telefon</td><td>${escapeHtml(appointment.phone ?? "brak")}</td></tr>
+      <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Usluga</td><td>${escapeHtml(appointment.serviceName)}</td></tr>
+      <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Termin</td><td>${escapeHtml(`${appointment.dateKey} ${appointment.startTime}`)}</td></tr>
+    </table>
+  </div>
+`;
 
 const getAccessToken = async () => {
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
@@ -371,13 +407,8 @@ const sendAdminWhatsApp = async (copy, appointment) => {
   };
 };
 
-const sendAdminEmail = async (copy, appointment) => {
-  if (!copy.sms) {
-    return { enabled: false, sent: 0, failed: 0, error: "" };
-  }
-
+const sendResendEmail = async ({ to, subject, text, html, idempotencyKey }) => {
   const apiKey = process.env.RESEND_API_KEY;
-  const to = process.env.ADMIN_EMAIL;
   const from = process.env.RESEND_FROM_EMAIL;
 
   if (!apiKey || !to || !from) {
@@ -385,27 +416,14 @@ const sendAdminEmail = async (copy, appointment) => {
       enabled: false,
       sent: 0,
       failed: 1,
-      error: "Missing RESEND_API_KEY, ADMIN_EMAIL or RESEND_FROM_EMAIL.",
+      error: "Missing RESEND_API_KEY, recipient email or RESEND_FROM_EMAIL.",
     };
   }
 
-  const text = buildWhatsAppMessageBody(copy, appointment);
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
-      <h2 style="margin: 0 0 12px;">${escapeHtml(copy.title)}</h2>
-      <p>${escapeHtml(copy.body(appointment))}</p>
-      <table style="border-collapse: collapse; margin-top: 16px;">
-        <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Klient</td><td>${escapeHtml(appointment.clientName)}</td></tr>
-        <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Telefon</td><td>${escapeHtml(appointment.phone ?? "brak")}</td></tr>
-        <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Usluga</td><td>${escapeHtml(appointment.serviceName)}</td></tr>
-        <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Termin</td><td>${escapeHtml(`${appointment.dateKey} ${appointment.startTime}`)}</td></tr>
-      </table>
-    </div>
-  `;
   const payload = {
     from,
     to,
-    subject: `BNB: ${copy.title}`,
+    subject,
     text,
     html,
   };
@@ -420,7 +438,7 @@ const sendAdminEmail = async (copy, appointment) => {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      "Idempotency-Key": `${appointment.id}-${appointment.event ?? "event"}-admin-email`,
+      "Idempotency-Key": idempotencyKey,
     },
     body: JSON.stringify(payload),
   });
@@ -436,6 +454,41 @@ const sendAdminEmail = async (copy, appointment) => {
   }
 
   return { enabled: true, sent: 1, failed: 0, error: "" };
+};
+
+const sendAdminEmail = async (copy, appointment) => {
+  if (!copy.sms) {
+    return { enabled: false, sent: 0, failed: 0, error: "" };
+  }
+
+  return sendResendEmail({
+    to: process.env.ADMIN_EMAIL,
+    subject: `BNB: ${copy.title}`,
+    text: buildWhatsAppMessageBody(copy, appointment),
+    html: renderAppointmentEmail(copy, appointment),
+    idempotencyKey: `${appointment.id}-${appointment.event ?? "event"}-admin-email`,
+  });
+};
+
+const sendClientEmail = async (event, appointment) => {
+  const copy = clientEmailCopy[event];
+  const to = appointment.clientEmail;
+
+  if (!copy) {
+    return { enabled: false, sent: 0, failed: 0, error: "" };
+  }
+
+  if (!to) {
+    return { enabled: false, sent: 0, failed: 1, error: "Missing appointment.clientEmail." };
+  }
+
+  return sendResendEmail({
+    to,
+    subject: `BNB Barbershop: ${copy.title}`,
+    text: copy.body(appointment),
+    html: renderAppointmentEmail(copy, appointment),
+    idempotencyKey: `${appointment.id}-${event}-client-email`,
+  });
 };
 
 const sendPushNotifications = async (copy, appointment, notification, siteUrl) => {
@@ -492,14 +545,15 @@ const handler = async (request) => {
       body: copy.body(appointment),
     };
     const eventAppointment = { ...appointment, event };
-    const [sms, whatsapp, email, push] = await Promise.all([
+    const [sms, whatsapp, email, clientEmail, push] = await Promise.all([
       sendAdminSms(copy, appointment),
       sendAdminWhatsApp(copy, appointment),
       sendAdminEmail(copy, eventAppointment),
+      sendClientEmail(event, eventAppointment),
       sendPushNotifications(copy, eventAppointment, notification, siteUrl),
     ]);
     const resultPayload = {
-      ok: sms.sent > 0 || whatsapp.sent > 0 || email.sent > 0 || push.result.sent > 0,
+      ok: sms.sent > 0 || whatsapp.sent > 0 || email.sent > 0 || clientEmail.sent > 0 || push.result.sent > 0,
       event,
       appointmentId: appointment.id,
       target: copy.target,
@@ -512,6 +566,7 @@ const handler = async (request) => {
       sms,
       whatsapp,
       email,
+      clientEmail,
       createdAt: new Date().toISOString(),
     };
 
