@@ -68,6 +68,24 @@ test("keeps the premium client booking flow and safety controls", async () => {
   assert.match(styles, /\.client-service-picker \.service-list/);
 });
 
+test("keeps the mobile booking gestures and bottom-sheet interactions", async () => {
+  const [bookingHome, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /beginCalendarGesture/);
+  assert.match(bookingHome, /Math\.abs\(deltaX\) < 52/);
+  assert.match(bookingHome, /scrollToBookingSection/);
+  assert.match(bookingHome, /client-bottom-sheet appointment-detail-sheet/);
+  assert.match(bookingHome, /role="alertdialog"/);
+  assert.doesNotMatch(bookingHome, /window\.confirm\("Czy na pewno odwołać tę wizytę\?"\)/);
+  assert.match(styles, /\.client-calendar\s*{[^}]*touch-action:\s*pan-y/s);
+  assert.match(styles, /\.sheet-grabber\s*{/);
+  assert.match(styles, /@keyframes sheet-in/);
+  assert.match(styles, /@media \(max-width: 360px\)/);
+});
+
 test("keeps the professional admin client directory and SMS workflow", async () => {
   const [bookingHome, styles] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),

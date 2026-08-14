@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   getAuth,
   GoogleAuthProvider,
@@ -621,6 +628,9 @@ export function BookingHome() {
   const [bookingSummary, setBookingSummary] = useState<BookingSummary | null>(null);
   const [clientAppointmentId, setClientAppointmentId] = useState<string | null>(null);
   const [clientAppointmentsListOpen, setClientAppointmentsListOpen] = useState(false);
+  const [pendingClientCancellationId, setPendingClientCancellationId] = useState<string | null>(
+    null,
+  );
   const [adminEditAppointmentId, setAdminEditAppointmentId] = useState<string | null>(null);
   const [reschedulingAppointmentId, setReschedulingAppointmentId] = useState<string | null>(null);
   const [successReady, setSuccessReady] = useState(false);
@@ -641,6 +651,12 @@ export function BookingHome() {
   const [workFeedback, setWorkFeedback] = useState<WorkFeedback | null>(null);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const previousAppointmentsRef = useRef<Map<string, AdminAppointment> | null>(null);
+  const bookingServiceRef = useRef<HTMLDivElement | null>(null);
+  const bookingCalendarRef = useRef<HTMLDivElement | null>(null);
+  const bookingTimeRef = useRef<HTMLDivElement | null>(null);
+  const calendarGestureRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const calendarSwipeConsumedRef = useRef(false);
+  const sheetGestureRef = useRef<{ pointerId: number; y: number } | null>(null);
   const [heroScrollProgress, setHeroScrollProgress] = useState(0);
   const [availabilityDraft, setAvailabilityDraft] = useState(() => ({
     start: dayKey(today),
@@ -856,6 +872,8 @@ export function BookingHome() {
   const canShiftToPreviousMonth = visibleMonth.getTime() > currentMonthStart.getTime();
   const selectedClientAppointment =
     clientAppointments.find((appointment) => appointment.id === clientAppointmentId) ?? null;
+  const pendingClientCancellation =
+    clientAppointments.find((appointment) => appointment.id === pendingClientCancellationId) ?? null;
   const selectedAdminEditAppointment =
     adminAppointments.find((appointment) => appointment.id === adminEditAppointmentId) ?? null;
   const selectedAdminClient =
@@ -866,7 +884,8 @@ export function BookingHome() {
     smsClient?.appointments.find((appointment) => appointment.id === smsComposer?.appointmentId) ??
     null;
   const editingService = services.find((service) => service.id === editingServiceId) ?? null;
-  const canContinue = Boolean(selectedServiceId && selectedKey && selectedTime);
+  const hasSelectedDay = selectedKey === selectedDayKey && availableTimes.length > 0;
+  const canContinue = Boolean(selectedServiceId && hasSelectedDay && selectedTime);
   const canConfirm =
     Boolean(activeUser) && form.fullName.trim().length >= 3 && getPhoneDigits(form.phone).length === 9;
   const canSaveService =
@@ -1221,6 +1240,16 @@ export function BookingHome() {
   }, [availableTimes, selectedTime]);
 
   useEffect(() => {
+    const currentSelection = days.find((day) => dayKey(day.date) === selectedKey);
+    if (currentSelection?.freeSlots) return;
+
+    const firstAvailableDay =
+      days.find((day) => day.monthOffset === 0 && day.freeSlots > 0) ??
+      days.find((day) => day.freeSlots > 0);
+    if (firstAvailableDay) setSelectedKey(dayKey(firstAvailableDay.date));
+  }, [days, selectedKey]);
+
+  useEffect(() => {
     if (!services.some((service) => service.id === selectedServiceId)) {
       setSelectedServiceId(services[0]?.id ?? defaultServices[0].id);
       setSelectedTime("");
@@ -1236,17 +1265,25 @@ export function BookingHome() {
   useEffect(() => {
     if (visibleStep !== "success") return undefined;
     setSuccessReady(false);
-    const timer = window.setTimeout(() => setSuccessReady(true), 3000);
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const timer = window.setTimeout(() => setSuccessReady(true), prefersReducedMotion ? 80 : 900);
     return () => window.clearTimeout(timer);
+  }, [visibleStep]);
+
+  useEffect(() => {
+    if (visibleStep === "admin" || visibleStep === "booking") return;
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" }));
   }, [visibleStep]);
 
   useEffect(() => {
     const clientModalOpen = Boolean(
       clientAppointmentsListOpen ||
         (selectedClientAppointment && visibleStep !== "admin") ||
+        pendingClientCancellation ||
         selectedAdminEditAppointment ||
         selectedAdminClient ||
-        smsComposer,
+        smsComposer ||
+        notificationPanelOpen,
     );
     if (!clientModalOpen) return undefined;
 
@@ -1255,7 +1292,11 @@ export function BookingHome() {
     const closeTopOverlay = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
 
-      if (smsComposer) {
+      if (notificationPanelOpen) {
+        setNotificationPanelOpen(false);
+      } else if (pendingClientCancellation) {
+        setPendingClientCancellationId(null);
+      } else if (smsComposer) {
         setSmsComposer(null);
       } else if (selectedAdminEditAppointment) {
         setAdminEditAppointmentId(null);
@@ -1275,6 +1316,8 @@ export function BookingHome() {
     };
   }, [
     clientAppointmentsListOpen,
+    notificationPanelOpen,
+    pendingClientCancellation,
     selectedAdminClient,
     selectedAdminEditAppointment,
     selectedClientAppointment,
@@ -1316,9 +1359,66 @@ export function BookingHome() {
 
   const shiftMonth = (direction: -1 | 1) => {
     if (direction === -1 && !canShiftToPreviousMonth) return;
+    setSelectedTime("");
     setVisibleMonth(
       (current) => new Date(current.getFullYear(), current.getMonth() + direction, 1),
     );
+  };
+
+  const scrollToBookingSection = (target: HTMLElement | null) => {
+    if (!target) return;
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
+  };
+
+  const beginCalendarGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" || !event.isPrimary) return;
+    calendarGestureRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    };
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Synthetic pointer events do not always expose an active pointer to capture.
+    }
+  };
+
+  const endCalendarGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = calendarGestureRef.current;
+    calendarGestureRef.current = null;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - gesture.x;
+    const deltaY = event.clientY - gesture.y;
+    if (Math.abs(deltaX) < 52 || Math.abs(deltaX) < Math.abs(deltaY) * 1.25) return;
+
+    calendarSwipeConsumedRef.current = true;
+    shiftMonth(deltaX < 0 ? 1 : -1);
+    window.setTimeout(() => {
+      calendarSwipeConsumedRef.current = false;
+    }, 0);
+  };
+
+  const beginSheetGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" || !event.isPrimary) return;
+    sheetGestureRef.current = { pointerId: event.pointerId, y: event.clientY };
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // The gesture still works when pointer capture is unavailable.
+    }
+  };
+
+  const endSheetGesture = (
+    event: ReactPointerEvent<HTMLDivElement>,
+    dismiss: () => void,
+  ) => {
+    const gesture = sheetGestureRef.current;
+    sheetGestureRef.current = null;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (event.clientY - gesture.y >= 72) dismiss();
   };
 
   const selectNearestFreeSlot = () => {
@@ -1329,6 +1429,7 @@ export function BookingHome() {
     );
     setSelectedKey(nearestFreeSlot.dateKey);
     setSelectedTime(nearestFreeSlot.time);
+    window.requestAnimationFrame(() => scrollToBookingSection(bookingTimeRef.current));
   };
 
   const updateForm = (field: keyof FormState, value: string) => {
@@ -1596,6 +1697,7 @@ export function BookingHome() {
     setBookingSummary(null);
     setClientAppointmentId(null);
     setClientAppointmentsListOpen(false);
+    setPendingClientCancellationId(null);
     setReschedulingAppointmentId(null);
   };
 
@@ -1616,12 +1718,13 @@ export function BookingHome() {
     setClientAppointmentsListOpen(false);
     setReschedulingAppointmentId(appointment.id);
     setStep("booking");
+    window.requestAnimationFrame(() => scrollToBookingSection(bookingCalendarRef.current));
   };
 
   const cancelClientAppointment = (appointmentId: string) => {
     const appointment = adminAppointments.find((item) => item.id === appointmentId);
-    if (!window.confirm("Czy na pewno odwołać tę wizytę?")) return;
 
+    setPendingClientCancellationId(null);
     setClientAppointmentId(null);
     setClientAppointmentsListOpen(false);
     if (reschedulingAppointmentId === appointmentId) {
@@ -1862,11 +1965,17 @@ export function BookingHome() {
   const footerLabel =
     visibleStep === "booking"
       ? reschedulingAppointment
-        ? "Zapisz zmianę"
-        : "Dalej"
+        ? isSaving
+          ? "Zapisywanie..."
+          : "Zapisz nowy termin"
+        : selectedTime
+          ? "Dalej: potwierdzenie"
+          : "Wybierz godzinę"
       : visibleStep === "confirm"
-        ? "Potwierdź"
-        : "Gotowe";
+        ? isSaving
+          ? "Zapisywanie..."
+          : "Potwierdź wizytę"
+        : "Wróć do panelu";
   const footerDisabled =
     visibleStep === "booking"
       ? !canContinue || isSaving
@@ -1940,7 +2049,10 @@ export function BookingHome() {
     <button
       className={`notification-bell ${notifications.length > 0 ? "has-items" : ""}`}
       type="button"
-      onClick={() => setNotificationPanelOpen((isOpen) => !isOpen)}
+      onClick={() => {
+        setActiveNotification(null);
+        setNotificationPanelOpen((isOpen) => !isOpen);
+      }}
       aria-label="Otwórz listę powiadomień"
       aria-expanded={notificationPanelOpen}
     >
@@ -3138,13 +3250,35 @@ export function BookingHome() {
                 <h2>Umów wizytę</h2>
               </div>
               <ol className="booking-progress" aria-label="Postęp rezerwacji">
-                <li className="complete"><span>1</span> Usługa</li>
-                <li className={selectedKey ? "complete" : ""}><span>2</span> Dzień</li>
-                <li className={selectedTime ? "complete" : ""}><span>3</span> Godzina</li>
+                <li className="complete">
+                  <button
+                    type="button"
+                    onClick={() => scrollToBookingSection(bookingServiceRef.current)}
+                  >
+                    <span>1</span> Usługa
+                  </button>
+                </li>
+                <li className={hasSelectedDay ? "complete" : "active"}>
+                  <button
+                    type="button"
+                    onClick={() => scrollToBookingSection(bookingCalendarRef.current)}
+                  >
+                    <span>2</span> Dzień
+                  </button>
+                </li>
+                <li className={selectedTime ? "complete active" : hasSelectedDay ? "active" : ""}>
+                  <button
+                    type="button"
+                    disabled={!hasSelectedDay}
+                    onClick={() => scrollToBookingSection(bookingTimeRef.current)}
+                  >
+                    <span>3</span> Godzina
+                  </button>
+                </li>
               </ol>
             </div>
 
-            <div className="client-service-picker">
+            <div className="client-service-picker booking-scroll-target" ref={bookingServiceRef}>
               <p className="section-label">Wybierz usługę</p>
               <div className="service-list">
                 {services.map((item) => (
@@ -3156,6 +3290,11 @@ export function BookingHome() {
                     onClick={() => {
                       setSelectedServiceId(item.id);
                       setSelectedTime("");
+                      if (window.matchMedia("(max-width: 767px)").matches) {
+                        window.requestAnimationFrame(() =>
+                          scrollToBookingSection(bookingCalendarRef.current),
+                        );
+                      }
                     }}
                     aria-pressed={selectedServiceId === item.id}
                   >
@@ -3169,10 +3308,24 @@ export function BookingHome() {
               </div>
             </div>
 
+            <div
+              className="client-calendar booking-scroll-target"
+              ref={bookingCalendarRef}
+              onPointerDown={beginCalendarGesture}
+              onPointerUp={endCalendarGesture}
+              onPointerCancel={() => {
+                calendarGestureRef.current = null;
+              }}
+              onClickCapture={(event) => {
+                if (!calendarSwipeConsumedRef.current) return;
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+            >
             <div className="calendar-header">
               <div>
                 <p className="section-label">Kalendarz</p>
-                <h2>{monthFormatter.format(visibleMonth)}</h2>
+                <h2 aria-live="polite">{monthFormatter.format(visibleMonth)}</h2>
               </div>
               <div className="month-controls" aria-label="Zmiana miesiąca">
                 <button
@@ -3215,6 +3368,11 @@ export function BookingHome() {
                     onClick={() => {
                       setSelectedKey(key);
                       setSelectedTime("");
+                      if (window.matchMedia("(max-width: 767px)").matches) {
+                        window.requestAnimationFrame(() =>
+                          scrollToBookingSection(bookingTimeRef.current),
+                        );
+                      }
                     }}
                     aria-label={`${day.day}, ${availabilityLabel[day.availability]}`}
                   >
@@ -3226,6 +3384,7 @@ export function BookingHome() {
                   </button>
                 );
               })}
+            </div>
             </div>
 
           </section>
@@ -3248,7 +3407,7 @@ export function BookingHome() {
               </button>
             </div>
 
-            <div className="summary-heading">
+            <div className="summary-heading booking-scroll-target" ref={bookingTimeRef}>
               <p className="section-label">Wybrany dzień</p>
               <h2>{selectedDayFormatter.format(selectedDay.date)}</h2>
             </div>
@@ -3282,21 +3441,26 @@ export function BookingHome() {
           </button>
 
           <div className="confirm-title">
-            <p className="eyebrow">BNB Barbershop</p>
-            <h1>Wypełnij i potwierdź</h1>
+            <p className="eyebrow">Krok 2 z 2</p>
+            <h1>Potwierdź wizytę</h1>
           </div>
 
           <div className="booking-recap" aria-label="Podsumowanie wyboru">
-            <span>{selectedService.name}</span>
-            <strong>{selectedService.price}</strong>
-            <span>
-              {dayFormatter.format(selectedDay.date)}, {selectedTime} ·{" "}
-              {formatDuration(selectedService.durationMinutes)}
+            <span className="booking-recap-service">
+              <small>Usługa</small>
+              <strong>{selectedService.name}</strong>
+              <em>{formatDuration(selectedService.durationMinutes)}</em>
+            </span>
+            <strong className="booking-recap-price">{selectedService.price}</strong>
+            <span className="booking-recap-date">
+              <small>Termin</small>
+              <strong>{dayFormatter.format(selectedDay.date)}, {selectedTime}</strong>
             </span>
           </div>
 
           <form
             className="confirm-form"
+            aria-label="Dane do rezerwacji"
             onSubmit={(event) => {
               event.preventDefault();
               if (canConfirm) {
@@ -3311,6 +3475,9 @@ export function BookingHome() {
                 value={form.fullName}
                 onChange={(event) => updateForm("fullName", event.target.value)}
                 autoComplete="name"
+                enterKeyHint="next"
+                required
+                aria-invalid={form.fullName.length > 0 && form.fullName.trim().length < 3}
               />
             </label>
             <label>
@@ -3323,6 +3490,9 @@ export function BookingHome() {
                 value={form.phone}
                 onChange={(event) => updateForm("phone", event.target.value)}
                 autoComplete="tel"
+                enterKeyHint="done"
+                required
+                aria-invalid={form.phone.length > 0 && getPhoneDigits(form.phone).length !== 9}
               />
             </label>
           </form>
@@ -3368,43 +3538,69 @@ export function BookingHome() {
       )}
 
       {notificationPanelOpen ? (
-        <aside className="notification-panel" aria-label="Lista powiadomień">
-          <div className="notification-panel-header">
-            <strong>Powiadomienia</strong>
-            <button type="button" onClick={() => setNotificationPanelOpen(false)} aria-label="Zamknij">
-              ×
-            </button>
-          </div>
-          {notifications.length > 0 ? (
-            <div className="notification-list">
-              {notifications.map((notification) => (
-                <article className="notification-item" key={notification.id}>
-                  <div className="notification-item-title">
-                    <strong>{notification.title}</strong>
-                    <button
-                      type="button"
-                      onClick={() => deleteNotification(notification.id)}
-                      aria-label="Usuń powiadomienie"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <span>{notification.body}</span>
-                  <small>
-                    {new Intl.DateTimeFormat("pl-PL", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    }).format(new Date(notification.createdAt))}
-                  </small>
-                </article>
-              ))}
+        <div
+          className="notification-panel-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setNotificationPanelOpen(false);
+          }}
+        >
+          <aside
+            className="notification-panel client-bottom-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Lista powiadomień"
+          >
+            <div
+              className="sheet-grabber"
+              aria-hidden="true"
+              onPointerDown={beginSheetGesture}
+              onPointerUp={(event) => endSheetGesture(event, () => setNotificationPanelOpen(false))}
+              onPointerCancel={() => {
+                sheetGestureRef.current = null;
+              }}
+            />
+            <div className="notification-panel-header">
+              <strong>Powiadomienia</strong>
+              <button
+                type="button"
+                onClick={() => setNotificationPanelOpen(false)}
+                aria-label="Zamknij"
+              >
+                ×
+              </button>
             </div>
-          ) : (
-            <p className="notification-empty">Brak powiadomień.</p>
-          )}
-        </aside>
+            {notifications.length > 0 ? (
+              <div className="notification-list">
+                {notifications.map((notification) => (
+                  <article className="notification-item" key={notification.id}>
+                    <div className="notification-item-title">
+                      <strong>{notification.title}</strong>
+                      <button
+                        type="button"
+                        onClick={() => deleteNotification(notification.id)}
+                        aria-label="Usuń powiadomienie"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <span>{notification.body}</span>
+                    <small>
+                      {new Intl.DateTimeFormat("pl-PL", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }).format(new Date(notification.createdAt))}
+                    </small>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="notification-empty">Brak powiadomień.</p>
+            )}
+          </aside>
+        </div>
       ) : null}
 
       {activeNotification ? (
@@ -3777,11 +3973,22 @@ export function BookingHome() {
           }}
         >
           <section
-            className="client-appointment-modal appointment-list-modal"
+            className="client-appointment-modal client-bottom-sheet appointment-list-modal"
             role="dialog"
             aria-modal="true"
             aria-label="Wybierz swoją wizytę"
           >
+            <div
+              className="sheet-grabber"
+              aria-hidden="true"
+              onPointerDown={beginSheetGesture}
+              onPointerUp={(event) =>
+                endSheetGesture(event, () => setClientAppointmentsListOpen(false))
+              }
+              onPointerCancel={() => {
+                sheetGestureRef.current = null;
+              }}
+            />
             <button
               className="modal-close-button"
               type="button"
@@ -3834,11 +4041,20 @@ export function BookingHome() {
           }}
         >
           <section
-            className="client-appointment-modal"
+            className="client-appointment-modal client-bottom-sheet appointment-detail-sheet"
             role="dialog"
             aria-modal="true"
             aria-label="Szczegóły Twojej wizyty"
           >
+            <div
+              className="sheet-grabber"
+              aria-hidden="true"
+              onPointerDown={beginSheetGesture}
+              onPointerUp={(event) => endSheetGesture(event, () => setClientAppointmentId(null))}
+              onPointerCancel={() => {
+                sheetGestureRef.current = null;
+              }}
+            />
             <button
               className="modal-calendar-button calendar-save-button"
               type="button"
@@ -3931,7 +4147,67 @@ export function BookingHome() {
                 className="danger"
                 type="button"
                 disabled={isSaving}
-                onClick={() => cancelClientAppointment(selectedClientAppointment.id)}
+                onClick={() => setPendingClientCancellationId(selectedClientAppointment.id)}
+              >
+                Odwołaj wizytę
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {pendingClientCancellation && visibleStep !== "admin" ? (
+        <div
+          className="client-modal-backdrop cancellation-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPendingClientCancellationId(null);
+          }}
+        >
+          <section
+            className="client-appointment-modal client-bottom-sheet cancellation-sheet"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="cancellation-title"
+            aria-describedby="cancellation-description"
+          >
+            <div
+              className="sheet-grabber"
+              aria-hidden="true"
+              onPointerDown={beginSheetGesture}
+              onPointerUp={(event) =>
+                endSheetGesture(event, () => setPendingClientCancellationId(null))
+              }
+              onPointerCancel={() => {
+                sheetGestureRef.current = null;
+              }}
+            />
+            <button
+              className="modal-close-button"
+              type="button"
+              onClick={() => setPendingClientCancellationId(null)}
+              aria-label="Wróć bez odwoływania wizyty"
+            >
+              ×
+            </button>
+            <div className="modal-title">
+              <p className="eyebrow">Potwierdzenie</p>
+              <h2 id="cancellation-title">Odwołać wizytę?</h2>
+            </div>
+            <p className="cancellation-copy" id="cancellation-description">
+              {pendingClientCancellation.serviceName}, {dayFormatter.format(
+                dateFromKey(pendingClientCancellation.dateKey),
+              )} o {pendingClientCancellation.startTime}. Tej operacji nie można cofnąć.
+            </p>
+            <div className="modal-actions cancellation-actions">
+              <button type="button" onClick={() => setPendingClientCancellationId(null)}>
+                Wróć
+              </button>
+              <button
+                className="danger"
+                type="button"
+                disabled={isSaving}
+                onClick={() => cancelClientAppointment(pendingClientCancellation.id)}
               >
                 Odwołaj wizytę
               </button>

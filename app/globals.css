@@ -51,6 +51,7 @@ body {
 
 button {
   font: inherit;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button,
@@ -472,6 +473,15 @@ input:focus-visible {
   backdrop-filter: blur(18px);
 }
 
+.notification-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 79;
+  display: grid;
+  align-items: start;
+  justify-items: end;
+}
+
 .notification-panel-header {
   display: flex;
   align-items: center;
@@ -487,8 +497,8 @@ input:focus-visible {
 .notification-panel-header button {
   display: grid;
   place-items: center;
-  width: 2rem;
-  height: 2rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border: 1px solid var(--line);
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.08);
@@ -527,8 +537,8 @@ input:focus-visible {
 .notification-item-title button {
   display: grid;
   place-items: center;
-  width: 1.65rem;
-  height: 1.65rem;
+  width: 2.75rem;
+  height: 2.75rem;
   flex: 0 0 auto;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 50%;
@@ -1100,12 +1110,27 @@ h2 {
 }
 
 .booking-progress li {
+  display: flex;
+}
+
+.booking-progress li button {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  min-height: 2.75rem;
+  padding: 0.25rem 0.4rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
   color: #7f8796;
+  cursor: pointer;
   font-size: 0.72rem;
   font-weight: 760;
+}
+
+.booking-progress li button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 .booking-progress li span {
@@ -1118,13 +1143,26 @@ h2 {
   color: #9ba1ad;
 }
 
-.booking-progress li.complete {
+.booking-progress li.complete button {
   color: #dfe3ec;
 }
 
 .booking-progress li.complete span {
   background: rgba(48, 209, 88, 0.16);
   color: #7df09c;
+}
+
+.booking-progress li.active button {
+  color: #ffffff;
+  background: rgba(76, 141, 255, 0.1);
+}
+
+.booking-scroll-target {
+  scroll-margin-top: calc(5.2rem + env(safe-area-inset-top));
+}
+
+.client-calendar {
+  touch-action: pan-y;
 }
 
 .client-service-picker {
@@ -1409,9 +1447,44 @@ h2 {
   background: var(--panel-strong);
 }
 
-.booking-recap span:last-child {
-  grid-column: 1 / -1;
+.booking-recap-service,
+.booking-recap-date {
+  display: grid;
+  gap: 0.24rem;
+  min-width: 0;
+}
+
+.booking-recap-service small,
+.booking-recap-date small {
   color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.booking-recap-service strong,
+.booking-recap-date strong {
+  overflow-wrap: anywhere;
+  font-size: 0.98rem;
+}
+
+.booking-recap-service em {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: normal;
+}
+
+.booking-recap-price {
+  align-self: center;
+  color: var(--green);
+  white-space: nowrap;
+}
+
+.booking-recap-date {
+  grid-column: 1 / -1;
+  margin-top: 0.4rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
 }
 
 .confirm-form {
@@ -1490,6 +1563,10 @@ h2 {
     linear-gradient(180deg, rgba(255, 255, 255, 0.075), transparent 34%),
     #11131a;
   box-shadow: 0 26px 70px rgba(0, 0, 0, 0.52);
+}
+
+.sheet-grabber {
+  display: none;
 }
 
 .modal-close-button {
@@ -1864,6 +1941,25 @@ h2 {
   font-weight: 840;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cancellation-backdrop {
+  z-index: 50;
+}
+
+.cancellation-sheet {
+  width: min(100%, 27rem);
+}
+
+.cancellation-copy {
+  margin: 1rem 0 0;
+  padding: 0.9rem;
+  border: 1px solid rgba(255, 69, 58, 0.2);
+  border-radius: 20px;
+  background: rgba(255, 69, 58, 0.08);
+  color: #d7dae2;
+  font-size: 0.88rem;
+  line-height: 1.5;
 }
 
 .schedule-date-controls {
@@ -4827,7 +4923,7 @@ h2 {
   }
 
   .app-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     width: min(100% - 1rem, 720px);
     row-gap: 0;
     padding: 0.5rem 0 calc(6rem + env(safe-area-inset-bottom));
@@ -4849,12 +4945,14 @@ h2 {
   }
 
   .booking-panel {
+    min-width: 0;
     min-height: auto;
     border-radius: 32px;
   }
 
   .day-summary {
     position: static;
+    min-width: 0;
     max-height: none;
   }
 
@@ -4937,6 +5035,18 @@ h2 {
     grid-template-columns: 1fr;
   }
 
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(1.4rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (max-width: 767px) {
@@ -5592,7 +5702,7 @@ h2 {
   }
 
   .client-dashboard-heading > button {
-    min-height: 2.35rem;
+    min-height: 2.75rem;
     padding-inline: 0.65rem;
     font-size: 0.72rem;
   }
@@ -5641,6 +5751,12 @@ h2 {
 
   .booking-progress li {
     flex: 1 1 0;
+  }
+
+  .booking-progress li button {
+    width: 100%;
+    justify-content: center;
+    padding-inline: 0.25rem;
   }
 
   .client-service-picker .service-list {
@@ -5731,7 +5847,7 @@ h2 {
   .time-list button {
     flex: 0 0 auto;
     min-width: 4.65rem;
-    min-height: 2.7rem;
+    min-height: 2.75rem;
     padding: 0 1rem;
     border-radius: 999px;
     scroll-snap-align: start;
@@ -5743,7 +5859,99 @@ h2 {
   }
 
   .bottom-action {
-    min-height: 3.25rem;
+    min-height: 3.35rem;
+  }
+
+  .client-modal-backdrop,
+  .notification-panel-backdrop {
+    align-items: end;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.58);
+    backdrop-filter: blur(14px) saturate(125%);
+  }
+
+  .client-bottom-sheet {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    max-height: min(88svh, 44rem);
+    margin: 0;
+    padding: 0 0.85rem calc(0.85rem + env(safe-area-inset-bottom));
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 26px 26px 0 0;
+    animation: sheet-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    overscroll-behavior: contain;
+  }
+
+  .sheet-grabber {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    display: block;
+    width: 5.5rem;
+    height: 1.75rem;
+    margin: 0 auto 0.15rem;
+    touch-action: none;
+  }
+
+  .sheet-grabber::after {
+    content: "";
+    position: absolute;
+    top: 0.65rem;
+    left: 50%;
+    width: 2.5rem;
+    height: 0.28rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.28);
+    transform: translateX(-50%);
+  }
+
+  .client-bottom-sheet .modal-close-button,
+  .client-bottom-sheet .modal-calendar-button {
+    top: 1.15rem;
+  }
+
+  .client-bottom-sheet .modal-title {
+    min-height: 3.35rem;
+    padding-top: 0.1rem;
+  }
+
+  .client-bottom-sheet .modal-actions,
+  .client-bottom-sheet .modal-actions.with-confirmation {
+    position: sticky;
+    bottom: calc(-0.85rem - env(safe-area-inset-bottom));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0.85rem -0.85rem 0;
+    padding: 0.85rem 0.85rem calc(0.85rem + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    background: rgba(17, 19, 26, 0.96);
+    backdrop-filter: blur(18px);
+  }
+
+  .client-bottom-sheet .modal-actions button {
+    min-height: 3.15rem;
+  }
+
+  .notification-panel {
+    top: auto;
+    right: auto;
+    gap: 0.65rem;
+    max-height: min(82svh, 40rem);
+    overflow: hidden;
+  }
+
+  .notification-panel-header {
+    min-height: 3rem;
+  }
+
+  .notification-list {
+    overscroll-behavior: contain;
+  }
+
+  .notification-item {
+    padding: 0.85rem;
   }
 
   .confirm-view,
@@ -5767,11 +5975,46 @@ h2 {
   }
 
   .confirm-form input {
-    min-height: 3.25rem;
+    min-height: 3.5rem;
   }
 
   .confirm-button {
     min-height: 3.25rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .topbar:not(:has(.avatar-button)) {
+    padding-right: 0.85rem;
+  }
+
+  .session-pill {
+    width: 100%;
+  }
+
+  .session-pill strong {
+    flex: 1 1 auto;
+  }
+
+  .client-dashboard-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .client-dashboard-heading > button {
+    align-self: flex-start;
+  }
+
+  .calendar-grid,
+  .weekday-row {
+    gap: 0.18rem;
+  }
+
+  .day-tile {
+    min-height: 2.75rem;
+    aspect-ratio: auto;
+    padding: 0.38rem;
   }
 }
 
