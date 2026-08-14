@@ -128,6 +128,11 @@ type SmsComposerState = {
   message: string;
 };
 
+type WorkFeedback = {
+  kind: "success" | "error";
+  message: string;
+};
+
 const adminUserIds = new Set(["XxBe4dwVYWZPtl004J4tWq6AMZ73"]);
 const maxStoredNotifications = 40;
 
@@ -628,6 +633,12 @@ export function BookingHome() {
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
   const [selectedAdminClientId, setSelectedAdminClientId] = useState<string | null>(null);
   const [smsComposer, setSmsComposer] = useState<SmsComposerState | null>(null);
+  const [editingAvailabilityKey, setEditingAvailabilityKey] = useState<string | null>(null);
+  const [pendingAvailabilityRemovalKey, setPendingAvailabilityRemovalKey] = useState<string | null>(
+    null,
+  );
+  const [isWorkSaving, setIsWorkSaving] = useState(false);
+  const [workFeedback, setWorkFeedback] = useState<WorkFeedback | null>(null);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const previousAppointmentsRef = useRef<Map<string, AdminAppointment> | null>(null);
   const [heroScrollProgress, setHeroScrollProgress] = useState(0);
@@ -700,6 +711,25 @@ export function BookingHome() {
       }),
     [adminAppointments],
   );
+  const adminScheduleDays = useMemo(() => {
+    const todayKey = dayKey(today);
+    const keys = new Set<string>([adminSelectedKey]);
+
+    for (let offset = 0; offset < 14; offset += 1) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + offset);
+      keys.add(dayKey(date));
+    }
+
+    adminAppointmentDays.forEach((key) => {
+      if (key >= todayKey) keys.add(key);
+    });
+    Object.keys(workSettings.availability).forEach((key) => {
+      if (key >= todayKey) keys.add(key);
+    });
+
+    return Array.from(keys).sort((first, second) => first.localeCompare(second));
+  }, [adminAppointmentDays, adminSelectedKey, today, workSettings.availability]);
   const adminClientProfiles = useMemo<AdminClientProfile[]>(() => {
     const profiles = new Map<string, AdminAppointment[]>();
     const todayKey = dayKey(today);
@@ -854,6 +884,19 @@ export function BookingHome() {
         }),
     [today, workSettings.availability],
   );
+  const availabilityDraftKeys = useMemo(
+    () => getDateKeysInRange(availabilityDraft.start, availabilityDraft.end),
+    [availabilityDraft.end, availabilityDraft.start],
+  );
+  const availabilityDraftDuration =
+    timeToMinutes(availabilityDraft.endTime) - timeToMinutes(availabilityDraft.startTime);
+  const availabilityOverwriteCount = availabilityDraftKeys.filter(
+    (key) => Boolean(workSettings.availability[key]) && key !== editingAvailabilityKey,
+  ).length;
+  const canSaveAvailability =
+    availabilityDraft.start >= dayKey(today) &&
+    availabilityDraft.end >= availabilityDraft.start &&
+    availabilityDraftDuration >= 15;
   const availabilityMonthGroups = useMemo(() => {
     const groups = new Map<
       string,
@@ -887,6 +930,20 @@ export function BookingHome() {
   }, [availabilityWindows]);
   const nearestAvailability = availabilityWindows[0] ?? null;
   const nextSaturdayOffset = (6 - today.getDay() + 7) % 7 || 7;
+  const quickAvailabilityOptions = [
+    { label: "Jutro", offset: 1, startTime: "17:00", endTime: "20:00" },
+    { label: "Za 2 dni", offset: 2, startTime: "10:00", endTime: "13:00" },
+    {
+      label: "Weekend",
+      offset: nextSaturdayOffset,
+      startTime: "09:00",
+      endTime: "14:00",
+    },
+  ].map((option) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() + option.offset);
+    return { ...option, date, dateKey: dayKey(date) };
+  });
   const visibleStep = step === "admin" && !isAdmin ? "booking" : step;
   const currentTimeLineMinutes =
     adminSelectedKey === dayKey(currentDate)
@@ -1171,13 +1228,6 @@ export function BookingHome() {
   }, [selectedServiceId, services]);
 
   useEffect(() => {
-    if (adminAppointmentDays.length === 0) return;
-    if (!adminAppointmentDays.includes(adminSelectedKey)) {
-      setAdminSelectedKey(adminAppointmentDays[0]);
-    }
-  }, [adminAppointmentDays, adminSelectedKey]);
-
-  useEffect(() => {
     if (step === "admin" && !isAdmin) {
       setStep("booking");
     }
@@ -1259,6 +1309,11 @@ export function BookingHome() {
     };
   }, [visibleStep]);
 
+  useEffect(() => {
+    if (visibleStep !== "admin") return;
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" }));
+  }, [adminSection, visibleStep]);
+
   const shiftMonth = (direction: -1 | 1) => {
     if (direction === -1 && !canShiftToPreviousMonth) return;
     setVisibleMonth(
@@ -1287,6 +1342,8 @@ export function BookingHome() {
     field: keyof typeof availabilityDraft,
     value: string,
   ) => {
+    setWorkFeedback(null);
+    setPendingAvailabilityRemovalKey(null);
     setAvailabilityDraft((current) => {
       const nextDraft = { ...current, [field]: value };
 
@@ -1304,9 +1361,22 @@ export function BookingHome() {
     });
   };
 
-  const addAvailabilityRange = () => {
+  const resetAvailabilityEditor = () => {
+    setEditingAvailabilityKey(null);
+    setPendingAvailabilityRemovalKey(null);
+    setAvailabilityDraft({
+      start: dayKey(today),
+      end: dayKey(today),
+      startTime: "10:00",
+      endTime: "13:00",
+    });
+  };
+
+  const addAvailabilityRange = async () => {
+    if (!canSaveAvailability || isWorkSaving) return;
+
     const availabilityUpdates = Object.fromEntries(
-      getDateKeysInRange(availabilityDraft.start, availabilityDraft.end).map((key) => [
+      availabilityDraftKeys.map((key) => [
         key,
         {
           id: key,
@@ -1317,26 +1387,107 @@ export function BookingHome() {
       ]),
     );
 
-    void update(ref(realtimeDb, "workSettings/availability"), availabilityUpdates);
+    try {
+      setIsWorkSaving(true);
+      setWorkFeedback(null);
+      if (editingAvailabilityKey && !availabilityDraftKeys.includes(editingAvailabilityKey)) {
+        await remove(ref(realtimeDb, `workSettings/availability/${editingAvailabilityKey}`));
+      }
+      await update(ref(realtimeDb, "workSettings/availability"), availabilityUpdates);
+      setWorkFeedback({
+        kind: "success",
+        message:
+          availabilityDraftKeys.length === 1
+            ? "Dostępność została zapisana."
+            : `Zapisano ${availabilityDraftKeys.length} dni dostępności.`,
+      });
+      setEditingAvailabilityKey(null);
+    } catch {
+      setWorkFeedback({ kind: "error", message: "Nie udało się zapisać dostępności." });
+    } finally {
+      setIsWorkSaving(false);
+    }
   };
 
-  const removeAvailabilityDate = (dateKeyValue: string) => {
-    if (!window.confirm("Usunąć tę dostępność z kalendarza?")) return;
-
-    void remove(ref(realtimeDb, `workSettings/availability/${dateKeyValue}`));
+  const beginAvailabilityEdit = (windowItem: AvailabilityWindow) => {
+    setEditingAvailabilityKey(windowItem.dateKey);
+    setPendingAvailabilityRemovalKey(null);
+    setWorkFeedback(null);
+    setAvailabilityDraft({
+      start: windowItem.dateKey,
+      end: windowItem.dateKey,
+      startTime: windowItem.startTime,
+      endTime: windowItem.endTime,
+    });
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById("availability-maker")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
 
-  const quickAddAvailability = (offset: number, startTime: string, endTime: string) => {
+  const removeAvailabilityDate = async (dateKeyValue: string) => {
+    if (pendingAvailabilityRemovalKey !== dateKeyValue) {
+      setPendingAvailabilityRemovalKey(dateKeyValue);
+      setWorkFeedback(null);
+      return;
+    }
+
+    try {
+      setIsWorkSaving(true);
+      await remove(ref(realtimeDb, `workSettings/availability/${dateKeyValue}`));
+      if (editingAvailabilityKey === dateKeyValue) resetAvailabilityEditor();
+      setPendingAvailabilityRemovalKey(null);
+      setWorkFeedback({ kind: "success", message: "Dzień został usunięty z dostępności." });
+    } catch {
+      setWorkFeedback({ kind: "error", message: "Nie udało się usunąć tego dnia." });
+    } finally {
+      setIsWorkSaving(false);
+    }
+  };
+
+  const quickAddAvailability = async (offset: number, startTime: string, endTime: string) => {
+    if (isWorkSaving) return;
     const date = new Date(today);
     date.setDate(today.getDate() + offset);
     const key = dayKey(date);
 
-    void set(ref(realtimeDb, `workSettings/availability/${key}`), {
-      id: key,
-      dateKey: key,
-      startTime,
-      endTime,
-    });
+    try {
+      setIsWorkSaving(true);
+      setWorkFeedback(null);
+      await set(ref(realtimeDb, `workSettings/availability/${key}`), {
+        id: key,
+        dateKey: key,
+        startTime,
+        endTime,
+      });
+      setExpandedAvailabilityMonth(key.slice(0, 7));
+      setWorkFeedback({
+        kind: "success",
+        message: `Dodano ${adminClientDateFormatter.format(date)}, ${startTime}-${endTime}.`,
+      });
+    } catch {
+      setWorkFeedback({ kind: "error", message: "Nie udało się dodać szybkiego terminu." });
+    } finally {
+      setIsWorkSaving(false);
+    }
+  };
+
+  const shiftAdminSelectedDay = (offset: -1 | 1) => {
+    const nextDate = dateFromKey(adminSelectedKey);
+    nextDate.setDate(nextDate.getDate() + offset);
+    setAdminSelectedKey(dayKey(nextDate));
+  };
+
+  const openSelectedDayInWorkEditor = () => {
+    setAvailabilityDraft((current) => ({
+      ...current,
+      start: adminSelectedKey,
+      end: adminSelectedKey,
+    }));
+    setEditingAvailabilityKey(null);
+    setWorkFeedback(null);
+    setAdminSection("work");
   };
 
   const updateServiceDraft = (field: keyof ServiceDraft, value: string) => {
@@ -1893,7 +2044,7 @@ export function BookingHome() {
 
           <div className="admin-content-frame">
             <div className={`admin-tab-panel ${adminSection === "schedule" ? "active" : ""}`}>
-              <div className="admin-section-header">
+              <div className="admin-section-header schedule-section-header">
                 <div>
                   <p className="eyebrow">Wybrany dzień</p>
                   <h2>{adminClientDateFormatter.format(dateFromKey(adminSelectedKey))}</h2>
@@ -1912,24 +2063,63 @@ export function BookingHome() {
                     dostępność
                   </span>
                 </div>
+                <div className="schedule-date-controls" aria-label="Zmień dzień terminarza">
+                  <button
+                    type="button"
+                    onClick={() => shiftAdminSelectedDay(-1)}
+                    aria-label="Poprzedni dzień"
+                  >
+                    ‹
+                  </button>
+                  <label>
+                    <span>Data</span>
+                    <input
+                      type="date"
+                      value={adminSelectedKey}
+                      onChange={(event) => setAdminSelectedKey(event.target.value)}
+                    />
+                  </label>
+                  <button
+                    className={adminSelectedKey === dayKey(today) ? "today active" : "today"}
+                    type="button"
+                    onClick={() => setAdminSelectedKey(dayKey(today))}
+                  >
+                    Dzisiaj
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => shiftAdminSelectedDay(1)}
+                    aria-label="Następny dzień"
+                  >
+                    ›
+                  </button>
+                </div>
               </div>
 
               <div className="schedule-desktop-grid">
                 <aside className="schedule-side-panel">
                   <div className="admin-days" aria-label="Dni z wizytami">
-                    {adminAppointmentDays.length > 0 ? (
-                      adminAppointmentDays.map((key) => {
+                    {adminScheduleDays.length > 0 ? (
+                      adminScheduleDays.map((key) => {
                         const date = dateFromKey(key);
                         const appointmentsCount = adminAppointments.filter(
                           (appointment) => appointment.dateKey === key,
                         ).length;
+                        const dayAvailability = getAvailabilityForDate(key, workSettings);
 
                         return (
                           <button
-                            className={key === adminSelectedKey ? "active" : ""}
+                            className={`${key === adminSelectedKey ? "active" : ""} ${
+                              appointmentsCount > 0 ? "has-appointments" : ""
+                            }`}
                             key={key}
                             type="button"
                             onClick={() => setAdminSelectedKey(key)}
+                            aria-label={`${adminClientDateFormatter.format(date)}, ${appointmentsCount} wizyt, ${
+                              dayAvailability
+                                ? `dostępność ${dayAvailability.startTime}-${dayAvailability.endTime}`
+                                : "brak dostępności"
+                            }`}
                           >
                             <span>
                               {new Intl.DateTimeFormat("pl-PL", { weekday: "short" })
@@ -1941,8 +2131,7 @@ export function BookingHome() {
                               {new Intl.DateTimeFormat("pl-PL", { month: "short" })
                                 .format(date)
                                 .replace(".", "")}
-                              {" - "}
-                              {appointmentsCount}
+                              {appointmentsCount > 0 ? ` · ${appointmentsCount}` : ""}
                             </small>
                           </button>
                         );
@@ -1955,7 +2144,13 @@ export function BookingHome() {
                   <div className="client-strip" aria-label="Klienci z wybranego dnia">
                     {adminDayAppointments.length > 0 ? (
                       adminDayAppointments.map((appointment) => (
-                        <button className="client-chip" key={appointment.id} type="button">
+                        <button
+                          className="client-chip"
+                          key={appointment.id}
+                          type="button"
+                          onClick={() => openAdminAppointmentEdit(appointment)}
+                          aria-label={`Edytuj wizytę ${appointment.clientName} o ${appointment.startTime}`}
+                        >
                           <span>{appointment.clientName.slice(0, 1)}</span>
                           <strong>{appointment.clientName}</strong>
                           <small>{appointment.startTime}</small>
@@ -1966,6 +2161,116 @@ export function BookingHome() {
                     )}
                   </div>
                 </aside>
+
+                <section className="schedule-mobile-agenda" aria-label="Plan wybranego dnia">
+                  <div
+                    className={`mobile-availability-banner ${adminDayAvailability ? "open" : "closed"}`}
+                  >
+                    <span aria-hidden="true" />
+                    <div>
+                      <strong>{adminDayAvailability ? "Dzień otwarty" : "Brak dostępności"}</strong>
+                      <small>
+                        {adminDayAvailability
+                          ? `${adminDayAvailability.startTime}-${adminDayAvailability.endTime} dla klientów`
+                          : "Klienci nie mogą rezerwować tego dnia"}
+                      </small>
+                    </div>
+                    <button type="button" onClick={openSelectedDayInWorkEditor}>
+                      {adminDayAvailability ? "Zmień" : "Ustaw"}
+                    </button>
+                  </div>
+
+                  <div className="mobile-agenda-heading">
+                    <div>
+                      <p className="section-label">Plan dnia</p>
+                      <strong>
+                        {adminDayAppointments.length === 0
+                          ? "Spokojny dzień"
+                          : `${adminDayAppointments.length} ${
+                              adminDayAppointments.length === 1 ? "wizyta" : "wizyty"
+                            }`}
+                      </strong>
+                    </div>
+                    <span>{getAppointmentDistanceLabel(adminSelectedKey, today)}</span>
+                  </div>
+
+                  <div className="mobile-agenda-list">
+                    {adminDayAppointments.length > 0 ? (
+                      adminDayAppointments.map((appointment) => (
+                        <article
+                          className={`mobile-agenda-appointment ${appointment.color}`}
+                          key={appointment.id}
+                        >
+                          <div className="mobile-agenda-time">
+                            <strong>{appointment.startTime}</strong>
+                            <span>
+                              {addMinutesToTime(appointment.startTime, appointment.durationMinutes)}
+                            </span>
+                          </div>
+                          <div className="mobile-agenda-client">
+                            <strong>{appointment.clientName}</strong>
+                            <span>{appointment.serviceName}</span>
+                            <small>{appointment.price}</small>
+                          </div>
+                          <em
+                            className={`appointment-status ${normalizeAppointmentStatus(
+                              appointment.status,
+                            )}`}
+                          >
+                            {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
+                          </em>
+                          <div className="mobile-agenda-actions">
+                            <button
+                              type="button"
+                              onClick={() => shiftAdminAppointment(appointment.id, -15)}
+                              disabled={
+                                !canMoveAdminAppointment(
+                                  appointment,
+                                  minutesToTime(timeToMinutes(appointment.startTime) - 15),
+                                )
+                              }
+                              aria-label={`Cofnij wizytę ${appointment.clientName} o 15 minut`}
+                            >
+                              -15
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => shiftAdminAppointment(appointment.id, 15)}
+                              disabled={
+                                !canMoveAdminAppointment(
+                                  appointment,
+                                  minutesToTime(timeToMinutes(appointment.startTime) + 15),
+                                )
+                              }
+                              aria-label={`Przesuń wizytę ${appointment.clientName} o 15 minut`}
+                            >
+                              +15
+                            </button>
+                            <button type="button" onClick={() => openAdminAppointmentEdit(appointment)}>
+                              Edytuj
+                            </button>
+                            <button
+                              className="decline"
+                              type="button"
+                              onClick={() => declineAdminAppointment(appointment.id)}
+                            >
+                              Odmów
+                            </button>
+                          </div>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="mobile-agenda-empty">
+                        <strong>Nie ma tu jeszcze żadnej wizyty</strong>
+                        <span>
+                          {adminDayAvailability
+                            ? "Wolne okno jest widoczne dla klientów."
+                            : "Ustaw dostępność, jeśli chcesz przyjmować rezerwacje."}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </section>
 
                 <div
                   className="admin-schedule"
@@ -2058,6 +2363,12 @@ export function BookingHome() {
                               aria-label={`Przesuń wizytę ${appointment.clientName} o 15 minut`}
                             >
                               +15
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openAdminAppointmentEdit(appointment)}
+                            >
+                              Edytuj
                             </button>
                             <button
                               className="decline-button"
@@ -2266,12 +2577,28 @@ export function BookingHome() {
               </div>
 
               <div className="work-view casual" aria-label="Moja dostępność">
-                <section className="work-editor-card availability-maker">
+                <section
+                  className="work-editor-card availability-maker"
+                  id="availability-maker"
+                >
                   <div className="work-editor-top">
                     <div>
-                      <p className="eyebrow">Nowa dostępność</p>
-                      <h2>Okienko w kalendarzu</h2>
+                      <p className="eyebrow">
+                        {editingAvailabilityKey ? "Edycja dostępności" : "Nowa dostępność"}
+                      </p>
+                      <h2>
+                        {editingAvailabilityKey ? "Zmień dzień pracy" : "Okienko w kalendarzu"}
+                      </h2>
                     </div>
+                    {editingAvailabilityKey ? (
+                      <button
+                        className="work-editor-cancel"
+                        type="button"
+                        onClick={resetAvailabilityEditor}
+                      >
+                        Anuluj
+                      </button>
+                    ) : null}
                   </div>
 
                   <div className="work-preset-grid">
@@ -2281,14 +2608,25 @@ export function BookingHome() {
                       { label: "Krótko", startTime: "18:00", endTime: "19:30" },
                     ].map((preset) => (
                       <button
+                        className={
+                          availabilityDraft.startTime === preset.startTime &&
+                          availabilityDraft.endTime === preset.endTime
+                            ? "active"
+                            : ""
+                        }
                         key={preset.label}
                         type="button"
-                        onClick={() =>
+                        onClick={() => {
+                          setWorkFeedback(null);
                           setAvailabilityDraft((current) => ({
                             ...current,
                             startTime: preset.startTime,
                             endTime: preset.endTime,
-                          }))
+                          }));
+                        }}
+                        aria-pressed={
+                          availabilityDraft.startTime === preset.startTime &&
+                          availabilityDraft.endTime === preset.endTime
                         }
                       >
                         <strong>{preset.label}</strong>
@@ -2304,6 +2642,7 @@ export function BookingHome() {
                       Od daty
                       <input
                         type="date"
+                        min={dayKey(today)}
                         value={availabilityDraft.start}
                         onChange={(event) =>
                           updateAvailabilityDraft("start", event.target.value)
@@ -2314,6 +2653,7 @@ export function BookingHome() {
                       Do daty
                       <input
                         type="date"
+                        min={availabilityDraft.start}
                         value={availabilityDraft.end}
                         onChange={(event) => updateAvailabilityDraft("end", event.target.value)}
                       />
@@ -2351,17 +2691,40 @@ export function BookingHome() {
                   </div>
 
                   <div className="availability-summary-panel">
-                    <span>
-                      Dodasz {getDateKeysInRange(availabilityDraft.start, availabilityDraft.end).length}{" "}
-                      {getDateKeysInRange(availabilityDraft.start, availabilityDraft.end).length === 1
-                        ? "dzień"
-                        : "dni"}{" "}
-                      od {availabilityDraft.startTime} do {availabilityDraft.endTime}
-                    </span>
-                    <button type="button" onClick={addAvailabilityRange}>
-                      Dodaj dostępność
+                    <div>
+                      <strong>
+                        {editingAvailabilityKey ? "Zapiszesz zmianę" : "Dodasz dostępność"}
+                      </strong>
+                      <span>
+                        {availabilityDraftKeys.length}{" "}
+                        {availabilityDraftKeys.length === 1 ? "dzień" : "dni"} ·{" "}
+                        {formatDuration(Math.max(0, availabilityDraftDuration))} dziennie
+                      </span>
+                      {availabilityOverwriteCount > 0 ? (
+                        <small>
+                          {availabilityOverwriteCount === 1
+                            ? "1 istniejący dzień zostanie zaktualizowany"
+                            : `${availabilityOverwriteCount} istniejące dni zostaną zaktualizowane`}
+                        </small>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void addAvailabilityRange()}
+                      disabled={!canSaveAvailability || isWorkSaving}
+                    >
+                      {isWorkSaving
+                        ? "Zapisywanie..."
+                        : editingAvailabilityKey
+                          ? "Zapisz zmiany"
+                          : "Dodaj dostępność"}
                     </button>
                   </div>
+                  {workFeedback ? (
+                    <p className={`work-feedback ${workFeedback.kind}`} role="status">
+                      {workFeedback.message}
+                    </p>
+                  ) : null}
                 </section>
 
                 <section className="work-editor-card">
@@ -2373,21 +2736,34 @@ export function BookingHome() {
                   </div>
 
                   <div className="quick-availability-list">
-                    <button type="button" onClick={() => quickAddAvailability(1, "17:00", "20:00")}>
-                      <strong>Jutro</strong>
-                      <span>17:00 - 20:00</span>
-                    </button>
-                    <button type="button" onClick={() => quickAddAvailability(2, "10:00", "13:00")}>
-                      <strong>Za 2 dni</strong>
-                      <span>10:00 - 13:00</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => quickAddAvailability(nextSaturdayOffset, "09:00", "14:00")}
-                    >
-                      <strong>Weekend</strong>
-                      <span>09:00 - 14:00</span>
-                    </button>
+                    {quickAvailabilityOptions.map((option) => (
+                      <button
+                        className={workSettings.availability[option.dateKey] ? "existing" : ""}
+                        key={`${option.dateKey}-${option.startTime}`}
+                        type="button"
+                        disabled={isWorkSaving}
+                        onClick={() =>
+                          void quickAddAvailability(
+                            option.offset,
+                            option.startTime,
+                            option.endTime,
+                          )
+                        }
+                      >
+                        <span className="quick-availability-date">
+                          <strong>{option.label}</strong>
+                          <small>{adminClientDateFormatter.format(option.date)}</small>
+                        </span>
+                        <span className="quick-availability-time">
+                          <strong>
+                            {option.startTime}-{option.endTime}
+                          </strong>
+                          <small>
+                            {workSettings.availability[option.dateKey] ? "Zaktualizuj" : "Dodaj"}
+                          </small>
+                        </span>
+                      </button>
+                    ))}
                   </div>
                 </section>
 
@@ -2437,12 +2813,28 @@ export function BookingHome() {
                                     </strong>
                                     <span>{formatWorkRange(windowItem)}</span>
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => removeAvailabilityDate(windowItem.dateKey)}
-                                  >
-                                    Usuń
-                                  </button>
+                                  <div className="availability-window-actions">
+                                    <button
+                                      type="button"
+                                      onClick={() => beginAvailabilityEdit(windowItem)}
+                                    >
+                                      Edytuj
+                                    </button>
+                                    <button
+                                      className={
+                                        pendingAvailabilityRemovalKey === windowItem.dateKey
+                                          ? "confirm-remove"
+                                          : "remove"
+                                      }
+                                      type="button"
+                                      disabled={isWorkSaving}
+                                      onClick={() => void removeAvailabilityDate(windowItem.dateKey)}
+                                    >
+                                      {pendingAvailabilityRemovalKey === windowItem.dateKey
+                                        ? "Potwierdź"
+                                        : "Usuń"}
+                                    </button>
+                                  </div>
                                 </article>
                               ))}
                             </div>

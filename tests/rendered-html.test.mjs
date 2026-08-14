@@ -85,3 +85,20 @@ test("keeps the professional admin client directory and SMS workflow", async () 
   assert.match(styles, /\.admin-client-profile-modal/);
   assert.match(styles, /\.sms-template-picker/);
 });
+
+test("keeps the mastered admin schedule and availability editor", async () => {
+  const [bookingHome, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /className="schedule-mobile-agenda"/);
+  assert.match(bookingHome, /className="schedule-date-controls"/);
+  assert.match(bookingHome, /openSelectedDayInWorkEditor/);
+  assert.match(bookingHome, /beginAvailabilityEdit/);
+  assert.match(bookingHome, /pendingAvailabilityRemovalKey/);
+  assert.match(bookingHome, /istniejące dni zostaną zaktualizowane/);
+  assert.match(styles, /@media \(max-width: 767px\)/);
+  assert.match(styles, /\.mobile-agenda-actions/);
+  assert.match(styles, /\.work-feedback\.success/);
+});
