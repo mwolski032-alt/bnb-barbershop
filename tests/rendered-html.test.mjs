@@ -67,3 +67,21 @@ test("keeps the premium client booking flow and safety controls", async () => {
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(styles, /\.client-service-picker \.service-list/);
 });
+
+test("keeps the professional admin client directory and SMS workflow", async () => {
+  const [bookingHome, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /const getAdminClientId/);
+  assert.match(bookingHome, /const adminClientProfiles = useMemo/);
+  assert.match(bookingHome, /className="client-search"/);
+  assert.match(bookingHome, /Historia wizyt/);
+  assert.match(bookingHome, /sms-composer-modal/);
+  assert.match(bookingHome, /Otwórz aplikację SMS/);
+  assert.match(bookingHome, /Potwierdzam Twoją wizytę/);
+  assert.match(styles, /\.client-directory-tools/);
+  assert.match(styles, /\.admin-client-profile-modal/);
+  assert.match(styles, /\.sms-template-picker/);
+});

@@ -107,6 +107,26 @@ type AppNotification = {
 };
 
 type SmsTemplate = "confirmation" | "reschedule" | "reminder" | "custom";
+type ClientFilter = "all" | "upcoming" | "rescheduled" | "missing-phone";
+
+type AdminClientProfile = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  photoUrl: string;
+  appointments: AdminAppointment[];
+  nextAppointment: AdminAppointment | null;
+  lastAppointment: AdminAppointment | null;
+  rescheduledCount: number;
+};
+
+type SmsComposerState = {
+  clientId: string;
+  appointmentId: string;
+  template: SmsTemplate;
+  message: string;
+};
 
 const adminUserIds = new Set(["XxBe4dwVYWZPtl004J4tWq6AMZ73"]);
 const maxStoredNotifications = 40;
@@ -340,29 +360,40 @@ const smsTemplateLabels: Record<SmsTemplate, string> = {
   confirmation: "Potwierdzenie",
   reschedule: "Zmiana terminu",
   reminder: "Przypomnienie",
-  custom: "Custom",
+  custom: "Własna",
 };
 
 const smsTemplates: SmsTemplate[] = ["confirmation", "reschedule", "reminder", "custom"];
 
 const buildClientSmsMessage = (template: SmsTemplate, appointment: AdminAppointment) => {
+  const firstName = appointment.clientName.trim().split(/\s+/)[0] || "";
+  const greeting = firstName ? `Siema, ${firstName}!` : "Siema!";
   const date = adminClientDateFormatter.format(dateFromKey(appointment.dateKey));
   const visit = `${date} o ${appointment.startTime}`;
 
   if (template === "confirmation") {
-    return `Siema! Potwierdzam Twoja wizyte: ${visit}. Usluga: ${appointment.serviceName}. Do zobaczenia!`;
+    return `${greeting} Potwierdzam Twoją wizytę w B'n'B: ${visit}. ${appointment.serviceName}. Do zobaczenia!`;
   }
 
   if (template === "reschedule") {
-    return `Siema! Zmienilem termin Twojej wizyty. Nowy termin: ${visit}. Usluga: ${appointment.serviceName}. W razie pytan odpisz na ta wiadomosc.`;
+    return `${greeting} Zmieniłem termin Twojej wizyty. Nowy termin: ${visit}. ${appointment.serviceName}. Daj znać, jeśli termin Ci nie pasuje.`;
   }
 
   if (template === "reminder") {
-    return `Siema! Przypominam o Twojej wizycie jutro, ${visit}. Usluga: ${appointment.serviceName}. Do zobaczenia!`;
+    return `${greeting} Przypominam o wizycie w B'n'B: ${visit}. ${appointment.serviceName}. Do zobaczenia!`;
   }
 
   return "";
 };
+
+const getAdminClientId = (appointment: AdminAppointment) =>
+  appointment.userId?.trim() ||
+  appointment.clientEmail?.trim().toLowerCase() ||
+  getPhoneDigits(appointment.phone ?? "") ||
+  appointment.clientName.trim().toLowerCase();
+
+const getAppointmentSortValue = (appointment: AdminAppointment) =>
+  `${appointment.dateKey}T${appointment.startTime}`;
 
 const buildSmsHref = (phoneDigits: string, message: string) => {
   const cleanMessage = message.trim();
@@ -593,7 +624,10 @@ export function BookingHome() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [activeNotification, setActiveNotification] = useState<AppNotification | null>(null);
-  const [smsMenuDirections, setSmsMenuDirections] = useState<Record<string, "up" | "down">>({});
+  const [clientSearch, setClientSearch] = useState("");
+  const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
+  const [selectedAdminClientId, setSelectedAdminClientId] = useState<string | null>(null);
+  const [smsComposer, setSmsComposer] = useState<SmsComposerState | null>(null);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const previousAppointmentsRef = useRef<Map<string, AdminAppointment> | null>(null);
   const [heroScrollProgress, setHeroScrollProgress] = useState(0);
@@ -666,6 +700,76 @@ export function BookingHome() {
       }),
     [adminAppointments],
   );
+  const adminClientProfiles = useMemo<AdminClientProfile[]>(() => {
+    const profiles = new Map<string, AdminAppointment[]>();
+    const todayKey = dayKey(today);
+
+    adminClientAppointments.forEach((appointment) => {
+      const clientId = getAdminClientId(appointment);
+      profiles.set(clientId, [...(profiles.get(clientId) ?? []), appointment]);
+    });
+
+    return Array.from(profiles.entries())
+      .map(([id, clientAppointments]) => {
+        const sortedAppointments = [...clientAppointments].sort((first, second) =>
+          getAppointmentSortValue(first).localeCompare(getAppointmentSortValue(second)),
+        );
+        const newestContact = [...sortedAppointments]
+          .reverse()
+          .find((appointment) => appointment.phone || appointment.clientEmail) ?? sortedAppointments[0];
+        const nextAppointment =
+          sortedAppointments.find((appointment) => appointment.dateKey >= todayKey) ?? null;
+        const lastAppointment =
+          [...sortedAppointments].reverse().find((appointment) => appointment.dateKey < todayKey) ??
+          null;
+
+        return {
+          id,
+          name: newestContact.clientName,
+          email: newestContact.clientEmail ?? "",
+          phone: newestContact.phone ?? "",
+          photoUrl: newestContact.clientPhotoUrl ?? "",
+          appointments: sortedAppointments,
+          nextAppointment,
+          lastAppointment,
+          rescheduledCount: sortedAppointments.filter(
+            (appointment) => normalizeAppointmentStatus(appointment.status) === "rescheduled",
+          ).length,
+        };
+      })
+      .sort((first, second) => {
+        if (first.nextAppointment && second.nextAppointment) {
+          return getAppointmentSortValue(first.nextAppointment).localeCompare(
+            getAppointmentSortValue(second.nextAppointment),
+          );
+        }
+        if (first.nextAppointment) return -1;
+        if (second.nextAppointment) return 1;
+        return first.name.localeCompare(second.name, "pl");
+      });
+  }, [adminClientAppointments, today]);
+  const filteredAdminClients = useMemo(() => {
+    const query = clientSearch.trim().toLocaleLowerCase("pl");
+
+    return adminClientProfiles.filter((client) => {
+      const phoneDigits = getPhoneDigits(client.phone);
+      const matchesQuery =
+        !query ||
+        [client.name, client.email, client.phone, phoneDigits]
+          .join(" ")
+          .toLocaleLowerCase("pl")
+          .includes(query) ||
+        client.appointments.some((appointment) =>
+          appointment.serviceName.toLocaleLowerCase("pl").includes(query),
+        );
+
+      if (!matchesQuery) return false;
+      if (clientFilter === "upcoming") return Boolean(client.nextAppointment);
+      if (clientFilter === "rescheduled") return client.rescheduledCount > 0;
+      if (clientFilter === "missing-phone") return phoneDigits.length !== 9;
+      return true;
+    });
+  }, [adminClientProfiles, clientFilter, clientSearch]);
   const availableTimes = useMemo(
     () =>
       getAvailableTimes(
@@ -724,6 +828,13 @@ export function BookingHome() {
     clientAppointments.find((appointment) => appointment.id === clientAppointmentId) ?? null;
   const selectedAdminEditAppointment =
     adminAppointments.find((appointment) => appointment.id === adminEditAppointmentId) ?? null;
+  const selectedAdminClient =
+    adminClientProfiles.find((client) => client.id === selectedAdminClientId) ?? null;
+  const smsClient =
+    adminClientProfiles.find((client) => client.id === smsComposer?.clientId) ?? null;
+  const smsAppointment =
+    smsClient?.appointments.find((appointment) => appointment.id === smsComposer?.appointmentId) ??
+    null;
   const editingService = services.find((service) => service.id === editingServiceId) ?? null;
   const canContinue = Boolean(selectedServiceId && selectedKey && selectedTime);
   const canConfirm =
@@ -1083,7 +1194,9 @@ export function BookingHome() {
     const clientModalOpen = Boolean(
       clientAppointmentsListOpen ||
         (selectedClientAppointment && visibleStep !== "admin") ||
-        selectedAdminEditAppointment,
+        selectedAdminEditAppointment ||
+        selectedAdminClient ||
+        smsComposer,
     );
     if (!clientModalOpen) return undefined;
 
@@ -1092,8 +1205,12 @@ export function BookingHome() {
     const closeTopOverlay = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
 
-      if (selectedAdminEditAppointment) {
+      if (smsComposer) {
+        setSmsComposer(null);
+      } else if (selectedAdminEditAppointment) {
         setAdminEditAppointmentId(null);
+      } else if (selectedAdminClient) {
+        setSelectedAdminClientId(null);
       } else if (selectedClientAppointment) {
         setClientAppointmentId(null);
       } else {
@@ -1106,7 +1223,14 @@ export function BookingHome() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeTopOverlay);
     };
-  }, [clientAppointmentsListOpen, selectedAdminEditAppointment, selectedClientAppointment, visibleStep]);
+  }, [
+    clientAppointmentsListOpen,
+    selectedAdminClient,
+    selectedAdminEditAppointment,
+    selectedClientAppointment,
+    smsComposer,
+    visibleStep,
+  ]);
 
   useEffect(() => {
     if (visibleStep !== "booking") {
@@ -1621,18 +1745,44 @@ export function BookingHome() {
     });
     setActiveNotification((current) => (current?.id === notificationId ? null : current));
   };
-  const updateSmsMenuDirection = (appointmentId: string, trigger: HTMLElement) => {
-    const row = trigger.closest(".client-row");
-    const list = trigger.closest(".clients-view");
-    const rowRect = row?.getBoundingClientRect();
-    const listRect = list?.getBoundingClientRect();
-    const estimatedMenuHeight = 190;
-    const spaceBelow = listRect && rowRect ? listRect.bottom - rowRect.bottom : estimatedMenuHeight;
-    const spaceAbove = listRect && rowRect ? rowRect.top - listRect.top : 0;
-    const direction = spaceBelow < estimatedMenuHeight && spaceAbove > spaceBelow ? "up" : "down";
+  const openSmsComposer = (client: AdminClientProfile, appointment: AdminAppointment) => {
+    if (getPhoneDigits(client.phone).length !== 9) return;
 
-    setSmsMenuDirections((current) =>
-      current[appointmentId] === direction ? current : { ...current, [appointmentId]: direction },
+    setSmsComposer({
+      clientId: client.id,
+      appointmentId: appointment.id,
+      template: "confirmation",
+      message: buildClientSmsMessage("confirmation", appointment),
+    });
+  };
+  const selectSmsTemplate = (template: SmsTemplate) => {
+    if (!smsAppointment) return;
+
+    setSmsComposer((current) =>
+      current
+        ? {
+            ...current,
+            template,
+            message: buildClientSmsMessage(template, smsAppointment),
+          }
+        : current,
+    );
+  };
+  const selectSmsAppointment = (appointmentId: string) => {
+    const appointment = smsClient?.appointments.find((item) => item.id === appointmentId);
+    if (!appointment) return;
+
+    setSmsComposer((current) =>
+      current
+        ? {
+            ...current,
+            appointmentId,
+            message:
+              current.template === "custom"
+                ? current.message
+                : buildClientSmsMessage(current.template, appointment),
+          }
+        : current,
     );
   };
   const notificationButton = (
@@ -1929,107 +2079,171 @@ export function BookingHome() {
             <div className={`admin-tab-panel ${adminSection === "clients" ? "active" : ""}`}>
               <div className="admin-section-header">
                 <div>
-                  <p className="eyebrow">Kontakty</p>
-                  <h2>Klienci z rezerwacji</h2>
+                  <p className="eyebrow">Obsługa klienta</p>
+                  <h2>Klienci</h2>
                 </div>
                 <div className="admin-section-stats" aria-label="Podsumowanie klientów">
                   <span>
-                    <strong>{adminClientAppointments.length}</strong>
-                    zapisów
+                    <strong>{adminClientProfiles.length}</strong>
+                    klientów
                   </span>
                   <span>
                     <strong>
-                      {
-                        new Set(
-                          adminClientAppointments
-                            .map(
-                              (appointment) =>
-                                getPhoneDigits(appointment.phone ?? "") ||
-                                appointment.clientName.trim().toLowerCase(),
-                            )
-                            .filter(Boolean),
-                        ).size
-                      }
+                      {adminClientProfiles.filter((client) => client.nextAppointment).length}
                     </strong>
-                    klientów
+                    aktywnych
                   </span>
                 </div>
               </div>
 
               <div className="clients-view" aria-label="Lista klientów">
-                {adminClientAppointments.length > 0 ? (
-                  adminClientAppointments.map((appointment) => {
-                    const phoneDigits = getPhoneDigits(appointment.phone ?? "");
+                <div className="client-directory-tools">
+                  <label className="client-search">
+                    <span className="client-search-icon" aria-hidden="true" />
+                    <input
+                      type="search"
+                      value={clientSearch}
+                      onChange={(event) => setClientSearch(event.target.value)}
+                      placeholder="Szukaj po nazwisku, telefonie lub usłudze"
+                      aria-label="Szukaj klientów"
+                    />
+                    {clientSearch ? (
+                      <button
+                        type="button"
+                        onClick={() => setClientSearch("")}
+                        aria-label="Wyczyść wyszukiwanie"
+                      >
+                        ×
+                      </button>
+                    ) : null}
+                  </label>
+                  <div className="client-filters" aria-label="Filtry klientów">
+                    {(
+                      [
+                        ["all", "Wszyscy"],
+                        ["upcoming", "Nadchodzące"],
+                        ["rescheduled", "Do potwierdzenia"],
+                        ["missing-phone", "Brak telefonu"],
+                      ] as [ClientFilter, string][]
+                    ).map(([filter, label]) => (
+                      <button
+                        className={clientFilter === filter ? "active" : ""}
+                        key={filter}
+                        type="button"
+                        onClick={() => setClientFilter(filter)}
+                        aria-pressed={clientFilter === filter}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="client-directory-summary" aria-live="polite">
+                  <strong>{filteredAdminClients.length}</strong>
+                  <span>
+                    {filteredAdminClients.length === 1 ? "wynik" : "wyników"}
+                    {clientSearch ? ` dla „${clientSearch}”` : ""}
+                  </span>
+                </div>
+
+                <div className="client-directory-list">
+                  {filteredAdminClients.length > 0 ? (
+                    filteredAdminClients.map((client) => {
+                    const phoneDigits = getPhoneDigits(client.phone);
                     const hasPhone = phoneDigits.length === 9;
-                    const isRescheduled =
-                      normalizeAppointmentStatus(appointment.status) === "rescheduled";
+                    const contactAppointment =
+                      client.nextAppointment ?? client.appointments.at(-1) ?? null;
 
                     return (
-                      <article className="client-row" key={appointment.id}>
-                        <div className="client-row-avatar">
-                          {appointment.clientName.slice(0, 1)}
-                        </div>
+                      <article className="client-row" key={client.id}>
                         <button
-                          className="client-row-main client-row-edit"
+                          className="client-profile-trigger"
                           type="button"
-                          onClick={() => openAdminAppointmentEdit(appointment)}
-                          aria-label={`Edytuj wizytę ${appointment.clientName}`}
+                          onClick={() => setSelectedAdminClientId(client.id)}
+                          aria-label={`Otwórz kartę klienta ${client.name}`}
                         >
-                          <strong>{appointment.clientName}</strong>
-                          <span>
-                            {adminClientDateFormatter.format(dateFromKey(appointment.dateKey))},{" "}
-                            {appointment.startTime} · {appointment.serviceName}
+                          <span className="client-row-avatar">
+                            {client.photoUrl ? <img src={client.photoUrl} alt="" /> : client.name.slice(0, 1)}
                           </span>
-                          <small>{hasPhone ? formatPhoneNumber(phoneDigits) : "Brak numeru"}</small>
-                          <em className={`appointment-status ${normalizeAppointmentStatus(appointment.status)}`}>
-                            {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
-                          </em>
+                          <span className="client-row-main">
+                            <span className="client-row-name">
+                              <strong>{client.name}</strong>
+                              <small>{client.appointments.length} wizyt</small>
+                            </span>
+                            {client.nextAppointment ? (
+                              <span>
+                                {adminClientDateFormatter.format(
+                                  dateFromKey(client.nextAppointment.dateKey),
+                                )},{" "}
+                                {client.nextAppointment.startTime} · {client.nextAppointment.serviceName}
+                              </span>
+                            ) : (
+                              <span>Brak kolejnej wizyty</span>
+                            )}
+                            <small>
+                              {hasPhone ? formatPhoneNumber(phoneDigits) : "Brak numeru telefonu"}
+                              {client.email ? ` · ${client.email}` : ""}
+                            </small>
+                          </span>
+                          <span className="client-row-statuses">
+                            {client.rescheduledCount > 0 ? (
+                              <em className="appointment-status rescheduled">
+                                Do potwierdzenia
+                              </em>
+                            ) : client.nextAppointment ? (
+                              <em className="appointment-status">Aktywny</em>
+                            ) : (
+                              <em className="client-history-status">Historia</em>
+                            )}
+                            <i aria-hidden="true">›</i>
+                          </span>
                         </button>
-                        {isRescheduled ? (
+
+                        <div className="client-quick-actions" aria-label={`Szybkie akcje dla ${client.name}`}>
                           <button
-                            className="client-confirm-button"
+                            className="sms-button"
                             type="button"
-                            disabled={isSaving}
+                            disabled={!hasPhone || !contactAppointment}
                             onClick={() => {
-                              void confirmClientRescheduledAppointment(appointment.id);
+                              if (contactAppointment) openSmsComposer(client, contactAppointment);
                             }}
+                            aria-label={hasPhone ? `Napisz SMS do ${client.name}` : "Brak numeru telefonu"}
                           >
-                            Potwierdz
-                          </button>
-                        ) : null}
-                        {hasPhone ? (
-                          <details
-                            className={`sms-menu ${smsMenuDirections[appointment.id] === "up" ? "drop-up" : ""}`}
-                          >
-                            <summary
-                              className="sms-button"
-                              onClick={(event) => updateSmsMenuDirection(appointment.id, event.currentTarget)}
-                              aria-label={`Wyślij SMS do ${appointment.clientName}`}
-                            >
-                              <span className="sms-icon" aria-hidden="true" />
-                            </summary>
-                            <div className="sms-template-list">
-                              {smsTemplates.map((template) => (
-                                <a
-                                  key={template}
-                                  href={buildSmsHref(phoneDigits, buildClientSmsMessage(template, appointment))}
-                                >
-                                  {smsTemplateLabels[template]}
-                                </a>
-                              ))}
-                            </div>
-                          </details>
-                        ) : (
-                          <span className="sms-button disabled" aria-label="Brak numeru telefonu">
                             <span className="sms-icon" aria-hidden="true" />
-                          </span>
-                        )}
+                          </button>
+                          {client.email ? (
+                            <a
+                              className="client-email-button"
+                              href={`mailto:${client.email}?subject=${encodeURIComponent("BNB Barbershop - Twoja wizyta")}`}
+                              aria-label={`Napisz e-mail do ${client.name}`}
+                            >
+                              <span className="email-icon" aria-hidden="true" />
+                            </a>
+                          ) : (
+                            <span className="client-email-button disabled" aria-label="Brak adresu e-mail">
+                              <span className="email-icon" aria-hidden="true" />
+                            </span>
+                          )}
+                          <button
+                            className="client-card-button"
+                            type="button"
+                            onClick={() => setSelectedAdminClientId(client.id)}
+                            aria-label={`Otwórz kartę klienta ${client.name}`}
+                          >
+                            Karta
+                          </button>
+                        </div>
                       </article>
                     );
-                  })
-                ) : (
-                  <p className="clients-empty-state">Brak klientów do wyświetlenia.</p>
-                )}
+                    })
+                  ) : (
+                    <div className="clients-empty-state">
+                      <strong>Brak pasujących klientów</strong>
+                      <span>Zmień filtr albo wyczyść wyszukiwanie.</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -2805,6 +3019,259 @@ export function BookingHome() {
         <div className="notification-toast" role="status" aria-live="polite">
           <strong>{activeNotification.title}</strong>
           <span>{activeNotification.body}</span>
+        </div>
+      ) : null}
+
+      {selectedAdminClient && visibleStep === "admin" ? (
+        <div
+          className="client-modal-backdrop admin-client-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSelectedAdminClientId(null);
+          }}
+        >
+          <section
+            className="client-appointment-modal admin-client-profile-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Karta klienta ${selectedAdminClient.name}`}
+          >
+            <button
+              className="modal-close-button"
+              type="button"
+              onClick={() => setSelectedAdminClientId(null)}
+              aria-label="Zamknij kartę klienta"
+            >
+              ×
+            </button>
+
+            <header className="client-profile-header">
+              <span className="client-profile-avatar">
+                {selectedAdminClient.photoUrl ? (
+                  <img src={selectedAdminClient.photoUrl} alt="" />
+                ) : (
+                  selectedAdminClient.name.slice(0, 1)
+                )}
+              </span>
+              <div>
+                <p className="eyebrow">Karta klienta</p>
+                <h2>{selectedAdminClient.name}</h2>
+                <span>
+                  {selectedAdminClient.appointments.length} wizyt ·{" "}
+                  {selectedAdminClient.nextAppointment ? "ma kolejny termin" : "tylko historia"}
+                </span>
+              </div>
+            </header>
+
+            <div className="client-profile-contact">
+              <div>
+                <small>Telefon</small>
+                <strong>
+                  {getPhoneDigits(selectedAdminClient.phone).length === 9
+                    ? formatPhoneNumber(getPhoneDigits(selectedAdminClient.phone))
+                    : "Brak numeru"}
+                </strong>
+              </div>
+              <div>
+                <small>E-mail</small>
+                <strong>{selectedAdminClient.email || "Brak adresu"}</strong>
+              </div>
+              <div className="client-profile-contact-actions">
+                <button
+                  className="sms-button"
+                  type="button"
+                  disabled={
+                    getPhoneDigits(selectedAdminClient.phone).length !== 9 ||
+                    selectedAdminClient.appointments.length === 0
+                  }
+                  onClick={() => {
+                    const appointment =
+                      selectedAdminClient.nextAppointment ?? selectedAdminClient.appointments.at(-1);
+                    if (appointment) openSmsComposer(selectedAdminClient, appointment);
+                  }}
+                >
+                  <span className="sms-icon" aria-hidden="true" />
+                  SMS
+                </button>
+                {selectedAdminClient.email ? (
+                  <a
+                    href={`mailto:${selectedAdminClient.email}?subject=${encodeURIComponent("BNB Barbershop - Twoja wizyta")}`}
+                  >
+                    <span className="email-icon" aria-hidden="true" />
+                    E-mail
+                  </a>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="client-history-heading">
+              <div>
+                <p className="section-label">Historia wizyt</p>
+                <strong>Od najnowszej</strong>
+              </div>
+              {selectedAdminClient.rescheduledCount > 0 ? (
+                <span>{selectedAdminClient.rescheduledCount} do potwierdzenia</span>
+              ) : null}
+            </div>
+
+            <div className="client-history-list">
+              {[...selectedAdminClient.appointments].reverse().map((appointment) => {
+                const isPast = appointment.dateKey < dayKey(today);
+                const isRescheduled =
+                  normalizeAppointmentStatus(appointment.status) === "rescheduled";
+
+                return (
+                  <article className="client-history-row" key={appointment.id}>
+                    <div className="client-history-date">
+                      <strong>{dateFromKey(appointment.dateKey).getDate()}</strong>
+                      <span>{clientMonthFormatter.format(dateFromKey(appointment.dateKey))}</span>
+                    </div>
+                    <div className="client-history-main">
+                      <strong>{appointment.serviceName}</strong>
+                      <span>
+                        {appointment.startTime} -{" "}
+                        {addMinutesToTime(appointment.startTime, appointment.durationMinutes)} ·{" "}
+                        {appointment.price}
+                      </span>
+                      <small>{isPast ? "Wizyta historyczna" : "Nadchodząca wizyta"}</small>
+                    </div>
+                    <em className={`appointment-status ${normalizeAppointmentStatus(appointment.status)}`}>
+                      {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
+                    </em>
+                    <div className="client-history-actions">
+                      {getPhoneDigits(selectedAdminClient.phone).length === 9 ? (
+                        <button
+                          type="button"
+                          onClick={() => openSmsComposer(selectedAdminClient, appointment)}
+                        >
+                          SMS
+                        </button>
+                      ) : null}
+                      {!isPast ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedAdminClientId(null);
+                            openAdminAppointmentEdit(appointment);
+                          }}
+                        >
+                          Edytuj
+                        </button>
+                      ) : null}
+                      {isRescheduled ? (
+                        <button
+                          className="confirm"
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => {
+                            void confirmClientRescheduledAppointment(appointment.id);
+                          }}
+                        >
+                          Potwierdź
+                        </button>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {smsComposer && smsClient && smsAppointment && visibleStep === "admin" ? (
+        <div
+          className="client-modal-backdrop sms-composer-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSmsComposer(null);
+          }}
+        >
+          <section
+            className="client-appointment-modal sms-composer-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Nowa wiadomość SMS do ${smsClient.name}`}
+          >
+            <button
+              className="modal-close-button"
+              type="button"
+              onClick={() => setSmsComposer(null)}
+              aria-label="Zamknij wiadomość SMS"
+            >
+              ×
+            </button>
+            <div className="sms-composer-heading">
+              <span className="sms-composer-icon" aria-hidden="true">
+                <span className="sms-icon" />
+              </span>
+              <div>
+                <p className="eyebrow">Nowa wiadomość</p>
+                <h2>{smsClient.name}</h2>
+                <span>{formatPhoneNumber(getPhoneDigits(smsClient.phone))}</span>
+              </div>
+            </div>
+
+            <label className="sms-appointment-select">
+              <span>Wizyta</span>
+              <select
+                value={smsComposer.appointmentId}
+                onChange={(event) => selectSmsAppointment(event.target.value)}
+              >
+                {[...smsClient.appointments].reverse().map((appointment) => (
+                  <option key={appointment.id} value={appointment.id}>
+                    {adminClientDateFormatter.format(dateFromKey(appointment.dateKey))},{" "}
+                    {appointment.startTime} · {appointment.serviceName}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="sms-template-picker" aria-label="Szablon wiadomości">
+              {smsTemplates.map((template) => (
+                <button
+                  className={smsComposer.template === template ? "active" : ""}
+                  key={template}
+                  type="button"
+                  onClick={() => selectSmsTemplate(template)}
+                  aria-pressed={smsComposer.template === template}
+                >
+                  {smsTemplateLabels[template]}
+                </button>
+              ))}
+            </div>
+
+            <label className="sms-message-field">
+              <span>Treść wiadomości</span>
+              <textarea
+                value={smsComposer.message}
+                maxLength={480}
+                autoFocus
+                onChange={(event) =>
+                  setSmsComposer((current) =>
+                    current ? { ...current, message: event.target.value } : current,
+                  )
+                }
+              />
+            </label>
+
+            <div className="sms-composer-footer">
+              <span>{smsComposer.message.length}/480 znaków</span>
+              <a
+                className={smsComposer.message.trim() ? "" : "disabled"}
+                href={buildSmsHref(
+                  getPhoneDigits(smsClient.phone),
+                  smsComposer.message,
+                )}
+                aria-disabled={!smsComposer.message.trim()}
+                onClick={(event) => {
+                  if (!smsComposer.message.trim()) event.preventDefault();
+                }}
+              >
+                Otwórz aplikację SMS
+              </a>
+            </div>
+          </section>
         </div>
       ) : null}
 
