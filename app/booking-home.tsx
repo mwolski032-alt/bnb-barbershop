@@ -354,8 +354,10 @@ const buildClientSmsMessage = (template: SmsTemplate, appointment: AdminAppointm
 
 const buildSmsHref = (phoneDigits: string, message: string) => {
   const cleanMessage = message.trim();
+  const bodySeparator =
+    typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent) ? "&" : "?";
 
-  return cleanMessage ? `sms:${phoneDigits}?body=${encodeURIComponent(cleanMessage)}` : `sms:${phoneDigits}`;
+  return cleanMessage ? `sms:${phoneDigits}${bodySeparator}body=${encodeURIComponent(cleanMessage)}` : `sms:${phoneDigits}`;
 };
 
 const buildTimeSlots = (startHour = 6, endHour = 22) => {
@@ -580,6 +582,7 @@ export function BookingHome() {
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [activeNotification, setActiveNotification] = useState<AppNotification | null>(null);
   const [smsMenuDirections, setSmsMenuDirections] = useState<Record<string, "up" | "down">>({});
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
   const previousAppointmentsRef = useRef<Map<string, AdminAppointment> | null>(null);
   const [heroScrollProgress, setHeroScrollProgress] = useState(0);
   const [availabilityDraft, setAvailabilityDraft] = useState(() => ({
@@ -779,6 +782,16 @@ export function BookingHome() {
   }, []);
 
   useEffect(() => {
+    const touchQuery = window.matchMedia("(pointer: coarse)");
+    const updateTouchMode = () => setIsTouchDevice(touchQuery.matches);
+
+    updateTouchMode();
+    touchQuery.addEventListener("change", updateTouchMode);
+
+    return () => touchQuery.removeEventListener("change", updateTouchMode);
+  }, []);
+
+  useEffect(() => {
     if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) {
       return;
     }
@@ -828,7 +841,7 @@ export function BookingHome() {
     setNotificationPanelOpen(false);
     setActiveNotification(null);
     setNotifications(activeUser ? readStoredNotifications(activeUser.uid) : []);
-  }, [activeUser]);
+  }, [activeUser, today]);
 
   useEffect(() => {
     if (!activeUser) {
@@ -873,7 +886,7 @@ export function BookingHome() {
         })),
       );
     });
-  }, [activeUser]);
+  }, [activeUser, today]);
 
   useEffect(() => {
     if (!activeUser) return;
@@ -1139,6 +1152,8 @@ export function BookingHome() {
   };
 
   const removeAvailabilityDate = (dateKeyValue: string) => {
+    if (!window.confirm("Usunąć tę dostępność z kalendarza?")) return;
+
     void remove(ref(realtimeDb, `workSettings/availability/${dateKeyValue}`));
   };
 
@@ -1212,6 +1227,9 @@ export function BookingHome() {
   const deleteService = async (serviceId: string) => {
     if (services.length <= 1 || isSaving) return;
 
+    const service = services.find((item) => item.id === serviceId);
+    if (!window.confirm(`Usunąć usługę ${service?.name ?? ""}?`)) return;
+
     const nextServices = services.filter((service) => service.id !== serviceId);
 
     try {
@@ -1282,6 +1300,8 @@ export function BookingHome() {
 
   const cancelClientAppointment = (appointmentId: string) => {
     const appointment = adminAppointments.find((item) => item.id === appointmentId);
+    if (!window.confirm("Czy na pewno odwołać tę wizytę?")) return;
+
     setClientAppointmentId(null);
     setClientAppointmentsListOpen(false);
     if (reschedulingAppointmentId === appointmentId) {
@@ -1510,6 +1530,7 @@ export function BookingHome() {
 
   const declineAdminAppointment = (appointmentId: string) => {
     const appointment = adminAppointments.find((item) => item.id === appointmentId);
+    if (!window.confirm(`Odmówić wizytę ${appointment?.clientName ?? "klienta"}?`)) return;
 
     void remove(ref(realtimeDb, `appointments/${appointmentId}`)).then(() => {
       if (appointment) {
@@ -1577,7 +1598,7 @@ export function BookingHome() {
       aria-label="Otwórz listę powiadomień"
       aria-expanded={notificationPanelOpen}
     >
-      <span aria-hidden="true">🔔</span>
+      <span className="notification-bell-icon" aria-hidden="true" />
       {notifications.length > 0 ? <b>{Math.min(notifications.length, 9)}</b> : null}
     </button>
   );
@@ -1799,7 +1820,7 @@ export function BookingHome() {
                       return (
                         <article
                           className={`admin-appointment ${appointment.color}`}
-                          draggable
+                          draggable={!isTouchDevice}
                           key={appointment.id}
                           onDragStart={() => setDraggedAppointmentId(appointment.id)}
                           style={{ top: `${top}rem`, height: `${height}rem` }}
@@ -1940,7 +1961,7 @@ export function BookingHome() {
                               onClick={(event) => updateSmsMenuDirection(appointment.id, event.currentTarget)}
                               aria-label={`Wyślij SMS do ${appointment.clientName}`}
                             >
-                              💬
+                              <span className="sms-icon" aria-hidden="true" />
                             </summary>
                             <div className="sms-template-list">
                               {smsTemplates.map((template) => (
@@ -1955,7 +1976,7 @@ export function BookingHome() {
                           </details>
                         ) : (
                           <span className="sms-button disabled" aria-label="Brak numeru telefonu">
-                            💬
+                            <span className="sms-icon" aria-hidden="true" />
                           </span>
                         )}
                       </article>
@@ -2593,7 +2614,15 @@ export function BookingHome() {
             </span>
           </div>
 
-          <form className="confirm-form">
+          <form
+            className="confirm-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (canConfirm) {
+                void confirmBooking();
+              }
+            }}
+          >
             <label>
               Imię i nazwisko
               <input

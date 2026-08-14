@@ -379,9 +379,36 @@ input {
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
 }
 
-.notification-bell span {
-  font-size: 1rem;
-  line-height: 1;
+.notification-bell-icon {
+  position: relative;
+  width: 1rem;
+  height: 1.08rem;
+  border: 2px solid currentColor;
+  border-bottom: 0;
+  border-radius: 999px 999px 0.25rem 0.25rem;
+}
+
+.notification-bell-icon::before,
+.notification-bell-icon::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: currentColor;
+}
+
+.notification-bell-icon::before {
+  top: -0.28rem;
+  width: 0.3rem;
+  height: 0.3rem;
+  border-radius: 50%;
+}
+
+.notification-bell-icon::after {
+  bottom: -0.34rem;
+  width: 0.42rem;
+  height: 0.22rem;
+  border-radius: 0 0 999px 999px;
 }
 
 .notification-bell b {
@@ -407,8 +434,9 @@ input {
   box-shadow: none;
 }
 
-.session-pill .notification-bell span {
-  font-size: 0.84rem;
+.session-pill .notification-bell-icon {
+  width: 0.86rem;
+  height: 0.94rem;
 }
 
 .notification-panel {
@@ -2120,8 +2148,41 @@ h2 {
   background: rgba(48, 209, 88, 0.18);
   color: #ffffff;
   text-decoration: none;
-  font-size: 1.1rem;
   box-shadow: 0 10px 26px rgba(48, 209, 88, 0.12);
+}
+
+.sms-icon {
+  position: relative;
+  display: block;
+  width: 1.2rem;
+  height: 0.9rem;
+  border: 2px solid currentColor;
+  border-radius: 0.32rem;
+}
+
+.sms-icon::before {
+  content: "";
+  position: absolute;
+  right: 0.18rem;
+  bottom: -0.34rem;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  background: transparent;
+  transform: rotate(45deg);
+}
+
+.sms-icon::after {
+  content: "";
+  position: absolute;
+  top: 0.22rem;
+  right: 0.22rem;
+  left: 0.22rem;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0.28rem 0 currentColor;
 }
 
 .sms-menu {
@@ -3891,6 +3952,55 @@ h2 {
 }
 
 @media (max-width: 560px) {
+  .auth-shell {
+    align-items: start;
+    padding: 0.75rem;
+  }
+
+  .auth-card {
+    min-height: auto;
+    padding: 1.15rem;
+    border-radius: 28px;
+  }
+
+  .auth-logo {
+    width: 5.95rem;
+    height: 2.8rem;
+  }
+
+  .auth-logo img {
+    width: 4.85rem;
+  }
+
+  .auth-brand {
+    gap: 0.65rem;
+  }
+
+  .auth-hero {
+    margin-top: clamp(2.2rem, 8svh, 3.1rem);
+  }
+
+  .auth-card h1 {
+    max-width: 10ch;
+    font-size: clamp(2.25rem, 12vw, 2.85rem);
+    line-height: 1;
+  }
+
+  .auth-copy {
+    font-size: 0.95rem;
+    line-height: 1.48;
+  }
+
+  .auth-benefits {
+    margin-top: 1.15rem;
+  }
+
+  .google-login-button {
+    min-height: 3.2rem;
+    margin-top: 1.35rem;
+    font-size: 0.98rem;
+  }
+
   .app-shell {
     width: 100%;
     column-gap: 0.65rem;
