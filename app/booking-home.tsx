@@ -25,7 +25,7 @@ import {
 
 type Availability = "high" | "medium" | "low" | "none";
 type Step = "booking" | "confirm" | "success" | "admin";
-type AdminSection = "schedule" | "clients" | "work" | "services";
+type AdminSection = "schedule" | "clients" | "analytics" | "work" | "services";
 
 type Service = {
   id: string;
@@ -67,7 +67,7 @@ type AdminEditDraft = {
   startTime: string;
 };
 
-type AppointmentStatus = "confirmed" | "rescheduled" | "cancelled";
+type AppointmentStatus = "confirmed" | "rescheduled" | "cancelled" | "completed";
 type AppointmentColor = "blue" | "mint" | "pink" | "violet" | "amber" | "coral" | "sky" | "lime";
 
 type BookingSummary = {
@@ -90,6 +90,8 @@ type AdminAppointment = Appointment & {
   price: string;
   color: AppointmentColor;
   status?: AppointmentStatus;
+  settledAt?: number;
+  settledAmount?: number;
 };
 
 type AvailabilityWindow = {
@@ -115,6 +117,7 @@ type AppNotification = {
 
 type SmsTemplate = "confirmation" | "reschedule" | "reminder" | "custom";
 type ClientFilter = "all" | "upcoming" | "rescheduled" | "missing-phone";
+type AnalyticsPeriod = "week" | "month" | "quarter" | "year";
 
 type AdminClientProfile = {
   id: string;
@@ -176,10 +179,32 @@ const adminClientDateFormatter = new Intl.DateTimeFormat("pl-PL", {
   day: "2-digit",
   month: "2-digit",
 });
+const analyticsDateFormatter = new Intl.DateTimeFormat("pl-PL", {
+  day: "numeric",
+  month: "short",
+});
+const analyticsMonthFormatter = new Intl.DateTimeFormat("pl-PL", { month: "short" });
+const analyticsWeekdayFormatter = new Intl.DateTimeFormat("pl-PL", { weekday: "short" });
 const appointmentStatusLabels: Record<AppointmentStatus, string> = {
   confirmed: "Potwierdzona",
   rescheduled: "Przesunięta",
   cancelled: "Odwołana",
+  completed: "Rozliczona",
+};
+
+const adminSectionLabels: Record<AdminSection, string> = {
+  schedule: "Terminarz",
+  clients: "Klienci",
+  analytics: "Analiza",
+  work: "Praca",
+  services: "Usługi",
+};
+
+const analyticsPeriodLabels: Record<AnalyticsPeriod, string> = {
+  week: "Tydzień",
+  month: "Miesiąc",
+  quarter: "3 mies.",
+  year: "Rok",
 };
 
 const getAppointmentDistanceLabel = (dateKeyValue: string, today: Date) => {
@@ -237,7 +262,9 @@ const appointmentColorPalette: AppointmentColor[] = [
 ];
 
 const normalizeAppointmentStatus = (status?: string): AppointmentStatus =>
-  status === "rescheduled" || status === "cancelled" ? status : "confirmed";
+  status === "rescheduled" || status === "cancelled" || status === "completed"
+    ? status
+    : "confirmed";
 
 const normalizeAppointmentColor = (color?: string): AppointmentColor =>
   appointmentColorPalette.includes(color as AppointmentColor)
@@ -291,6 +318,51 @@ const getPhoneDigits = (value: string) => value.replace(/\D/g, "").slice(0, 9);
 
 const getServicePriceValue = (value: string) =>
   Number(value.trim().replace(",", ".").replace(/[^\d.]/g, ""));
+
+const currencyFormatter = new Intl.NumberFormat("pl-PL", {
+  style: "currency",
+  currency: "PLN",
+  maximumFractionDigits: 0,
+});
+
+const formatCurrency = (value: number) => currencyFormatter.format(Math.round(value));
+
+const getAppointmentRevenue = (appointment: AdminAppointment) =>
+  Number.isFinite(appointment.settledAmount)
+    ? Number(appointment.settledAmount)
+    : getServicePriceValue(appointment.price);
+
+const getAnalyticsRange = (period: AnalyticsPeriod, now: Date) => {
+  let start: Date;
+  let end: Date;
+  let previousStart: Date;
+  let previousEnd: Date;
+
+  if (period === "week") {
+    const mondayOffset = (now.getDay() + 6) % 7;
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - mondayOffset);
+    end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6, 23, 59, 59, 999);
+    previousStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() - 7);
+    previousEnd = new Date(start.getTime() - 1);
+  } else if (period === "month") {
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+    end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    previousStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    previousEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+  } else if (period === "quarter") {
+    start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    previousStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    previousEnd = new Date(now.getFullYear(), now.getMonth() - 2, 0, 23, 59, 59, 999);
+  } else {
+    start = new Date(now.getFullYear(), 0, 1);
+    end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+    previousStart = new Date(now.getFullYear() - 1, 0, 1);
+    previousEnd = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
+  }
+
+  return { start, end, previousStart, previousEnd };
+};
 
 const formatPhoneNumber = (value: string) => {
   const digits = getPhoneDigits(value);
@@ -374,6 +446,32 @@ const smsTemplateLabels: Record<SmsTemplate, string> = {
   reminder: "Przypomnienie",
   custom: "Własna",
 };
+
+const getAppointmentDateTime = (appointment: Pick<AdminAppointment, "dateKey" | "startTime">) => {
+  const date = dateFromKey(appointment.dateKey);
+  const [hour, minute] = appointment.startTime.split(":").map(Number);
+  date.setHours(hour, minute, 0, 0);
+  return date;
+};
+
+const getAppointmentEndDateTime = (
+  appointment: Pick<AdminAppointment, "dateKey" | "startTime" | "durationMinutes">,
+) => {
+  const date = getAppointmentDateTime(appointment);
+  date.setMinutes(date.getMinutes() + appointment.durationMinutes);
+  return date;
+};
+
+const canSettleAppointment = (appointment: AdminAppointment, now: Date) => {
+  if (normalizeAppointmentStatus(appointment.status) === "completed") return false;
+  const settlementAvailableAt = getAppointmentDateTime(appointment);
+  settlementAvailableAt.setMinutes(settlementAvailableAt.getMinutes() + 1);
+  return now.getTime() >= settlementAvailableAt.getTime();
+};
+
+const isPotentialNoShow = (appointment: AdminAppointment, now: Date) =>
+  normalizeAppointmentStatus(appointment.status) !== "completed" &&
+  now.getTime() > getAppointmentEndDateTime(appointment).getTime();
 
 const smsTemplates: SmsTemplate[] = ["confirmation", "reschedule", "reminder", "custom"];
 
@@ -641,7 +739,9 @@ export function BookingHome() {
   const [activeNotification, setActiveNotification] = useState<AppNotification | null>(null);
   const [clientSearch, setClientSearch] = useState("");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("month");
   const [selectedAdminClientId, setSelectedAdminClientId] = useState<string | null>(null);
+  const [settlingAppointmentId, setSettlingAppointmentId] = useState<string | null>(null);
   const [smsComposer, setSmsComposer] = useState<SmsComposerState | null>(null);
   const [editingAvailabilityKey, setEditingAvailabilityKey] = useState<string | null>(null);
   const [pendingAvailabilityRemovalKey, setPendingAvailabilityRemovalKey] = useState<string | null>(
@@ -748,7 +848,6 @@ export function BookingHome() {
   }, [adminAppointmentDays, adminSelectedKey, today, workSettings.availability]);
   const adminClientProfiles = useMemo<AdminClientProfile[]>(() => {
     const profiles = new Map<string, AdminAppointment[]>();
-    const todayKey = dayKey(today);
 
     adminClientAppointments.forEach((appointment) => {
       const clientId = getAdminClientId(appointment);
@@ -764,10 +863,19 @@ export function BookingHome() {
           .reverse()
           .find((appointment) => appointment.phone || appointment.clientEmail) ?? sortedAppointments[0];
         const nextAppointment =
-          sortedAppointments.find((appointment) => appointment.dateKey >= todayKey) ?? null;
+          sortedAppointments.find(
+            (appointment) =>
+              normalizeAppointmentStatus(appointment.status) !== "completed" &&
+              getAppointmentEndDateTime(appointment).getTime() > currentDate.getTime(),
+          ) ?? null;
         const lastAppointment =
-          [...sortedAppointments].reverse().find((appointment) => appointment.dateKey < todayKey) ??
-          null;
+          [...sortedAppointments]
+            .reverse()
+            .find(
+              (appointment) =>
+                normalizeAppointmentStatus(appointment.status) === "completed" ||
+                getAppointmentEndDateTime(appointment).getTime() <= currentDate.getTime(),
+            ) ?? null;
 
         return {
           id,
@@ -793,7 +901,7 @@ export function BookingHome() {
         if (second.nextAppointment) return 1;
         return first.name.localeCompare(second.name, "pl");
       });
-  }, [adminClientAppointments, today]);
+  }, [adminClientAppointments, currentDate]);
   const filteredAdminClients = useMemo(() => {
     const query = clientSearch.trim().toLocaleLowerCase("pl");
 
@@ -816,6 +924,158 @@ export function BookingHome() {
       return true;
     });
   }, [adminClientProfiles, clientFilter, clientSearch]);
+  const analytics = useMemo(() => {
+    const range = getAnalyticsRange(analyticsPeriod, currentDate);
+    const isWithin = (appointment: AdminAppointment, start: Date, end: Date) => {
+      const appointmentTime = getAppointmentDateTime(appointment).getTime();
+      return appointmentTime >= start.getTime() && appointmentTime <= end.getTime();
+    };
+    const completedAppointments = adminAppointments.filter(
+      (appointment) =>
+        normalizeAppointmentStatus(appointment.status) === "completed" &&
+        isWithin(appointment, range.start, range.end),
+    );
+    const previousCompletedAppointments = adminAppointments.filter(
+      (appointment) =>
+        normalizeAppointmentStatus(appointment.status) === "completed" &&
+        isWithin(appointment, range.previousStart, range.previousEnd),
+    );
+    const potentialNoShows = adminAppointments.filter(
+      (appointment) =>
+        isPotentialNoShow(appointment, currentDate) &&
+        isWithin(appointment, range.start, range.end),
+    );
+    const upcomingAppointments = adminAppointments.filter(
+      (appointment) =>
+        normalizeAppointmentStatus(appointment.status) !== "completed" &&
+        getAppointmentDateTime(appointment).getTime() > currentDate.getTime() &&
+        isWithin(appointment, range.start, range.end),
+    );
+    const revenue = completedAppointments.reduce(
+      (sum, appointment) => sum + getAppointmentRevenue(appointment),
+      0,
+    );
+    const previousRevenue = previousCompletedAppointments.reduce(
+      (sum, appointment) => sum + getAppointmentRevenue(appointment),
+      0,
+    );
+    const clientIds = new Set(completedAppointments.map(getAdminClientId));
+    const previousClientIds = new Set(
+      adminAppointments
+        .filter(
+          (appointment) =>
+            normalizeAppointmentStatus(appointment.status) === "completed" &&
+            getAppointmentDateTime(appointment).getTime() < range.start.getTime(),
+        )
+        .map(getAdminClientId),
+    );
+    const returningClients = Array.from(clientIds).filter((id) => previousClientIds.has(id)).length;
+    const newClients = Math.max(0, clientIds.size - returningClients);
+    const availableMinutes = Object.values(workSettings.availability).reduce((sum, windowItem) => {
+      const date = dateFromKey(windowItem.dateKey).getTime();
+      if (date < range.start.getTime() || date > range.end.getTime()) return sum;
+      return sum + Math.max(0, timeToMinutes(windowItem.endTime) - timeToMinutes(windowItem.startTime));
+    }, 0);
+    const occupiedAppointments = adminAppointments.filter(
+      (appointment) =>
+        isWithin(appointment, range.start, range.end) &&
+        (normalizeAppointmentStatus(appointment.status) === "completed" ||
+          getAppointmentEndDateTime(appointment).getTime() > currentDate.getTime()),
+    );
+    const occupiedMinutes = occupiedAppointments.reduce(
+      (sum, appointment) => sum + appointment.durationMinutes,
+      0,
+    );
+    const serviceMap = new Map<string, { name: string; visits: number; revenue: number }>();
+
+    completedAppointments.forEach((appointment) => {
+      const current = serviceMap.get(appointment.serviceName) ?? {
+        name: appointment.serviceName,
+        visits: 0,
+        revenue: 0,
+      };
+      current.visits += 1;
+      current.revenue += getAppointmentRevenue(appointment);
+      serviceMap.set(appointment.serviceName, current);
+    });
+
+    const servicesSummary = Array.from(serviceMap.values()).sort(
+      (first, second) => second.revenue - first.revenue || second.visits - first.visits,
+    );
+    const bucketDefinitions: Array<{ label: string; start: Date; end: Date }> = [];
+
+    if (analyticsPeriod === "week") {
+      for (let offset = 0; offset < 7; offset += 1) {
+        const start = new Date(range.start.getFullYear(), range.start.getMonth(), range.start.getDate() + offset);
+        const end = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 23, 59, 59, 999);
+        bucketDefinitions.push({
+          label: analyticsWeekdayFormatter.format(start).replace(".", ""),
+          start,
+          end,
+        });
+      }
+    } else if (analyticsPeriod === "month") {
+      const lastDay = range.end.getDate();
+      for (let day = 1; day <= lastDay; day += 7) {
+        const bucketEndDay = Math.min(day + 6, lastDay);
+        bucketDefinitions.push({
+          label: `${day}-${bucketEndDay}`,
+          start: new Date(range.start.getFullYear(), range.start.getMonth(), day),
+          end: new Date(range.start.getFullYear(), range.start.getMonth(), bucketEndDay, 23, 59, 59, 999),
+        });
+      }
+    } else {
+      const cursor = new Date(range.start.getFullYear(), range.start.getMonth(), 1);
+      while (cursor.getTime() <= range.end.getTime()) {
+        const start = new Date(cursor);
+        const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+        bucketDefinitions.push({
+          label: analyticsMonthFormatter.format(start).replace(".", ""),
+          start,
+          end,
+        });
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+    }
+
+    const trend = bucketDefinitions.map((bucket) => ({
+      label: bucket.label,
+      revenue: completedAppointments
+        .filter((appointment) => isWithin(appointment, bucket.start, bucket.end))
+        .reduce((sum, appointment) => sum + getAppointmentRevenue(appointment), 0),
+    }));
+
+    return {
+      periodLabel: `${analyticsDateFormatter.format(range.start)} - ${analyticsDateFormatter.format(range.end)}`,
+      revenue,
+      revenueChange:
+        previousRevenue > 0
+          ? Math.round(((revenue - previousRevenue) / previousRevenue) * 100)
+          : revenue > 0
+            ? 100
+            : 0,
+      visits: completedAppointments.length,
+      visitsChange: completedAppointments.length - previousCompletedAppointments.length,
+      clients: clientIds.size,
+      occupancy: availableMinutes > 0 ? Math.min(100, Math.round((occupiedMinutes / availableMinutes) * 100)) : 0,
+      averageTicket: completedAppointments.length > 0 ? revenue / completedAppointments.length : 0,
+      returningClients,
+      newClients,
+      potentialNoShows: potentialNoShows.length,
+      potentialNoShowValue: potentialNoShows.reduce(
+        (sum, appointment) => sum + getServicePriceValue(appointment.price),
+        0,
+      ),
+      plannedRevenue: upcomingAppointments.reduce(
+        (sum, appointment) => sum + getServicePriceValue(appointment.price),
+        0,
+      ),
+      servicesSummary,
+      maxServiceRevenue: Math.max(1, ...servicesSummary.map((service) => service.revenue)),
+      trend,
+      maxTrendRevenue: Math.max(1, ...trend.map((bucket) => bucket.revenue)),
+    };
+  }, [adminAppointments, analyticsPeriod, currentDate, workSettings.availability]);
   const availableTimes = useMemo(
     () =>
       getAvailableTimes(
@@ -857,14 +1117,16 @@ export function BookingHome() {
         ? adminAppointments
             .filter(
               (appointment) =>
-                appointment.userId === activeUser.uid && appointment.dateKey >= dayKey(today),
+                appointment.userId === activeUser.uid &&
+                normalizeAppointmentStatus(appointment.status) !== "completed" &&
+                getAppointmentEndDateTime(appointment).getTime() > currentDate.getTime(),
             )
             .sort((first, second) => {
               if (first.dateKey !== second.dateKey) return first.dateKey.localeCompare(second.dateKey);
               return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
             })
         : [],
-    [activeUser, adminAppointments, today],
+    [activeUser, adminAppointments, currentDate],
   );
   const nearestClientAppointment = clientAppointments[0] ?? null;
   const clientFirstName = (activeUser?.displayName ?? "Kliencie").trim().split(/\s+/)[0] || "Kliencie";
@@ -1071,6 +1333,10 @@ export function BookingHome() {
           price: appointment.price ?? "0 zł",
           color: normalizeAppointmentColor(appointment.color),
           status: normalizeAppointmentStatus(appointment.status),
+          settledAt: Number(appointment.settledAt) || undefined,
+          settledAmount: Number.isFinite(Number(appointment.settledAmount))
+            ? Number(appointment.settledAmount)
+            : undefined,
         }))
         .filter((appointment) => appointment.status !== "cancelled")
         .sort((first, second) => {
@@ -2015,6 +2281,27 @@ export function BookingHome() {
       message: buildClientSmsMessage("confirmation", appointment),
     });
   };
+
+  const settleAdminAppointment = async (appointment: AdminAppointment) => {
+    if (
+      !isAdmin ||
+      settlingAppointmentId ||
+      !canSettleAppointment(appointment, currentDate)
+    ) {
+      return;
+    }
+
+    try {
+      setSettlingAppointmentId(appointment.id);
+      await update(ref(realtimeDb, `appointments/${appointment.id}`), {
+        status: "completed",
+        settledAt: Date.now(),
+        settledAmount: getServicePriceValue(appointment.price),
+      });
+    } finally {
+      setSettlingAppointmentId(null);
+    }
+  };
   const selectSmsTemplate = (template: SmsTemplate) => {
     if (!smsAppointment) return;
 
@@ -2139,15 +2426,7 @@ export function BookingHome() {
             </button>
             <div>
               <p className="eyebrow">Admin</p>
-              <h1>
-                {adminSection === "schedule"
-                  ? "Terminarz"
-                  : adminSection === "clients"
-                    ? "Klienci"
-                    : adminSection === "work"
-                      ? "Praca"
-                      : "Usługi"}
-              </h1>
+              <h1>{adminSectionLabels[adminSection]}</h1>
             </div>
             {notificationButton}
           </div>
@@ -2329,7 +2608,8 @@ export function BookingHome() {
                           >
                             {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
                           </em>
-                          <div className="mobile-agenda-actions">
+                          {normalizeAppointmentStatus(appointment.status) !== "completed" ? (
+                            <div className="mobile-agenda-actions">
                             <button
                               type="button"
                               onClick={() => shiftAdminAppointment(appointment.id, -15)}
@@ -2366,7 +2646,8 @@ export function BookingHome() {
                             >
                               Odmów
                             </button>
-                          </div>
+                            </div>
+                          ) : null}
                         </article>
                       ))
                     ) : (
@@ -2430,9 +2711,16 @@ export function BookingHome() {
                       return (
                         <article
                           className={`admin-appointment ${appointment.color}`}
-                          draggable={!isTouchDevice}
+                          draggable={
+                            !isTouchDevice &&
+                            normalizeAppointmentStatus(appointment.status) !== "completed"
+                          }
                           key={appointment.id}
-                          onDragStart={() => setDraggedAppointmentId(appointment.id)}
+                          onDragStart={() => {
+                            if (normalizeAppointmentStatus(appointment.status) !== "completed") {
+                              setDraggedAppointmentId(appointment.id);
+                            }
+                          }}
                           style={{ top: `${top}rem`, height: `${height}rem` }}
                         >
                           <div>
@@ -2447,7 +2735,8 @@ export function BookingHome() {
                               {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
                             </small>
                           </div>
-                          <div className="appointment-actions">
+                          {normalizeAppointmentStatus(appointment.status) !== "completed" ? (
+                            <div className="appointment-actions">
                             <button
                               type="button"
                               onClick={() => shiftAdminAppointment(appointment.id, -15)}
@@ -2488,7 +2777,8 @@ export function BookingHome() {
                             >
                               Odmów
                             </button>
-                          </div>
+                            </div>
+                          ) : null}
                         </article>
                       );
                     })}
@@ -2575,6 +2865,9 @@ export function BookingHome() {
                     const hasPhone = phoneDigits.length === 9;
                     const contactAppointment =
                       client.nextAppointment ?? client.appointments.at(-1) ?? null;
+                    const settlementAppointment = [...client.appointments]
+                      .reverse()
+                      .find((appointment) => canSettleAppointment(appointment, currentDate));
 
                     return (
                       <article className="client-row" key={client.id}>
@@ -2608,7 +2901,19 @@ export function BookingHome() {
                             </small>
                           </span>
                           <span className="client-row-statuses">
-                            {client.rescheduledCount > 0 ? (
+                            {settlementAppointment ? (
+                              <em
+                                className={`appointment-status ${
+                                  isPotentialNoShow(settlementAppointment, currentDate)
+                                    ? "missed"
+                                    : "settlement-due"
+                                }`}
+                              >
+                                {isPotentialNoShow(settlementAppointment, currentDate)
+                                  ? "Nierozliczona"
+                                  : "Do rozliczenia"}
+                              </em>
+                            ) : client.rescheduledCount > 0 ? (
                               <em className="appointment-status rescheduled">
                                 Do potwierdzenia
                               </em>
@@ -2622,6 +2927,18 @@ export function BookingHome() {
                         </button>
 
                         <div className="client-quick-actions" aria-label={`Szybkie akcje dla ${client.name}`}>
+                          {settlementAppointment ? (
+                            <button
+                              className="settle-appointment-button"
+                              type="button"
+                              disabled={Boolean(settlingAppointmentId)}
+                              onClick={() => void settleAdminAppointment(settlementAppointment)}
+                            >
+                              {settlingAppointmentId === settlementAppointment.id
+                                ? "Zapisywanie..."
+                                : "Rozlicz"}
+                            </button>
+                          ) : null}
                           <button
                             className="sms-button"
                             type="button"
@@ -2664,6 +2981,155 @@ export function BookingHome() {
                       <span>Zmień filtr albo wyczyść wyszukiwanie.</span>
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+
+            <div className={`admin-tab-panel ${adminSection === "analytics" ? "active" : ""}`}>
+              <div className="admin-section-header analytics-section-header">
+                <div>
+                  <p className="eyebrow">Wyniki biznesu</p>
+                  <h2>{analytics.periodLabel}</h2>
+                </div>
+                <div className="analytics-period-control" aria-label="Zakres analizy">
+                  {(Object.keys(analyticsPeriodLabels) as AnalyticsPeriod[]).map((period) => (
+                    <button
+                      className={analyticsPeriod === period ? "active" : ""}
+                      key={period}
+                      type="button"
+                      onClick={() => setAnalyticsPeriod(period)}
+                      aria-pressed={analyticsPeriod === period}
+                    >
+                      {analyticsPeriodLabels[period]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="analytics-view" aria-label="Analiza działalności">
+                <div className="analytics-kpi-grid">
+                  <article className="analytics-kpi revenue">
+                    <span>Przychód</span>
+                    <strong>{formatCurrency(analytics.revenue)}</strong>
+                    <small className={analytics.revenueChange < 0 ? "negative" : "positive"}>
+                      {analytics.revenueChange > 0 ? "+" : ""}
+                      {analytics.revenueChange}% do poprzedniego okresu
+                    </small>
+                  </article>
+                  <article className="analytics-kpi visits">
+                    <span>Rozliczone wizyty</span>
+                    <strong>{analytics.visits}</strong>
+                    <small className={analytics.visitsChange < 0 ? "negative" : "positive"}>
+                      {analytics.visitsChange > 0 ? "+" : ""}
+                      {analytics.visitsChange} do poprzedniego okresu
+                    </small>
+                  </article>
+                  <article className="analytics-kpi clients">
+                    <span>Klienci</span>
+                    <strong>{analytics.clients}</strong>
+                    <small>
+                      {analytics.newClients} nowych · {analytics.returningClients} powracających
+                    </small>
+                  </article>
+                  <article className="analytics-kpi occupancy">
+                    <span>Obłożenie</span>
+                    <strong>{analytics.occupancy}%</strong>
+                    <small>zajęty czas w dostępnych godzinach</small>
+                  </article>
+                </div>
+
+                <div className="analytics-main-grid">
+                  <section className="analytics-panel analytics-trend-panel">
+                    <div className="analytics-panel-heading">
+                      <div>
+                        <p className="section-label">Przychód w czasie</p>
+                        <strong>{formatCurrency(analytics.revenue)}</strong>
+                      </div>
+                      <span>{analyticsPeriodLabels[analyticsPeriod]}</span>
+                    </div>
+
+                    <div className="analytics-chart" aria-label="Wykres przychodu">
+                      {analytics.trend.map((bucket) => (
+                        <div className="analytics-bar-column" key={`${bucket.label}-${analyticsPeriod}`}>
+                          <strong>{bucket.revenue > 0 ? formatCurrency(bucket.revenue) : "—"}</strong>
+                          <div className="analytics-bar-track" aria-hidden="true">
+                            <span
+                              style={
+                                {
+                                  "--bar-height": `${Math.max(
+                                    bucket.revenue > 0 ? 8 : 0,
+                                    Math.round((bucket.revenue / analytics.maxTrendRevenue) * 100),
+                                  )}%`,
+                                } as CSSProperties
+                              }
+                            />
+                          </div>
+                          <small>{bucket.label}</small>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="analytics-panel analytics-services-panel">
+                    <div className="analytics-panel-heading">
+                      <div>
+                        <p className="section-label">Usługi</p>
+                        <strong>Największy udział</strong>
+                      </div>
+                      <span>{analytics.servicesSummary.length}</span>
+                    </div>
+
+                    {analytics.servicesSummary.length > 0 ? (
+                      <div className="analytics-service-list">
+                        {analytics.servicesSummary.slice(0, 5).map((service) => (
+                          <div className="analytics-service-row" key={service.name}>
+                            <div>
+                              <strong>{service.name}</strong>
+                              <span>
+                                {service.visits} {service.visits === 1 ? "wizyta" : "wizyt"}
+                              </span>
+                            </div>
+                            <b>{formatCurrency(service.revenue)}</b>
+                            <div className="analytics-service-meter" aria-hidden="true">
+                              <span
+                                style={{
+                                  width: `${Math.max(
+                                    4,
+                                    Math.round(
+                                      (service.revenue / analytics.maxServiceRevenue) * 100,
+                                    ),
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="analytics-empty-state">
+                        <strong>Brak rozliczonych usług</strong>
+                        <span>Pierwsze wyniki pojawią się po rozliczeniu wizyty.</span>
+                      </div>
+                    )}
+                  </section>
+                </div>
+
+                <div className="analytics-insight-grid">
+                  <article>
+                    <span>Średnia wizyta</span>
+                    <strong>{formatCurrency(analytics.averageTicket)}</strong>
+                    <small>średni przychód z rozliczenia</small>
+                  </article>
+                  <article>
+                    <span>Przyszłe rezerwacje</span>
+                    <strong>{formatCurrency(analytics.plannedRevenue)}</strong>
+                    <small>w wybranym okresie</small>
+                  </article>
+                  <article className={analytics.potentialNoShows > 0 ? "attention" : ""}>
+                    <span>Potencjalne nieobecności</span>
+                    <strong>{analytics.potentialNoShows}</strong>
+                    <small>{formatCurrency(analytics.potentialNoShowValue)} bez rozliczenia</small>
+                  </article>
                 </div>
               </div>
             </div>
@@ -3097,6 +3563,14 @@ export function BookingHome() {
             >
               <span className="admin-nav-icon clients-icon" aria-hidden="true" />
               <span>Klienci</span>
+            </button>
+            <button
+              className={adminSection === "analytics" ? "active" : ""}
+              type="button"
+              onClick={() => setAdminSection("analytics")}
+            >
+              <span className="admin-nav-icon analytics-icon" aria-hidden="true" />
+              <span>Analiza</span>
             </button>
             <button
               className={adminSection === "work" ? "active" : ""}
@@ -3702,9 +4176,13 @@ export function BookingHome() {
 
             <div className="client-history-list">
               {[...selectedAdminClient.appointments].reverse().map((appointment) => {
-                const isPast = appointment.dateKey < dayKey(today);
+                const isPast = getAppointmentEndDateTime(appointment).getTime() <= currentDate.getTime();
                 const isRescheduled =
                   normalizeAppointmentStatus(appointment.status) === "rescheduled";
+                const isCompleted =
+                  normalizeAppointmentStatus(appointment.status) === "completed";
+                const settlementAvailable = canSettleAppointment(appointment, currentDate);
+                const potentialNoShow = isPotentialNoShow(appointment, currentDate);
 
                 return (
                   <article className="client-history-row" key={appointment.id}>
@@ -3719,12 +4197,36 @@ export function BookingHome() {
                         {addMinutesToTime(appointment.startTime, appointment.durationMinutes)} ·{" "}
                         {appointment.price}
                       </span>
-                      <small>{isPast ? "Wizyta historyczna" : "Nadchodząca wizyta"}</small>
+                      <small>
+                        {isCompleted
+                          ? "Wizyta rozliczona"
+                          : potentialNoShow
+                            ? "Minęła bez rozliczenia"
+                            : settlementAvailable
+                              ? "Możesz już rozliczyć"
+                              : "Nadchodząca wizyta"}
+                      </small>
                     </div>
-                    <em className={`appointment-status ${normalizeAppointmentStatus(appointment.status)}`}>
-                      {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
+                    <em
+                      className={`appointment-status ${
+                        potentialNoShow ? "missed" : normalizeAppointmentStatus(appointment.status)
+                      }`}
+                    >
+                      {potentialNoShow
+                        ? "Nierozliczona"
+                        : appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
                     </em>
                     <div className="client-history-actions">
+                      {settlementAvailable ? (
+                        <button
+                          className="settle"
+                          type="button"
+                          disabled={Boolean(settlingAppointmentId)}
+                          onClick={() => void settleAdminAppointment(appointment)}
+                        >
+                          {settlingAppointmentId === appointment.id ? "Zapisywanie..." : "Rozlicz"}
+                        </button>
+                      ) : null}
                       {getPhoneDigits(selectedAdminClient.phone).length === 9 ? (
                         <button
                           type="button"

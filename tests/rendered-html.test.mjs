@@ -134,3 +134,24 @@ test("keeps the mastered admin schedule and availability editor", async () => {
   assert.match(styles, /\.mobile-agenda-actions/);
   assert.match(styles, /\.work-feedback\.success/);
 });
+
+test("keeps settlement-driven admin analytics", async () => {
+  const [bookingHome, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /"analytics" \| "work"/);
+  assert.match(bookingHome, /"cancelled" \| "completed"/);
+  assert.match(bookingHome, /settlementAvailableAt\.setMinutes\([\s\S]*\+ 1\)/);
+  assert.match(bookingHome, /const isPotentialNoShow/);
+  assert.match(bookingHome, /const settleAdminAppointment = async/);
+  assert.match(bookingHome, /status: "completed"/);
+  assert.match(bookingHome, /settledAmount: getServicePriceValue/);
+  assert.match(bookingHome, /aria-label="Analiza działalności"/);
+  assert.match(bookingHome, /Potencjalne nieobecności/);
+  assert.match(styles, /\.analytics-kpi-grid/);
+  assert.match(styles, /\.analytics-chart/);
+  assert.match(styles, /\.admin-nav-pill\.analytics/);
+  assert.match(styles, /repeat\(5, minmax\(0, 1fr\)\)/);
+});
