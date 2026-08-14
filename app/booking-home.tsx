@@ -2091,18 +2091,16 @@ export function BookingHome() {
           </div>
 
           <div className="auth-hero">
-            <p className="eyebrow">Rezerwacje online</p>
-            <h1>Zaloguj się, żeby umówić wizytę</h1>
+            <p className="eyebrow">Witaj w B&apos;n&apos;B</p>
+            <h1>Twój następny termin</h1>
             <p className="auth-copy">
-              Po zalogowaniu przypiszemy wizytę do Twojego konta. Dzięki temu później
-              będziesz mógł wrócić do swoich rezerwacji.
+              Zaloguj się, wybierz usługę i godzinę, która pasuje do Twojego dnia.
             </p>
           </div>
 
-          <div className="auth-benefits" aria-label="Co daje logowanie">
-            <span>Twoje terminy w jednym miejscu</span>
-            <span>Łatwiejsze przesunięcie wizyty</span>
-            <span>Bez podglądu cudzych rezerwacji</span>
+          <div className="auth-benefits" aria-label="Korzyści dla klienta">
+            <span>Rezerwacja w mniej niż minutę</span>
+            <span>Przypomnienie przed wizytą</span>
           </div>
 
           <button

@@ -68,6 +68,20 @@ test("keeps the premium client booking flow and safety controls", async () => {
   assert.match(styles, /\.client-service-picker \.service-list/);
 });
 
+test("keeps the client-focused sign-in experience concise", async () => {
+  const [bookingHome, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /Twój następny termin/);
+  assert.match(bookingHome, /Rezerwacja w mniej niż minutę/);
+  assert.match(bookingHome, /Przypomnienie przed wizytą/);
+  assert.doesNotMatch(bookingHome, /Bez podglądu cudzych rezerwacji/);
+  assert.doesNotMatch(bookingHome, /Łatwiejsze przesunięcie wizyty/);
+  assert.match(styles, /\.auth-benefits span::before/);
+});
+
 test("keeps the mobile booking gestures and bottom-sheet interactions", async () => {
   const [bookingHome, styles] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
