@@ -138,6 +138,7 @@ const selectedDayFormatter = new Intl.DateTimeFormat("pl-PL", {
   year: "numeric",
 });
 const dayFormatter = new Intl.DateTimeFormat("pl-PL", { day: "numeric", month: "long" });
+const clientMonthFormatter = new Intl.DateTimeFormat("pl-PL", { month: "short" });
 const adminClientDateFormatter = new Intl.DateTimeFormat("pl-PL", {
   weekday: "long",
   day: "2-digit",
@@ -147,6 +148,17 @@ const appointmentStatusLabels: Record<AppointmentStatus, string> = {
   confirmed: "Potwierdzona",
   rescheduled: "Przesunięta",
   cancelled: "Odwołana",
+};
+
+const getAppointmentDistanceLabel = (dateKeyValue: string, today: Date) => {
+  const currentDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const appointmentDay = dateFromKey(dateKeyValue);
+  const daysAway = Math.round((appointmentDay.getTime() - currentDay.getTime()) / 86400000);
+
+  if (daysAway === 0) return "Dzisiaj";
+  if (daysAway === 1) return "Jutro";
+  if (daysAway > 1 && daysAway < 7) return `Za ${daysAway} dni`;
+  return selectedDayFormatter.format(appointmentDay);
 };
 
 const getNotificationStorageKey = (uid: string) => `bnb-notifications-${uid}`;
@@ -705,6 +717,9 @@ export function BookingHome() {
     [activeUser, adminAppointments, today],
   );
   const nearestClientAppointment = clientAppointments[0] ?? null;
+  const clientFirstName = (activeUser?.displayName ?? "Kliencie").trim().split(/\s+/)[0] || "Kliencie";
+  const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const canShiftToPreviousMonth = visibleMonth.getTime() > currentMonthStart.getTime();
   const selectedClientAppointment =
     clientAppointments.find((appointment) => appointment.id === clientAppointmentId) ?? null;
   const selectedAdminEditAppointment =
@@ -1065,6 +1080,35 @@ export function BookingHome() {
   }, [visibleStep]);
 
   useEffect(() => {
+    const clientModalOpen = Boolean(
+      clientAppointmentsListOpen ||
+        (selectedClientAppointment && visibleStep !== "admin") ||
+        selectedAdminEditAppointment,
+    );
+    if (!clientModalOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeTopOverlay = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+
+      if (selectedAdminEditAppointment) {
+        setAdminEditAppointmentId(null);
+      } else if (selectedClientAppointment) {
+        setClientAppointmentId(null);
+      } else {
+        setClientAppointmentsListOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", closeTopOverlay);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeTopOverlay);
+    };
+  }, [clientAppointmentsListOpen, selectedAdminEditAppointment, selectedClientAppointment, visibleStep]);
+
+  useEffect(() => {
     if (visibleStep !== "booking") {
       setHeroScrollProgress(0);
       return undefined;
@@ -1092,6 +1136,7 @@ export function BookingHome() {
   }, [visibleStep]);
 
   const shiftMonth = (direction: -1 | 1) => {
+    if (direction === -1 && !canShiftToPreviousMonth) return;
     setVisibleMonth(
       (current) => new Date(current.getFullYear(), current.getMonth() + direction, 1),
     );
@@ -2373,7 +2418,7 @@ export function BookingHome() {
                 <img className="topbar-logo-mark" src="/brand/bnb-mark.png" alt="" aria-hidden="true" />
                 <div>
                   <p className="eyebrow">BNB Barbershop</p>
-                  <h1>Umów wizytę</h1>
+                  <h1>Twój panel</h1>
                 </div>
               </div>
               <div className="session-pill">
@@ -2407,13 +2452,129 @@ export function BookingHome() {
               ) : null}
             </div>
 
+            <section className="client-dashboard" aria-labelledby="client-dashboard-title">
+              <div className="client-dashboard-heading">
+                <div>
+                  <p className="eyebrow">Dzień dobry, {clientFirstName}</p>
+                  <h2 id="client-dashboard-title">Twoja najbliższa wizyta</h2>
+                </div>
+                {clientAppointments.length > 1 ? (
+                  <button type="button" onClick={() => setClientAppointmentsListOpen(true)}>
+                    Wszystkie wizyty <span>{clientAppointments.length}</span>
+                  </button>
+                ) : null}
+              </div>
+
+              {reschedulingAppointment ? (
+                <div className="client-visit-card editing">
+                  <div className="client-visit-date" aria-hidden="true">
+                    <strong>{dateFromKey(reschedulingAppointment.dateKey).getDate()}</strong>
+                    <span>{clientMonthFormatter.format(dateFromKey(reschedulingAppointment.dateKey))}</span>
+                  </div>
+                  <div className="client-visit-content">
+                    <em>Zmiana terminu</em>
+                    <strong>{reschedulingAppointment.serviceName}</strong>
+                    <small>Wybierz poniżej nowy dzień i godzinę.</small>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReschedulingAppointmentId(null);
+                      setSelectedTime("");
+                    }}
+                  >
+                    Anuluj
+                  </button>
+                </div>
+              ) : nearestClientAppointment ? (
+                <button
+                  className="client-visit-card"
+                  type="button"
+                  onClick={() => setClientAppointmentId(nearestClientAppointment.id)}
+                  aria-label={`Otwórz szczegóły wizyty: ${nearestClientAppointment.serviceName}`}
+                >
+                  <span className="client-visit-date" aria-hidden="true">
+                    <strong>{dateFromKey(nearestClientAppointment.dateKey).getDate()}</strong>
+                    <span>{clientMonthFormatter.format(dateFromKey(nearestClientAppointment.dateKey))}</span>
+                  </span>
+                  <span className="client-visit-content">
+                    <em>{getAppointmentDistanceLabel(nearestClientAppointment.dateKey, today)}</em>
+                    <strong>{nearestClientAppointment.serviceName}</strong>
+                    <small>
+                      {nearestClientAppointment.startTime} -{" "}
+                      {addMinutesToTime(
+                        nearestClientAppointment.startTime,
+                        nearestClientAppointment.durationMinutes,
+                      )} · {nearestClientAppointment.price}
+                    </small>
+                  </span>
+                  <span className="client-visit-meta">
+                    <em className={`appointment-status ${normalizeAppointmentStatus(nearestClientAppointment.status)}`}>
+                      {appointmentStatusLabels[normalizeAppointmentStatus(nearestClientAppointment.status)]}
+                    </em>
+                    <i aria-hidden="true">›</i>
+                  </span>
+                </button>
+              ) : (
+                <div className="client-visit-empty">
+                  <span className="client-empty-icon" aria-hidden="true" />
+                  <span>
+                    <strong>Masz wolny kalendarz</strong>
+                    <span>Nową wizytę umówisz poniżej w trzech krótkich krokach.</span>
+                  </span>
+                </div>
+              )}
+            </section>
+
+            <div className="booking-section-heading">
+              <div>
+                <p className="section-label">Nowa rezerwacja</p>
+                <h2>Umów wizytę</h2>
+              </div>
+              <ol className="booking-progress" aria-label="Postęp rezerwacji">
+                <li className="complete"><span>1</span> Usługa</li>
+                <li className={selectedKey ? "complete" : ""}><span>2</span> Dzień</li>
+                <li className={selectedTime ? "complete" : ""}><span>3</span> Godzina</li>
+              </ol>
+            </div>
+
+            <div className="client-service-picker">
+              <p className="section-label">Wybierz usługę</p>
+              <div className="service-list">
+                {services.map((item) => (
+                  <button
+                    className={`service-card ${selectedServiceId === item.id ? "selected" : ""}`}
+                    key={item.id}
+                    type="button"
+                    disabled={Boolean(reschedulingAppointment)}
+                    onClick={() => {
+                      setSelectedServiceId(item.id);
+                      setSelectedTime("");
+                    }}
+                    aria-pressed={selectedServiceId === item.id}
+                  >
+                    <span>
+                      <strong>{item.name}</strong>
+                      <small>{formatDuration(item.durationMinutes)}</small>
+                    </span>
+                    <b>{item.price}</b>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="calendar-header">
               <div>
                 <p className="section-label">Kalendarz</p>
                 <h2>{monthFormatter.format(visibleMonth)}</h2>
               </div>
               <div className="month-controls" aria-label="Zmiana miesiąca">
-                <button type="button" onClick={() => shiftMonth(-1)} aria-label="Poprzedni miesiąc">
+                <button
+                  type="button"
+                  disabled={!canShiftToPreviousMonth}
+                  onClick={() => shiftMonth(-1)}
+                  aria-label="Poprzedni miesiąc"
+                >
                   ‹
                 </button>
                 <button type="button" onClick={() => shiftMonth(1)} aria-label="Następny miesiąc">
@@ -2461,95 +2622,9 @@ export function BookingHome() {
               })}
             </div>
 
-            <section className="client-visit-panel" aria-label="Twoja wizyta">
-              <div className="client-visit-heading">
-                <p className="section-label">Twoja wizyta</p>
-                {clientAppointments.length > 1 ? <span>{clientAppointments.length}</span> : null}
-              </div>
-
-              {reschedulingAppointment ? (
-                <div className="client-visit-card editing">
-                  <div>
-                    <strong>Zmieniasz termin</strong>
-                    <span>
-                      Wybierz nowy dzień i godzinę dla usługi{" "}
-                      {reschedulingAppointment.serviceName}.
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setReschedulingAppointmentId(null);
-                      setSelectedTime("");
-                    }}
-                  >
-                    Anuluj
-                  </button>
-                </div>
-              ) : nearestClientAppointment ? (
-                <button
-                  className="client-visit-card"
-                  type="button"
-                  onClick={() => {
-                    if (clientAppointments.length > 1) {
-                      setClientAppointmentsListOpen(true);
-                      return;
-                    }
-
-                    setClientAppointmentId(nearestClientAppointment.id);
-                  }}
-                >
-                  <span>
-                    <strong>{nearestClientAppointment.serviceName}</strong>
-                    <small>
-                      {dayFormatter.format(dateFromKey(nearestClientAppointment.dateKey))},{" "}
-                      {nearestClientAppointment.startTime} -{" "}
-                      {addMinutesToTime(
-                        nearestClientAppointment.startTime,
-                        nearestClientAppointment.durationMinutes,
-                      )}
-                    </small>
-                    <em className={`appointment-status ${normalizeAppointmentStatus(nearestClientAppointment.status)}`}>
-                      {appointmentStatusLabels[normalizeAppointmentStatus(nearestClientAppointment.status)]}
-                    </em>
-                  </span>
-                  <b>{nearestClientAppointment.price}</b>
-                </button>
-              ) : (
-                <div className="client-visit-empty">
-                  <strong>Nie masz zaplanowanej wizyty</strong>
-                  <span>Wybierz usługę, dzień i godzinę, żeby dodać pierwszą rezerwację.</span>
-                </div>
-              )}
-            </section>
           </section>
 
           <aside className="day-summary" aria-label="Szczegóły rezerwacji">
-            <div className="summary-block">
-              <p className="section-label">Wybierz usługę</p>
-              <div className="service-list">
-                {services.map((item) => (
-                  <button
-                    className={`service-card ${selectedServiceId === item.id ? "selected" : ""}`}
-                    key={item.id}
-                    type="button"
-                    disabled={Boolean(reschedulingAppointment)}
-                    onClick={() => {
-                      setSelectedServiceId(item.id);
-                      setSelectedTime("");
-                    }}
-                    aria-pressed={selectedServiceId === item.id}
-                  >
-                    <span>
-                      <strong>{item.name}</strong>
-                      <small>{formatDuration(item.durationMinutes)}</small>
-                    </span>
-                    <b>{item.price}</b>
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <div className="summary-block nearest-slot-block">
               <p className="section-label">Szybki wybór</p>
               <button
@@ -2734,7 +2809,13 @@ export function BookingHome() {
       ) : null}
 
       {selectedAdminEditAppointment && visibleStep === "admin" ? (
-        <div className="client-modal-backdrop" role="presentation">
+        <div
+          className="client-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setAdminEditAppointmentId(null);
+          }}
+        >
           <section
             className="client-appointment-modal admin-edit-modal"
             role="dialog"
@@ -2829,7 +2910,13 @@ export function BookingHome() {
       ) : null}
 
       {clientAppointmentsListOpen && visibleStep !== "admin" ? (
-        <div className="client-modal-backdrop" role="presentation">
+        <div
+          className="client-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setClientAppointmentsListOpen(false);
+          }}
+        >
           <section
             className="client-appointment-modal appointment-list-modal"
             role="dialog"
@@ -2880,7 +2967,13 @@ export function BookingHome() {
       ) : null}
 
       {selectedClientAppointment && visibleStep !== "admin" ? (
-        <div className="client-modal-backdrop" role="presentation">
+        <div
+          className="client-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setClientAppointmentId(null);
+          }}
+        >
           <section
             className="client-appointment-modal"
             role="dialog"
@@ -2965,7 +3058,7 @@ export function BookingHome() {
                   disabled={isSaving}
                   onClick={() => confirmClientRescheduledAppointment(selectedClientAppointment.id)}
                 >
-                  Potwierdzam
+                  Potwierdź nowy termin
                 </button>
               ) : null}
               <button
@@ -2981,7 +3074,7 @@ export function BookingHome() {
                 disabled={isSaving}
                 onClick={() => cancelClientAppointment(selectedClientAppointment.id)}
               >
-                Odmów
+                Odwołaj wizytę
               </button>
             </div>
           </section>

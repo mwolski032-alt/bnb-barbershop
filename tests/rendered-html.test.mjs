@@ -51,3 +51,19 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(manifest, /"name":\s*"BNB Barbershop"/);
   assert.match(serviceWorker, /bnb-barbershop-v3/);
 });
+
+test("keeps the premium client booking flow and safety controls", async () => {
+  const [bookingHome, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /Twoja najbliższa wizyta/);
+  assert.match(bookingHome, /className="booking-progress"/);
+  assert.match(bookingHome, /Potwierdź nowy termin/);
+  assert.match(bookingHome, /Odwołaj wizytę/);
+  assert.match(bookingHome, /if \(direction === -1 && !canShiftToPreviousMonth\) return/);
+  assert.match(bookingHome, /event\.key !== "Escape"/);
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(styles, /\.client-service-picker \.service-list/);
+});
