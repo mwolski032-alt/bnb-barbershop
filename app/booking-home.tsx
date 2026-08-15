@@ -81,6 +81,7 @@ type BookingSummary = {
 };
 
 type AdminAppointment = Appointment & {
+  barberId?: string;
   clientId?: string;
   clientName: string;
   clientEmail?: string;
@@ -140,6 +141,7 @@ type ClientRecord = {
   phone: string;
   photoUrl: string;
   userId?: string;
+  barberIds?: Record<string, boolean>;
   createdAt?: number;
   updatedAt?: number;
 };
@@ -175,7 +177,19 @@ type WorkFeedback = {
 
 type ClientSaveMode = "record" | "booking";
 
-const adminUserIds = new Set(["XxBe4dwVYWZPtl004J4tWq6AMZ73"]);
+type BarberProfile = {
+  id: string;
+  name: string;
+  label: string;
+  accent: "blue" | "mint";
+};
+
+const ownerUserIds = new Set(["xkyDu2Lb1Ma8McF7yfyv8PIAj1M2"]);
+const defaultBarberId = "mateusz";
+const defaultBarbers: BarberProfile[] = [
+  { id: "mateusz", name: "Mateusz", label: "Barber 1", accent: "blue" },
+  { id: "kacper", name: "Kacper", label: "Barber 2", accent: "mint" },
+];
 const maxStoredNotifications = 40;
 
 const defaultServices: Service[] = [
@@ -767,13 +781,16 @@ export function BookingHome() {
   );
   const [selectedKey, setSelectedKey] = useState(() => dayKey(today));
   const [adminSelectedKey, setAdminSelectedKey] = useState(() => dayKey(today));
-  const [services, setServices] = useState<Service[]>(defaultServices);
+  const [selectedBarberId, setSelectedBarberId] = useState<string | null>(null);
+  const [legacyServices, setLegacyServices] = useState<Service[]>(defaultServices);
+  const [barberServices, setBarberServices] = useState<Service[] | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState(defaultServices[0].id);
   const [selectedTime, setSelectedTime] = useState("");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [adminAppointments, setAdminAppointments] = useState<AdminAppointment[]>([]);
+  const [allAdminAppointments, setAllAdminAppointments] = useState<AdminAppointment[]>([]);
   const [clientRecords, setClientRecords] = useState<ClientRecord[]>([]);
-  const [workSettings, setWorkSettings] = useState<WorkSettings>(defaultWorkSettings);
+  const [legacyWorkSettings, setLegacyWorkSettings] = useState<WorkSettings>(defaultWorkSettings);
+  const [barberWorkSettings, setBarberWorkSettings] = useState<WorkSettings | null>(null);
   const [form, setForm] = useState<FormState>({ fullName: "", phone: "" });
   const [serviceDraft, setServiceDraft] = useState<ServiceDraft>({
     name: "",
@@ -846,7 +863,53 @@ export function BookingHome() {
   >(undefined);
 
   const activeUser = currentUser;
-  const isAdmin = Boolean(activeUser && adminUserIds.has(activeUser.uid));
+  const isOwner = Boolean(activeUser && ownerUserIds.has(activeUser.uid));
+  const isAdmin = isOwner;
+  const activeBarberId = selectedBarberId ?? defaultBarberId;
+  const selectedBarber = defaultBarbers.find((barber) => barber.id === selectedBarberId) ?? null;
+  const services = useMemo(
+    () => barberServices ?? (activeBarberId === defaultBarberId ? legacyServices : []),
+    [activeBarberId, barberServices, legacyServices],
+  );
+  const workSettings =
+    barberWorkSettings ??
+    (activeBarberId === defaultBarberId ? legacyWorkSettings : defaultWorkSettings);
+  const adminAppointments = useMemo(
+    () =>
+      isOwner
+        ? allAdminAppointments.filter(
+            (appointment) => (appointment.barberId || defaultBarberId) === activeBarberId,
+          )
+        : allAdminAppointments,
+    [activeBarberId, allAdminAppointments, isOwner],
+  );
+  const ownerBarberSummaries = useMemo(
+    () =>
+      defaultBarbers.map((barber) => {
+        const barberAppointments = allAdminAppointments.filter(
+          (appointment) => (appointment.barberId || defaultBarberId) === barber.id,
+        );
+        const upcomingAppointments = barberAppointments
+          .filter(
+            (appointment) =>
+              normalizeAppointmentStatus(appointment.status) !== "completed" &&
+              getAppointmentEndDateTime(appointment).getTime() > currentDate.getTime(),
+          )
+          .sort((first, second) =>
+            getAppointmentSortValue(first).localeCompare(getAppointmentSortValue(second)),
+          );
+
+        return {
+          ...barber,
+          appointments: barberAppointments.length,
+          today: barberAppointments.filter((appointment) => appointment.dateKey === dayKey(today))
+            .length,
+          clients: new Set(barberAppointments.map(getAdminClientId)).size,
+          nextAppointment: upcomingAppointments[0] ?? null,
+        };
+      }),
+    [allAdminAppointments, currentDate, today],
+  );
   const reschedulingAppointment =
     adminAppointments.find((appointment) => appointment.id === reschedulingAppointmentId) ?? null;
   const schedulingAppointments = reschedulingAppointment
@@ -927,7 +990,16 @@ export function BookingHome() {
       appointmentGroups.set(clientId, [...(appointmentGroups.get(clientId) ?? []), appointment]);
     });
 
-    const recordsById = new Map(clientRecords.map((client) => [client.id, client]));
+    const recordsById = new Map(
+      clientRecords
+        .filter(
+          (client) =>
+            client.barberIds?.[activeBarberId] ||
+            (!client.barberIds && activeBarberId === defaultBarberId) ||
+            appointmentGroups.has(client.id),
+        )
+        .map((client) => [client.id, client]),
+    );
     const clientIds = new Set([...recordsById.keys(), ...appointmentGroups.keys()]);
 
     return Array.from(clientIds)
@@ -979,7 +1051,7 @@ export function BookingHome() {
         if (second.nextAppointment) return 1;
         return first.name.localeCompare(second.name, "pl");
       });
-  }, [adminClientAppointments, clientRecords, currentDate]);
+  }, [activeBarberId, adminClientAppointments, clientRecords, currentDate]);
   const filteredAdminClients = useMemo(() => {
     const query = clientSearch.trim().toLocaleLowerCase("pl");
 
@@ -1405,6 +1477,7 @@ export function BookingHome() {
 
   useEffect(() => {
     previousAppointmentsRef.current = null;
+    setSelectedBarberId(null);
     setNotificationPanelOpen(false);
     setActiveNotification(null);
     setNotifications(activeUser ? readStoredNotifications(activeUser.uid) : []);
@@ -1413,7 +1486,7 @@ export function BookingHome() {
   useEffect(() => {
     if (!activeUser) {
       setAppointments([]);
-      setAdminAppointments([]);
+      setAllAdminAppointments([]);
       return undefined;
     }
 
@@ -1427,6 +1500,7 @@ export function BookingHome() {
           dateKey: appointment.dateKey ?? dayKey(today),
           startTime: appointment.startTime ?? "00:00",
           durationMinutes: Number(appointment.durationMinutes) || 30,
+          barberId: appointment.barberId || defaultBarberId,
           clientId: appointment.clientId ?? "",
           clientName: appointment.clientName ?? "Klient",
           clientEmail: appointment.clientEmail ?? "",
@@ -1448,14 +1522,16 @@ export function BookingHome() {
           return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
         });
 
-      setAdminAppointments(loadedAppointments);
+      setAllAdminAppointments(loadedAppointments);
       setAppointments(
-        loadedAppointments.map(({ id, dateKey, startTime, durationMinutes }) => ({
-          id,
-          dateKey,
-          startTime,
-          durationMinutes,
-        })),
+        loadedAppointments
+          .filter((appointment) => appointment.barberId === defaultBarberId)
+          .map(({ id, dateKey, startTime, durationMinutes }) => ({
+            id,
+            dateKey,
+            startTime,
+            durationMinutes,
+          })),
       );
     });
   }, [activeUser, today]);
@@ -1478,6 +1554,10 @@ export function BookingHome() {
         phone: client.phone?.trim() ?? "",
         photoUrl: client.photoUrl?.trim() ?? "",
         userId: client.userId?.trim() || undefined,
+        barberIds:
+          client.barberIds && typeof client.barberIds === "object"
+            ? client.barberIds
+            : undefined,
         createdAt: Number(client.createdAt) || undefined,
         updatedAt: Number(client.updatedAt) || undefined,
       }));
@@ -1490,7 +1570,9 @@ export function BookingHome() {
     if (!activeUser) return;
 
     const previousAppointments = previousAppointmentsRef.current;
-    const currentAppointments = new Map(adminAppointments.map((appointment) => [appointment.id, appointment]));
+    const currentAppointments = new Map(
+      allAdminAppointments.map((appointment) => [appointment.id, appointment]),
+    );
 
     if (!previousAppointments) {
       previousAppointmentsRef.current = currentAppointments;
@@ -1589,7 +1671,7 @@ export function BookingHome() {
     }
 
     previousAppointmentsRef.current = currentAppointments;
-  }, [activeUser, adminAppointments, isAdmin, notifications]);
+  }, [activeUser, allAdminAppointments, isAdmin, notifications]);
 
   useEffect(() => {
     if (!activeNotification) return undefined;
@@ -1600,20 +1682,36 @@ export function BookingHome() {
 
   useEffect(() => {
     if (!activeUser) {
-      setWorkSettings(defaultWorkSettings);
+      setLegacyWorkSettings(defaultWorkSettings);
       return undefined;
     }
 
     const workSettingsRef = ref(realtimeDb, "workSettings");
 
     return onValue(workSettingsRef, (snapshot) => {
-      setWorkSettings(normalizeWorkSettings(snapshot.val() as Partial<WorkSettings> | null));
+      setLegacyWorkSettings(normalizeWorkSettings(snapshot.val() as Partial<WorkSettings> | null));
     });
   }, [activeUser]);
 
   useEffect(() => {
     if (!activeUser) {
-      setServices(defaultServices);
+      setBarberWorkSettings(null);
+      return undefined;
+    }
+
+    const barberWorkSettingsRef = ref(realtimeDb, `barbers/${activeBarberId}/workSettings`);
+    return onValue(barberWorkSettingsRef, (snapshot) => {
+      setBarberWorkSettings(
+        snapshot.exists()
+          ? normalizeWorkSettings(snapshot.val() as Partial<WorkSettings> | null)
+          : null,
+      );
+    });
+  }, [activeBarberId, activeUser]);
+
+  useEffect(() => {
+    if (!activeUser) {
+      setLegacyServices(defaultServices);
       return undefined;
     }
 
@@ -1621,13 +1719,26 @@ export function BookingHome() {
 
     return onValue(servicesRef, (snapshot) => {
       const value = snapshot.val() as Record<string, Partial<Service>> | null;
-      setServices(normalizeServices(value));
+      setLegacyServices(normalizeServices(value));
 
       if (!value && isAdmin) {
         void set(servicesRef, servicesToRecord(defaultServices));
       }
     });
   }, [activeUser, isAdmin]);
+
+  useEffect(() => {
+    if (!activeUser) {
+      setBarberServices(null);
+      return undefined;
+    }
+
+    const barberServicesRef = ref(realtimeDb, `barbers/${activeBarberId}/services`);
+    return onValue(barberServicesRef, (snapshot) => {
+      const value = snapshot.val() as Record<string, Partial<Service>> | null;
+      setBarberServices(snapshot.exists() ? normalizeServices(value) : null);
+    });
+  }, [activeBarberId, activeUser]);
 
   useEffect(() => {
     if (selectedTime && !availableTimes.includes(selectedTime)) {
@@ -1898,10 +2009,17 @@ export function BookingHome() {
     try {
       setIsWorkSaving(true);
       setWorkFeedback(null);
+      const nextAvailability = {
+        ...workSettings.availability,
+        ...availabilityUpdates,
+      };
       if (editingAvailabilityKey && !availabilityDraftKeys.includes(editingAvailabilityKey)) {
-        await remove(ref(realtimeDb, `workSettings/availability/${editingAvailabilityKey}`));
+        delete nextAvailability[editingAvailabilityKey];
       }
-      await update(ref(realtimeDb, "workSettings/availability"), availabilityUpdates);
+      await set(
+        ref(realtimeDb, `barbers/${activeBarberId}/workSettings/availability`),
+        nextAvailability,
+      );
       setWorkFeedback({
         kind: "success",
         message:
@@ -1943,7 +2061,12 @@ export function BookingHome() {
 
     try {
       setIsWorkSaving(true);
-      await remove(ref(realtimeDb, `workSettings/availability/${dateKeyValue}`));
+      const nextAvailability = { ...workSettings.availability };
+      delete nextAvailability[dateKeyValue];
+      await set(
+        ref(realtimeDb, `barbers/${activeBarberId}/workSettings/availability`),
+        nextAvailability,
+      );
       if (editingAvailabilityKey === dateKeyValue) resetAvailabilityEditor();
       setPendingAvailabilityRemovalKey(null);
       setWorkFeedback({ kind: "success", message: "Dzień został usunięty z dostępności." });
@@ -1963,11 +2086,14 @@ export function BookingHome() {
     try {
       setIsWorkSaving(true);
       setWorkFeedback(null);
-      await set(ref(realtimeDb, `workSettings/availability/${key}`), {
-        id: key,
-        dateKey: key,
-        startTime,
-        endTime,
+      await set(ref(realtimeDb, `barbers/${activeBarberId}/workSettings/availability`), {
+        ...workSettings.availability,
+        [key]: {
+          id: key,
+          dateKey: key,
+          startTime,
+          endTime,
+        },
       });
       setExpandedAvailabilityMonth(key.slice(0, 7));
       setWorkFeedback({
@@ -2042,7 +2168,10 @@ export function BookingHome() {
 
     try {
       setIsSaving(true);
-      await set(ref(realtimeDb, "services"), servicesToRecord(nextServices));
+      await set(
+        ref(realtimeDb, `barbers/${activeBarberId}/services`),
+        servicesToRecord(nextServices),
+      );
       if (!editingServiceId) {
         setSelectedServiceId(serviceId);
       }
@@ -2062,7 +2191,10 @@ export function BookingHome() {
 
     try {
       setIsSaving(true);
-      await set(ref(realtimeDb, "services"), servicesToRecord(nextServices));
+      await set(
+        ref(realtimeDb, `barbers/${activeBarberId}/services`),
+        servicesToRecord(nextServices),
+      );
       if (selectedServiceId === serviceId) {
         setSelectedServiceId(nextServices[0]?.id ?? defaultServices[0].id);
         setSelectedTime("");
@@ -2217,6 +2349,7 @@ export function BookingHome() {
     const appointmentColor = getNextAppointmentColor(selectedDayKey, adminAppointments);
     const adminAppointment: AdminAppointment = {
       id: appointmentId,
+      barberId: defaultBarberId,
       clientId,
       userId: activeUser.uid,
       dateKey: selectedDayKey,
@@ -2254,6 +2387,7 @@ export function BookingHome() {
         [`clients/${clientId}/phone`]: form.phone,
         [`clients/${clientId}/photoUrl`]: activeUser.photoURL ?? "",
         [`clients/${clientId}/userId`]: activeUser.uid,
+        [`clients/${clientId}/barberIds/${defaultBarberId}`]: true,
         [`clients/${clientId}/updatedAt`]: now,
       });
       await sendAppointmentNotification("new_booking", adminAppointment);
@@ -2543,6 +2677,10 @@ export function BookingHome() {
       phone: phoneDigits,
       photoUrl: matchingClient?.photoUrl ?? "",
       ...(linkedUserId ? { userId: linkedUserId } : {}),
+      barberIds: {
+        ...(existingRecord?.barberIds ?? {}),
+        [activeBarberId]: true,
+      },
       createdAt: existingRecord?.createdAt ?? now,
       updatedAt: now,
     } satisfies ClientRecord;
@@ -2558,6 +2696,7 @@ export function BookingHome() {
       const appointmentId = createEntityId("appointment");
       manualAppointment = {
         id: appointmentId,
+        barberId: activeBarberId,
         clientId,
         ...(linkedUserId ? { userId: linkedUserId } : {}),
         dateKey: manualBookingDraft.dateKey,
@@ -2739,17 +2878,97 @@ export function BookingHome() {
       {visibleStep === "admin" ? (
         <section className="admin-view" aria-label="Panel admina">
           <div className="admin-topbar">
-            <button className="back-button" type="button" onClick={() => setStep("booking")}>
-              ‹ Wróć
+            <button
+              className="back-button"
+              type="button"
+              onClick={() => {
+                if (selectedBarber) {
+                  setSelectedBarberId(null);
+                  setAdminSection("schedule");
+                } else {
+                  setStep("booking");
+                }
+              }}
+            >
+              ‹ {selectedBarber ? "Barberzy" : "Wróć"}
             </button>
             <div>
-              <p className="eyebrow">Admin</p>
-              <h1>{adminSectionLabels[adminSection]}</h1>
+              <p className="eyebrow">Właściciel</p>
+              <h1>{selectedBarber ? adminSectionLabels[adminSection] : "Wybierz barbera"}</h1>
             </div>
-            {notificationButton}
+            {selectedBarber ? notificationButton : <span className="owner-topbar-spacer" />}
           </div>
 
-          <div className="admin-content-frame">
+          {!selectedBarber ? (
+            <div className="owner-barber-select" aria-label="Wybór barbera">
+              <header className="owner-barber-heading">
+                <p className="eyebrow">Panel zespołu</p>
+                <h2>Czyj panel chcesz otworzyć?</h2>
+                <span>Każdy barber ma osobny terminarz, klientów, analizę, pracę i usługi.</span>
+              </header>
+
+              <div className="owner-barber-grid">
+                {ownerBarberSummaries.map((barber) => (
+                  <button
+                    className={`owner-barber-card ${barber.accent}`}
+                    type="button"
+                    key={barber.id}
+                    onClick={() => {
+                      setBarberServices(null);
+                      setBarberWorkSettings(null);
+                      setSelectedBarberId(barber.id);
+                      setAdminSection("schedule");
+                      setAdminSelectedKey(dayKey(today));
+                      setClientSearch("");
+                      setClientFilter("all");
+                      setClientFeedback(null);
+                      setWorkFeedback(null);
+                    }}
+                    aria-label={`Otwórz pełny panel barbera ${barber.name}`}
+                  >
+                    <span className="owner-barber-avatar">{barber.name.slice(0, 1)}</span>
+                    <span className="owner-barber-main">
+                      <small>{barber.label}</small>
+                      <strong>{barber.name}</strong>
+                      <em>
+                        {barber.nextAppointment
+                          ? `Następna: ${adminClientDateFormatter.format(
+                              dateFromKey(barber.nextAppointment.dateKey),
+                            )}, ${barber.nextAppointment.startTime}`
+                          : "Brak nadchodzących wizyt"}
+                      </em>
+                    </span>
+                    <span className="owner-barber-metrics">
+                      <span>
+                        <strong>{barber.today}</strong>
+                        dzisiaj
+                      </span>
+                      <span>
+                        <strong>{barber.clients}</strong>
+                        klientów
+                      </span>
+                    </span>
+                    <i aria-hidden="true">›</i>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="selected-barber-context" aria-label="Wybrany barber">
+                <span className={`selected-barber-avatar ${selectedBarber.accent}`}>
+                  {selectedBarber.name.slice(0, 1)}
+                </span>
+                <span>
+                  <small>Przeglądasz panel</small>
+                  <strong>{selectedBarber.name}</strong>
+                </span>
+                <button type="button" onClick={() => setSelectedBarberId(null)}>
+                  Zmień
+                </button>
+              </div>
+
+              <div className="admin-content-frame">
             <div className={`admin-tab-panel ${adminSection === "schedule" ? "active" : ""}`}>
               <div className="admin-section-header schedule-section-header">
                 <div>
@@ -3929,6 +4148,8 @@ export function BookingHome() {
               <span>Usługi</span>
             </button>
           </nav>
+            </>
+          )}
         </section>
       ) : visibleStep === "booking" ? (
         <>

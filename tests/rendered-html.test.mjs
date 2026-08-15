@@ -138,6 +138,25 @@ test("keeps the persistent client base and manual admin booking workflow", async
   assert.match(styles, /\.book-client-button/);
 });
 
+test("keeps the owner-only multi-barber workspace", async () => {
+  const [bookingHome, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /ownerUserIds = new Set\(\["xkyDu2Lb1Ma8McF7yfyv8PIAj1M2"\]\)/);
+  assert.doesNotMatch(bookingHome, /XxBe4dwVYWZPtl004J4tWq6AMZ73/);
+  assert.match(bookingHome, /name: "Mateusz", label: "Barber 1"/);
+  assert.match(bookingHome, /name: "Kacper", label: "Barber 2"/);
+  assert.match(bookingHome, /Czyj panel chcesz otworzyć\?/);
+  assert.match(bookingHome, /appointment\.barberId \|\| defaultBarberId/);
+  assert.match(bookingHome, /barbers\/\$\{activeBarberId\}\/workSettings/);
+  assert.match(bookingHome, /barbers\/\$\{activeBarberId\}\/services/);
+  assert.match(bookingHome, /barberIds\/\$\{defaultBarberId\}/);
+  assert.match(styles, /\.owner-barber-grid/);
+  assert.match(styles, /\.selected-barber-context/);
+});
+
 test("keeps the mastered admin schedule and availability editor", async () => {
   const [bookingHome, styles] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
