@@ -145,7 +145,10 @@ test("keeps the owner-only multi-barber workspace", async () => {
   ]);
 
   assert.match(bookingHome, /ownerUserIds = new Set\(\["xkyDu2Lb1Ma8McF7yfyv8PIAj1M2"\]\)/);
-  assert.doesNotMatch(bookingHome, /XxBe4dwVYWZPtl004J4tWq6AMZ73/);
+  assert.match(
+    bookingHome,
+    /barberUserIds = new Map\(\[\["XxBe4dwVYWZPtl004J4tWq6AMZ73", "mateusz"\]\]\)/,
+  );
   assert.match(bookingHome, /name: "Mateusz", label: "Barber 1"/);
   assert.match(bookingHome, /name: "Kacper", label: "Barber 2"/);
   assert.match(bookingHome, /Czyj panel chcesz otworzyć\?/);
@@ -155,6 +158,23 @@ test("keeps the owner-only multi-barber workspace", async () => {
   assert.match(bookingHome, /barberIds\/\$\{defaultBarberId\}/);
   assert.match(styles, /\.owner-barber-grid/);
   assert.match(styles, /\.selected-barber-context/);
+});
+
+test("keeps the scoped barber profile and centered client action", async () => {
+  const [bookingHome, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /const isAdmin = isOwner \|\| isBarber/);
+  assert.match(bookingHome, /signedInBarberId \?\? selectedBarberId \?\? defaultBarberId/);
+  assert.match(bookingHome, /barbers\/\$\{activeBarberId\}\/profile/);
+  assert.match(bookingHome, /adminSection === "profile"/);
+  assert.match(bookingHome, /resizeProfilePhoto/);
+  assert.match(styles, /\.barber-profile-view/);
+  assert.match(styles, /\.add-client-button span::before/);
+  assert.match(styles, /translate\(-50%, -50%\)/);
+  assert.match(styles, /repeat\(6, minmax\(0, 1fr\)\)/);
 });
 
 test("keeps the mastered admin schedule and availability editor", async () => {
@@ -192,5 +212,5 @@ test("keeps settlement-driven admin analytics", async () => {
   assert.match(styles, /\.analytics-kpi-grid/);
   assert.match(styles, /\.analytics-chart/);
   assert.match(styles, /\.admin-nav-pill\.analytics/);
-  assert.match(styles, /repeat\(5, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /repeat\(6, minmax\(0, 1fr\)\)/);
 });

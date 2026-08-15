@@ -2017,6 +2017,14 @@ h2 {
   box-shadow: 0 12px 28px rgba(53, 185, 155, 0.18);
 }
 
+.owner-barber-avatar img,
+.selected-barber-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
 .owner-barber-main {
   display: grid;
   gap: 0.2rem;
@@ -2230,15 +2238,275 @@ h2 {
 }
 
 .add-client-button span {
-  display: grid;
-  place-items: center;
+  position: relative;
+  display: block;
   width: 1.65rem;
   height: 1.65rem;
   border-radius: 50%;
   background: #4c8dff;
   color: #ffffff;
-  font-size: 1.15rem;
-  line-height: 1;
+  font-size: 0;
+  line-height: 0;
+}
+
+.add-client-button span::before,
+.add-client-button span::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0.72rem;
+  height: 0.12rem;
+  border-radius: 999px;
+  background: currentColor;
+  content: "";
+  transform: translate(-50%, -50%);
+}
+
+.add-client-button span::after {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.barber-profile-view {
+  display: grid;
+  grid-template-columns: minmax(16rem, 0.82fr) minmax(0, 1.35fr);
+  gap: 0.9rem;
+  padding: 0 1rem 7rem;
+}
+
+.barber-profile-preview,
+.barber-profile-form {
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.barber-profile-preview {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 1rem;
+  min-height: 25rem;
+  padding: 1.4rem;
+  text-align: center;
+}
+
+.barber-profile-photo {
+  display: grid;
+  place-items: center;
+  width: 8.5rem;
+  height: 8.5rem;
+  overflow: hidden;
+  border: 0.35rem solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4c8dff, #76a8ff);
+  color: #ffffff;
+  box-shadow: 0 20px 44px rgba(76, 141, 255, 0.22);
+  font-size: 2.8rem;
+  font-weight: 880;
+}
+
+.barber-profile-photo.mint {
+  background: linear-gradient(135deg, #35b99b, #7ae4d6);
+  box-shadow: 0 20px 44px rgba(53, 185, 155, 0.2);
+}
+
+.barber-profile-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.barber-profile-preview-copy {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.barber-profile-preview-copy h3,
+.barber-profile-form-heading h3 {
+  color: #f2f4f8;
+  font-size: 1.35rem;
+  line-height: 1.15;
+}
+
+.barber-profile-preview-copy > span {
+  color: #8caeff;
+  font-size: 0.78rem;
+  font-weight: 780;
+}
+
+.barber-photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.profile-photo-button,
+.barber-photo-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.65rem;
+  padding: 0 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.72rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: #dce2ec;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.profile-photo-button {
+  border-color: rgba(76, 141, 255, 0.42);
+  background: rgba(76, 141, 255, 0.14);
+  color: #edf4ff;
+}
+
+.profile-photo-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.barber-profile-form {
+  display: grid;
+  align-content: start;
+  gap: 1.1rem;
+  padding: 1.25rem;
+}
+
+.barber-profile-form-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.barber-profile-form-heading > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.barber-profile-form-heading > span {
+  padding: 0.38rem 0.58rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: #8f98a8;
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.barber-profile-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.barber-profile-fields label {
+  display: grid;
+  gap: 0.42rem;
+  color: #aab2c0;
+  font-size: 0.7rem;
+  font-weight: 780;
+}
+
+.barber-profile-fields input,
+.barber-profile-fields textarea,
+.profile-instagram-input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.76rem;
+  outline: none;
+  background: rgba(255, 255, 255, 0.055);
+  color: #f0f2f6;
+  font: inherit;
+  font-size: 0.82rem;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.barber-profile-fields input {
+  height: 3rem;
+  padding: 0 0.82rem;
+}
+
+.barber-profile-fields textarea {
+  min-height: 7.5rem;
+  padding: 0.82rem;
+  resize: vertical;
+}
+
+.barber-profile-fields input:focus,
+.barber-profile-fields textarea:focus,
+.profile-instagram-input:focus-within {
+  border-color: rgba(76, 141, 255, 0.58);
+  background: rgba(76, 141, 255, 0.075);
+}
+
+.profile-instagram-input {
+  display: flex;
+  align-items: center;
+  height: 3rem;
+  padding-left: 0.82rem;
+}
+
+.profile-instagram-input b {
+  color: #7f8999;
+  font-size: 0.82rem;
+}
+
+.profile-instagram-input input {
+  height: 100%;
+  padding-left: 0.18rem;
+  border: 0;
+  background: transparent;
+}
+
+.barber-profile-bio {
+  position: relative;
+  grid-column: 1 / -1;
+}
+
+.barber-profile-bio small {
+  position: absolute;
+  right: 0.7rem;
+  bottom: 0.55rem;
+  color: #6f7888;
+  font-size: 0.58rem;
+}
+
+.barber-profile-submit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.barber-profile-submit > span {
+  min-height: 1px;
+}
+
+.barber-profile-submit button {
+  min-width: 9.5rem;
+  min-height: 2.9rem;
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 0.76rem;
+  background: #2e7d46;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 840;
+}
+
+.barber-profile-submit button:disabled {
+  cursor: wait;
+  opacity: 0.58;
 }
 
 .cancellation-backdrop {
@@ -5247,7 +5515,7 @@ h2 {
   left: max(0.85rem, calc((100vw - 29rem) / 2 + 0.85rem));
   z-index: 40;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0;
   padding: 0.3rem;
   border: 1px solid var(--line);
@@ -5431,6 +5699,34 @@ h2 {
   transform: rotate(-42deg);
 }
 
+.profile-icon {
+  border: 0.11rem solid currentColor;
+  border-radius: 50%;
+}
+
+.profile-icon::before {
+  position: absolute;
+  top: 0.15rem;
+  left: 50%;
+  width: 0.28rem;
+  height: 0.28rem;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.profile-icon::after {
+  position: absolute;
+  right: 0.16rem;
+  bottom: 0.13rem;
+  left: 0.16rem;
+  height: 0.34rem;
+  border-radius: 999px 999px 0.22rem 0.22rem;
+  background: currentColor;
+  content: "";
+}
+
 .admin-bottom-nav button:active {
   transform: scale(0.98);
 }
@@ -5440,7 +5736,7 @@ h2 {
   top: 0.3rem;
   bottom: 0.3rem;
   left: 0.3rem;
-  width: calc((100% - 0.6rem) / 5);
+  width: calc((100% - 0.6rem) / 6);
   border-radius: 999px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08)),
@@ -5465,6 +5761,10 @@ h2 {
 
 .admin-nav-pill.services {
   transform: translateX(400%);
+}
+
+.admin-nav-pill.profile {
+  transform: translateX(500%);
 }
 
 @media (min-width: 1200px) {
@@ -6574,20 +6874,70 @@ h2 {
   }
 
   .add-client-button {
+    position: relative;
     width: 2.75rem;
     min-width: 2.75rem;
     padding: 0;
+    gap: 0;
     overflow: hidden;
     color: transparent;
     font-size: 0;
   }
 
   .add-client-button span {
-    width: 100%;
-    height: 100%;
+    position: absolute;
+    inset: 0;
+    width: auto;
+    height: auto;
     background: transparent;
     color: #e9f1ff;
-    font-size: 1.35rem;
+    font-size: 0;
+  }
+
+  .barber-profile-view {
+    grid-template-columns: 1fr;
+    padding: 0 0.85rem 6.5rem;
+  }
+
+  .barber-profile-preview {
+    grid-template-columns: auto minmax(0, 1fr);
+    justify-items: start;
+    min-height: 0;
+    padding: 1rem;
+    text-align: left;
+  }
+
+  .barber-profile-photo {
+    grid-row: 1 / 3;
+    width: 5.4rem;
+    height: 5.4rem;
+    font-size: 1.8rem;
+  }
+
+  .barber-photo-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+
+  .barber-profile-form {
+    padding: 1rem;
+  }
+
+  .barber-profile-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .barber-profile-bio {
+    grid-column: auto;
+  }
+
+  .barber-profile-submit {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .barber-profile-submit button {
+    width: 100%;
   }
 
   .admin-section-stats {
@@ -6612,7 +6962,7 @@ h2 {
 
   .admin-bottom-nav button {
     min-height: 2.75rem;
-    font-size: 0.72rem;
+    font-size: 0.64rem;
   }
 
   .admin-nav-icon {
@@ -6624,7 +6974,7 @@ h2 {
     top: 0.24rem;
     bottom: 0.24rem;
     left: 0.24rem;
-    width: calc((100% - 0.48rem) / 5);
+    width: calc((100% - 0.48rem) / 6);
   }
 
   .analytics-period-control button {

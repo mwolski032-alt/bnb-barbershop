@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -25,7 +26,7 @@ import {
 
 type Availability = "high" | "medium" | "low" | "none";
 type Step = "booking" | "confirm" | "success" | "admin";
-type AdminSection = "schedule" | "clients" | "analytics" | "work" | "services";
+type AdminSection = "schedule" | "clients" | "analytics" | "work" | "services" | "profile";
 
 type Service = {
   id: string;
@@ -184,13 +185,32 @@ type BarberProfile = {
   accent: "blue" | "mint";
 };
 
+type BarberDetails = {
+  displayName: string;
+  phone: string;
+  email: string;
+  instagram: string;
+  bio: string;
+  photoUrl: string;
+  updatedAt?: number;
+};
+
 const ownerUserIds = new Set(["xkyDu2Lb1Ma8McF7yfyv8PIAj1M2"]);
+const barberUserIds = new Map([["XxBe4dwVYWZPtl004J4tWq6AMZ73", "mateusz"]]);
 const defaultBarberId = "mateusz";
 const defaultBarbers: BarberProfile[] = [
   { id: "mateusz", name: "Mateusz", label: "Barber 1", accent: "blue" },
   { id: "kacper", name: "Kacper", label: "Barber 2", accent: "mint" },
 ];
 const maxStoredNotifications = 40;
+const emptyBarberDetails: BarberDetails = {
+  displayName: "",
+  phone: "",
+  email: "",
+  instagram: "",
+  bio: "",
+  photoUrl: "",
+};
 
 const defaultServices: Service[] = [
   {
@@ -244,6 +264,7 @@ const adminSectionLabels: Record<AdminSection, string> = {
   analytics: "Analiza",
   work: "Praca",
   services: "Usługi",
+  profile: "Profil",
 };
 
 const analyticsPeriodLabels: Record<AnalyticsPeriod, string> = {
@@ -631,6 +652,46 @@ const normalizeServices = (value: Record<string, Partial<Service>> | null): Serv
 const servicesToRecord = (items: Service[]) =>
   Object.fromEntries(items.map((service, index) => [service.id, { ...service, order: index }]));
 
+const normalizeBarberDetails = (value: Partial<BarberDetails> | null): BarberDetails => ({
+  displayName: value?.displayName?.trim() ?? "",
+  phone: value?.phone?.trim() ?? "",
+  email: value?.email?.trim() ?? "",
+  instagram: value?.instagram?.trim() ?? "",
+  bio: value?.bio?.trim() ?? "",
+  photoUrl: value?.photoUrl?.trim() ?? "",
+  updatedAt: Number(value?.updatedAt) || undefined,
+});
+
+const resizeProfilePhoto = async (file: File) => {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Wybierz plik graficzny.");
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error("Zdjęcie może mieć maksymalnie 10 MB.");
+  }
+
+  const source = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Nie udało się odczytać zdjęcia."));
+    reader.readAsDataURL(file);
+  });
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const preview = new Image();
+    preview.onload = () => resolve(preview);
+    preview.onerror = () => reject(new Error("Nie udało się przygotować zdjęcia."));
+    preview.src = source;
+  });
+  const scale = Math.min(1, 512 / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Nie udało się przygotować zdjęcia.");
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/webp", 0.82);
+};
+
 const createServiceId = (name: string) => {
   const slug = name
     .toLowerCase()
@@ -839,6 +900,11 @@ export function BookingHome() {
   );
   const [isWorkSaving, setIsWorkSaving] = useState(false);
   const [workFeedback, setWorkFeedback] = useState<WorkFeedback | null>(null);
+  const [barberProfiles, setBarberProfiles] = useState<Record<string, BarberDetails>>({});
+  const [profileDraft, setProfileDraft] = useState<BarberDetails>(emptyBarberDetails);
+  const [profileFeedback, setProfileFeedback] = useState<WorkFeedback | null>(null);
+  const [isProfileSaving, setIsProfileSaving] = useState(false);
+  const [isProfilePhotoProcessing, setIsProfilePhotoProcessing] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const previousAppointmentsRef = useRef<Map<string, AdminAppointment> | null>(null);
   const bookingServiceRef = useRef<HTMLDivElement | null>(null);
@@ -864,9 +930,15 @@ export function BookingHome() {
 
   const activeUser = currentUser;
   const isOwner = Boolean(activeUser && ownerUserIds.has(activeUser.uid));
-  const isAdmin = isOwner;
-  const activeBarberId = selectedBarberId ?? defaultBarberId;
-  const selectedBarber = defaultBarbers.find((barber) => barber.id === selectedBarberId) ?? null;
+  const signedInBarberId = activeUser ? (barberUserIds.get(activeUser.uid) ?? null) : null;
+  const isBarber = Boolean(signedInBarberId);
+  const isAdmin = isOwner || isBarber;
+  const activeBarberId = signedInBarberId ?? selectedBarberId ?? defaultBarberId;
+  const visibleBarberId = isOwner ? selectedBarberId : signedInBarberId;
+  const selectedBarber =
+    defaultBarbers.find((barber) => barber.id === visibleBarberId) ?? null;
+  const activeBarberProfile = barberProfiles[activeBarberId] ?? emptyBarberDetails;
+  const activeBarberName = activeBarberProfile.displayName || selectedBarber?.name || "Barber";
   const services = useMemo(
     () => barberServices ?? (activeBarberId === defaultBarberId ? legacyServices : []),
     [activeBarberId, barberServices, legacyServices],
@@ -876,16 +948,18 @@ export function BookingHome() {
     (activeBarberId === defaultBarberId ? legacyWorkSettings : defaultWorkSettings);
   const adminAppointments = useMemo(
     () =>
-      isOwner
+      isAdmin
         ? allAdminAppointments.filter(
             (appointment) => (appointment.barberId || defaultBarberId) === activeBarberId,
           )
         : allAdminAppointments,
-    [activeBarberId, allAdminAppointments, isOwner],
+    [activeBarberId, allAdminAppointments, isAdmin],
   );
+  const notificationAppointments = isBarber ? adminAppointments : allAdminAppointments;
   const ownerBarberSummaries = useMemo(
     () =>
       defaultBarbers.map((barber) => {
+        const profile = barberProfiles[barber.id] ?? emptyBarberDetails;
         const barberAppointments = allAdminAppointments.filter(
           (appointment) => (appointment.barberId || defaultBarberId) === barber.id,
         );
@@ -901,6 +975,8 @@ export function BookingHome() {
 
         return {
           ...barber,
+          name: profile.displayName || barber.name,
+          photoUrl: profile.photoUrl,
           appointments: barberAppointments.length,
           today: barberAppointments.filter((appointment) => appointment.dateKey === dayKey(today))
             .length,
@@ -908,7 +984,7 @@ export function BookingHome() {
           nextAppointment: upcomingAppointments[0] ?? null,
         };
       }),
-    [allAdminAppointments, currentDate, today],
+    [allAdminAppointments, barberProfiles, currentDate, today],
   );
   const reschedulingAppointment =
     adminAppointments.find((appointment) => appointment.id === reschedulingAppointmentId) ?? null;
@@ -1567,11 +1643,45 @@ export function BookingHome() {
   }, [isAdmin]);
 
   useEffect(() => {
+    if (!isAdmin) {
+      setBarberProfiles({});
+      return undefined;
+    }
+
+    setBarberProfiles({});
+    const visibleProfiles = isOwner
+      ? defaultBarbers
+      : defaultBarbers.filter((barber) => barber.id === signedInBarberId);
+    const unsubscribeProfiles = visibleProfiles.map((barber) =>
+      onValue(ref(realtimeDb, `barbers/${barber.id}/profile`), (snapshot) => {
+        setBarberProfiles((current) => ({
+          ...current,
+          [barber.id]: normalizeBarberDetails(
+            snapshot.val() as Partial<BarberDetails> | null,
+          ),
+        }));
+      }),
+    );
+
+    return () => unsubscribeProfiles.forEach((unsubscribe) => unsubscribe());
+  }, [isAdmin, isOwner, signedInBarberId]);
+
+  useEffect(() => {
+    const defaultProfile = defaultBarbers.find((barber) => barber.id === activeBarberId);
+    setProfileDraft({
+      ...activeBarberProfile,
+      displayName: activeBarberProfile.displayName || defaultProfile?.name || "",
+      photoUrl: activeBarberProfile.photoUrl,
+    });
+    setProfileFeedback(null);
+  }, [activeBarberId, activeBarberProfile]);
+
+  useEffect(() => {
     if (!activeUser) return;
 
     const previousAppointments = previousAppointmentsRef.current;
     const currentAppointments = new Map(
-      allAdminAppointments.map((appointment) => [appointment.id, appointment]),
+      notificationAppointments.map((appointment) => [appointment.id, appointment]),
     );
 
     if (!previousAppointments) {
@@ -1671,7 +1781,7 @@ export function BookingHome() {
     }
 
     previousAppointmentsRef.current = currentAppointments;
-  }, [activeUser, allAdminAppointments, isAdmin, notifications]);
+  }, [activeUser, isAdmin, notificationAppointments, notifications]);
 
   useEffect(() => {
     if (!activeNotification) return undefined;
@@ -2204,6 +2314,51 @@ export function BookingHome() {
       }
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleProfilePhotoChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      setIsProfilePhotoProcessing(true);
+      setProfileFeedback(null);
+      const photoUrl = await resizeProfilePhoto(file);
+      setProfileDraft((current) => ({ ...current, photoUrl }));
+    } catch (error) {
+      setProfileFeedback({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Nie udało się przygotować zdjęcia.",
+      });
+    } finally {
+      setIsProfilePhotoProcessing(false);
+    }
+  };
+
+  const saveBarberProfile = async () => {
+    const profile = normalizeBarberDetails({
+      ...profileDraft,
+      displayName:
+        profileDraft.displayName ||
+        defaultBarbers.find((barber) => barber.id === activeBarberId)?.name ||
+        "Barber",
+      phone: formatPhoneNumber(getPhoneDigits(profileDraft.phone)),
+      email: profileDraft.email.toLocaleLowerCase("pl"),
+      instagram: profileDraft.instagram.replace(/^@+/, ""),
+      updatedAt: Date.now(),
+    });
+
+    try {
+      setIsProfileSaving(true);
+      setProfileFeedback(null);
+      await set(ref(realtimeDb, `barbers/${activeBarberId}/profile`), profile);
+      setProfileFeedback({ kind: "success", message: "Profil został zapisany." });
+    } catch {
+      setProfileFeedback({ kind: "error", message: "Nie udało się zapisać profilu." });
+    } finally {
+      setIsProfileSaving(false);
     }
   };
 
@@ -2882,7 +3037,7 @@ export function BookingHome() {
               className="back-button"
               type="button"
               onClick={() => {
-                if (selectedBarber) {
+                if (isOwner && selectedBarber) {
                   setSelectedBarberId(null);
                   setAdminSection("schedule");
                 } else {
@@ -2890,21 +3045,21 @@ export function BookingHome() {
                 }
               }}
             >
-              ‹ {selectedBarber ? "Barberzy" : "Wróć"}
+              ‹ {isOwner && selectedBarber ? "Barberzy" : "Wróć"}
             </button>
             <div>
-              <p className="eyebrow">Właściciel</p>
+              <p className="eyebrow">{isOwner ? "Właściciel" : "Barber"}</p>
               <h1>{selectedBarber ? adminSectionLabels[adminSection] : "Wybierz barbera"}</h1>
             </div>
             {selectedBarber ? notificationButton : <span className="owner-topbar-spacer" />}
           </div>
 
-          {!selectedBarber ? (
+          {isOwner && !selectedBarber ? (
             <div className="owner-barber-select" aria-label="Wybór barbera">
               <header className="owner-barber-heading">
                 <p className="eyebrow">Panel zespołu</p>
                 <h2>Czyj panel chcesz otworzyć?</h2>
-                <span>Każdy barber ma osobny terminarz, klientów, analizę, pracę i usługi.</span>
+                <span>Każdy barber ma osobny terminarz, klientów, analizę, pracę, usługi i profil.</span>
               </header>
 
               <div className="owner-barber-grid">
@@ -2926,7 +3081,9 @@ export function BookingHome() {
                     }}
                     aria-label={`Otwórz pełny panel barbera ${barber.name}`}
                   >
-                    <span className="owner-barber-avatar">{barber.name.slice(0, 1)}</span>
+                    <span className="owner-barber-avatar">
+                      {barber.photoUrl ? <img src={barber.photoUrl} alt="" /> : barber.name.slice(0, 1)}
+                    </span>
                     <span className="owner-barber-main">
                       <small>{barber.label}</small>
                       <strong>{barber.name}</strong>
@@ -2957,15 +3114,21 @@ export function BookingHome() {
             <>
               <div className="selected-barber-context" aria-label="Wybrany barber">
                 <span className={`selected-barber-avatar ${selectedBarber.accent}`}>
-                  {selectedBarber.name.slice(0, 1)}
+                  {activeBarberProfile.photoUrl ? (
+                    <img src={activeBarberProfile.photoUrl} alt="" />
+                  ) : (
+                    activeBarberName.slice(0, 1)
+                  )}
                 </span>
                 <span>
-                  <small>Przeglądasz panel</small>
-                  <strong>{selectedBarber.name}</strong>
+                  <small>{isOwner ? "Przeglądasz panel" : "Twój panel"}</small>
+                  <strong>{activeBarberName}</strong>
                 </span>
-                <button type="button" onClick={() => setSelectedBarberId(null)}>
-                  Zmień
-                </button>
+                {isOwner ? (
+                  <button type="button" onClick={() => setSelectedBarberId(null)}>
+                    Zmień
+                  </button>
+                ) : null}
               </div>
 
               <div className="admin-content-frame">
@@ -4103,6 +4266,173 @@ export function BookingHome() {
                 </section>
               </div>
             </div>
+
+            <div className={`admin-tab-panel ${adminSection === "profile" ? "active" : ""}`}>
+              <div className="admin-section-header">
+                <div>
+                  <p className="eyebrow">Wizytówka barbera</p>
+                  <h2>Profil {activeBarberName}</h2>
+                </div>
+                <div className="admin-section-stats" aria-label="Stan profilu">
+                  <span>
+                    <strong>{profileDraft.photoUrl ? "jest" : "brak"}</strong>
+                    zdjęcie
+                  </span>
+                  <span>
+                    <strong>{profileDraft.bio ? "gotowy" : "pusty"}</strong>
+                    opis
+                  </span>
+                </div>
+              </div>
+
+              <div className="barber-profile-view">
+                <section className="barber-profile-preview">
+                  <div className={`barber-profile-photo ${selectedBarber.accent}`}>
+                    {profileDraft.photoUrl ? (
+                      <img src={profileDraft.photoUrl} alt={`Profil ${activeBarberName}`} />
+                    ) : (
+                      <span aria-hidden="true">{activeBarberName.slice(0, 1)}</span>
+                    )}
+                  </div>
+                  <div className="barber-profile-preview-copy">
+                    <p className="eyebrow">{selectedBarber.label}</p>
+                    <h3>{profileDraft.displayName || selectedBarber.name}</h3>
+                    {profileDraft.instagram ? <span>@{profileDraft.instagram}</span> : null}
+                  </div>
+                  <div className="barber-photo-actions">
+                    <label className="profile-photo-button">
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={(event) => void handleProfilePhotoChange(event)}
+                      />
+                      {isProfilePhotoProcessing ? "Przetwarzanie..." : "Wybierz zdjęcie"}
+                    </label>
+                    {profileDraft.photoUrl ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setProfileDraft((current) => ({ ...current, photoUrl: "" }))
+                        }
+                      >
+                        Usuń
+                      </button>
+                    ) : null}
+                  </div>
+                </section>
+
+                <form
+                  className="barber-profile-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void saveBarberProfile();
+                  }}
+                >
+                  <div className="barber-profile-form-heading">
+                    <div>
+                      <p className="eyebrow">Informacje</p>
+                      <h3>Dane profilu</h3>
+                    </div>
+                    <span>Opcjonalne</span>
+                  </div>
+
+                  <div className="barber-profile-fields">
+                    <label>
+                      Imię wyświetlane
+                      <input
+                        type="text"
+                        maxLength={50}
+                        value={profileDraft.displayName}
+                        onChange={(event) =>
+                          setProfileDraft((current) => ({
+                            ...current,
+                            displayName: event.target.value,
+                          }))
+                        }
+                        placeholder={selectedBarber.name}
+                      />
+                    </label>
+                    <label>
+                      Numer telefonu
+                      <input
+                        type="tel"
+                        inputMode="tel"
+                        autoComplete="tel"
+                        value={profileDraft.phone}
+                        onChange={(event) =>
+                          setProfileDraft((current) => ({
+                            ...current,
+                            phone: formatPhoneNumber(getPhoneDigits(event.target.value)),
+                          }))
+                        }
+                        placeholder="500 000 000"
+                      />
+                    </label>
+                    <label>
+                      E-mail
+                      <input
+                        type="email"
+                        inputMode="email"
+                        autoComplete="email"
+                        maxLength={100}
+                        value={profileDraft.email}
+                        onChange={(event) =>
+                          setProfileDraft((current) => ({ ...current, email: event.target.value }))
+                        }
+                        placeholder="barber@example.com"
+                      />
+                    </label>
+                    <label>
+                      Instagram
+                      <span className="profile-instagram-input">
+                        <b aria-hidden="true">@</b>
+                        <input
+                          type="text"
+                          inputMode="text"
+                          maxLength={40}
+                          value={profileDraft.instagram}
+                          onChange={(event) =>
+                            setProfileDraft((current) => ({
+                              ...current,
+                              instagram: event.target.value.replace(/^@+/, ""),
+                            }))
+                          }
+                          placeholder="nazwa_profilu"
+                        />
+                      </span>
+                    </label>
+                    <label className="barber-profile-bio">
+                      Krótki opis
+                      <textarea
+                        maxLength={280}
+                        value={profileDraft.bio}
+                        onChange={(event) =>
+                          setProfileDraft((current) => ({ ...current, bio: event.target.value }))
+                        }
+                        placeholder="Kilka słów o specjalizacji i stylu pracy"
+                      />
+                      <small>{profileDraft.bio.length}/280</small>
+                    </label>
+                  </div>
+
+                  <div className="barber-profile-submit">
+                    {profileFeedback ? (
+                      <p className={`work-feedback ${profileFeedback.kind}`}>
+                        {profileFeedback.message}
+                      </p>
+                    ) : (
+                      <span />
+                    )}
+                    <button
+                      type="submit"
+                      disabled={isProfileSaving || isProfilePhotoProcessing}
+                    >
+                      {isProfileSaving ? "Zapisywanie..." : "Zapisz profil"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
           </div>
 
           <nav className="admin-bottom-nav" aria-label="Sekcje admina">
@@ -4146,6 +4476,14 @@ export function BookingHome() {
             >
               <span className="admin-nav-icon services-icon" aria-hidden="true" />
               <span>Usługi</span>
+            </button>
+            <button
+              className={adminSection === "profile" ? "active" : ""}
+              type="button"
+              onClick={() => setAdminSection("profile")}
+            >
+              <span className="admin-nav-icon profile-icon" aria-hidden="true" />
+              <span>Profil</span>
             </button>
           </nav>
             </>
