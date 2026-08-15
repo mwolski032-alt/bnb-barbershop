@@ -13,21 +13,21 @@ const getSiteUrl = (request) => {
 
 const eventCopy = {
   new_booking: {
-    target: "admin",
+    target: "barber",
     title: "Nowa wizyta",
     body: (appointment) => `${appointment.clientName} zarezerwowal: ${appointment.serviceName}.`,
     sms: (appointment) =>
       `BNB: Nowa wizyta - ${appointment.clientName}, ${appointment.serviceName}, ${appointment.dateKey} ${appointment.startTime}, tel. ${appointment.phone ?? "brak"}`,
   },
   client_rescheduled: {
-    target: "admin",
+    target: "barber",
     title: "Klient przesunal wizyte",
     body: (appointment) => `${appointment.clientName}: ${appointment.dateKey}, ${appointment.startTime}.`,
     sms: (appointment) =>
       `BNB: Klient zmienil termin - ${appointment.clientName}, ${appointment.serviceName}, ${appointment.dateKey} ${appointment.startTime}, tel. ${appointment.phone ?? "brak"}`,
   },
   client_cancelled: {
-    target: "admin",
+    target: "barber",
     title: "Klient odwolal wizyte",
     body: (appointment) => `${appointment.clientName} odwolal: ${appointment.serviceName}.`,
     sms: (appointment) =>
@@ -85,8 +85,6 @@ const normalizePrivateKey = () => {
   return key?.replace(/\\n/g, "\n");
 };
 
-const normalizeSmsPhone = (phone) => phone?.replace(/[^\d+]/g, "").replace(/^\+/, "");
-
 const escapeHtml = (value) =>
   String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -100,7 +98,7 @@ const renderAppointmentEmail = (copy, appointment, intro) => `
     <p>${escapeHtml(intro ?? copy.body(appointment))}</p>
     <table style="border-collapse: collapse; margin-top: 16px;">
       <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Klient</td><td>${escapeHtml(appointment.clientName)}</td></tr>
-      <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Barber</td><td>${escapeHtml(appointment.barberId === "mateusz" ? "Mateusz" : appointment.barberId)}</td></tr>
+      <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Barber</td><td>${escapeHtml(appointment.barberName || (appointment.barberId === "mateusz" ? "Mateusz" : appointment.barberId))}</td></tr>
       <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Telefon</td><td>${escapeHtml(appointment.phone ?? "brak")}</td></tr>
       <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Usluga</td><td>${escapeHtml(appointment.serviceName)}</td></tr>
       <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Termin</td><td>${escapeHtml(`${appointment.dateKey} ${appointment.startTime}`)}</td></tr>
@@ -161,6 +159,24 @@ const readNotificationTokens = async (accessToken) => {
   return (await response.json()) ?? {};
 };
 
+const readBarberContact = async (accessToken, barberId) => {
+  const response = await fetch(`${databaseUrl}/team/barbers/${encodeURIComponent(barberId)}.json`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Barber contact read failed: ${response.status}`);
+  }
+
+  const member = (await response.json()) ?? {};
+  return {
+    email: String(member.email ?? "").trim().toLocaleLowerCase("pl"),
+    userId: String(member.userId ?? "").trim(),
+    name: String(member.name ?? "").trim(),
+  };
+};
+
 const writePushLog = async (accessToken, payload) => {
   try {
     await fetch(`${databaseUrl}/pushDebugLogs/${Date.now()}.json`, {
@@ -176,14 +192,14 @@ const writePushLog = async (accessToken, payload) => {
   }
 };
 
-const collectTargetTokens = (tokensByUser, target, appointment) => {
+const collectTargetTokens = (tokensByUser, target, appointment, barberUserId) => {
   const collected = [];
 
   for (const [uid, devices] of Object.entries(tokensByUser)) {
     for (const [deviceKey, device] of Object.entries(devices ?? {})) {
       if (!device?.token) continue;
 
-      if (target === "admin" && device.isAdmin) {
+      if (target === "barber" && barberUserId && uid === barberUserId) {
         collected.push({ uid, deviceKey, token: device.token });
       }
 
@@ -273,141 +289,6 @@ const sendToToken = async (accessToken, device, notification, appointment, siteU
   };
 };
 
-const sendAdminSms = async (copy, appointment) => {
-  if (!copy.sms) {
-    return { enabled: false, sent: 0, failed: 0, error: "" };
-  }
-
-  const token = process.env.SMSAPI_TOKEN;
-  const to = normalizeSmsPhone(process.env.ADMIN_SMS_PHONE);
-
-  if (!token || !to) {
-    return {
-      enabled: false,
-      sent: 0,
-      failed: 1,
-      error: "Missing SMSAPI_TOKEN or ADMIN_SMS_PHONE.",
-    };
-  }
-
-  const body = new URLSearchParams({
-    to,
-    message: copy.sms(appointment).slice(0, 459),
-    format: "json",
-    encoding: "utf-8",
-  });
-  const sender = process.env.SMSAPI_FROM;
-
-  if (sender) {
-    body.set("from", sender);
-  }
-
-  const response = await fetch("https://api.smsapi.com/sms.do", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body,
-  });
-  const responseText = await response.text();
-
-  if (!response.ok) {
-    return {
-      enabled: true,
-      sent: 0,
-      failed: 1,
-      error: responseText || `SMSAPI error ${response.status}`,
-    };
-  }
-
-  return { enabled: true, sent: 1, failed: 0, error: "" };
-};
-
-const buildWhatsAppMessageBody = (copy, appointment) => copy.sms?.(appointment) ?? copy.body(appointment);
-
-const sendAdminWhatsApp = async (copy, appointment) => {
-  if (!copy.sms) {
-    return { enabled: false, mode: "", sent: 0, failed: 0, error: "" };
-  }
-
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  const to = normalizeSmsPhone(process.env.ADMIN_WHATSAPP_PHONE);
-
-  if (!token || !phoneNumberId || !to) {
-    return {
-      enabled: false,
-      mode: "",
-      sent: 0,
-      failed: 1,
-      error: "Missing WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID or ADMIN_WHATSAPP_PHONE.",
-    };
-  }
-
-  const apiVersion = process.env.WHATSAPP_API_VERSION || "v23.0";
-  const templateName = process.env.WHATSAPP_TEMPLATE_NAME;
-  const templateLanguage = process.env.WHATSAPP_TEMPLATE_LANGUAGE || "pl";
-  const message = buildWhatsAppMessageBody(copy, appointment).slice(0, 1024);
-  const payload = templateName
-    ? {
-        messaging_product: "whatsapp",
-        to,
-        type: "template",
-        template: {
-          name: templateName,
-          language: { code: templateLanguage },
-          components: [
-            {
-              type: "body",
-              parameters: [{ type: "text", text: message }],
-            },
-          ],
-        },
-      }
-    : {
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to,
-        type: "text",
-        text: {
-          preview_url: false,
-          body: message,
-        },
-      };
-
-  const response = await fetch(
-    `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    },
-  );
-  const responseText = await response.text();
-
-  if (!response.ok) {
-    return {
-      enabled: true,
-      mode: templateName ? "template" : "text",
-      sent: 0,
-      failed: 1,
-      error: responseText || `WhatsApp API error ${response.status}`,
-    };
-  }
-
-  return {
-    enabled: true,
-    mode: templateName ? "template" : "text",
-    sent: 1,
-    failed: 0,
-    error: "",
-  };
-};
-
 const sendResendEmail = async ({ to, subject, text, html, idempotencyKey }) => {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
@@ -463,24 +344,38 @@ const sendResendEmail = async ({ to, subject, text, html, idempotencyKey }) => {
   return { enabled: true, sent: 1, failed: 0, error: "" };
 };
 
-const sendAdminEmail = async (copy, appointment) => {
+const sendBarberEmail = async (copy, appointment) => {
   if (!copy.sms) {
     return { enabled: false, sent: 0, failed: 0, error: "" };
   }
 
+  let barberContact;
+  try {
+    const accessToken = await getAccessToken();
+    barberContact = await readBarberContact(accessToken, appointment.barberId);
+  } catch (error) {
+    return {
+      enabled: false,
+      sent: 0,
+      failed: 1,
+      error: error instanceof Error ? error.message : "Could not resolve barber email.",
+    };
+  }
+
   const recipient =
-    appointment.barberId === "mateusz"
-      ? process.env.BARBER_MATEUSZ_EMAIL || process.env.ADMIN_EMAIL
-      : "";
+    barberContact.email ||
+    (appointment.barberId === "mateusz" ? process.env.BARBER_MATEUSZ_EMAIL || "" : "");
   if (!recipient) {
     return { enabled: false, sent: 0, failed: 0, error: "" };
   }
 
+  const barberAppointment = { ...appointment, barberName: barberContact.name };
+
   return sendResendEmail({
     to: recipient,
     subject: `PILNE BNB: ${copy.title}`,
-    text: buildWhatsAppMessageBody(copy, appointment),
-    html: renderAppointmentEmail(copy, appointment),
+    text: copy.sms?.(barberAppointment) ?? copy.body(barberAppointment),
+    html: renderAppointmentEmail(copy, barberAppointment),
     idempotencyKey: `${appointment.id}-${appointment.event ?? "event"}-${appointment.barberId}-email`,
   });
 };
@@ -509,8 +404,18 @@ const sendClientEmail = async (event, appointment) => {
 const sendPushNotifications = async (copy, appointment, notification, siteUrl) => {
   try {
     const accessToken = await getAccessToken();
-    const tokensByUser = await readNotificationTokens(accessToken);
-    const tokens = collectTargetTokens(tokensByUser, copy.target, appointment);
+    const [tokensByUser, barberContact] = await Promise.all([
+      readNotificationTokens(accessToken),
+      copy.target === "barber"
+        ? readBarberContact(accessToken, appointment.barberId)
+        : Promise.resolve({ userId: "" }),
+    ]);
+    const tokens = collectTargetTokens(
+      tokensByUser,
+      copy.target,
+      appointment,
+      barberContact.userId,
+    );
     const eventAppointment = { ...appointment, event: appointment.event };
     const results = await Promise.all(
       tokens.map((device) => sendToToken(accessToken, device, notification, eventAppointment, siteUrl)),
@@ -564,13 +469,19 @@ const handler = async (request) => {
       title: copy.title,
       body: copy.body(eventAppointment),
     };
-    const [sms, whatsapp, email, clientEmail, push] = await Promise.all([
-      sendAdminSms(copy, eventAppointment),
-      sendAdminWhatsApp(copy, eventAppointment),
-      sendAdminEmail(copy, eventAppointment),
+    const [email, clientEmail, push] = await Promise.all([
+      sendBarberEmail(copy, eventAppointment),
       sendClientEmail(event, eventAppointment),
       sendPushNotifications(copy, eventAppointment, notification, siteUrl),
     ]);
+    const sms = { enabled: false, sent: 0, failed: 0, error: "Owner SMS notifications are disabled." };
+    const whatsapp = {
+      enabled: false,
+      mode: "",
+      sent: 0,
+      failed: 0,
+      error: "Owner WhatsApp notifications are disabled.",
+    };
     const resultPayload = {
       ok: sms.sent > 0 || whatsapp.sent > 0 || email.sent > 0 || clientEmail.sent > 0 || push.result.sent > 0,
       event,

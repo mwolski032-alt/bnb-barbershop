@@ -216,9 +216,11 @@ test("keeps settlement-driven admin analytics", async () => {
   assert.match(styles, /repeat\(var\(--admin-nav-items, 6\), minmax\(0, 1fr\)\)/);
 });
 
-test("keeps owner team management and role-aware admin avatars", async () => {
-  const [bookingHome, styles] = await Promise.all([
+test("keeps owner team management, invitations and role-aware admin avatars", async () => {
+  const [bookingHome, invitationClient, invitationFunction, styles] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/team-invitations.ts", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/team-invitations.mjs", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
@@ -234,12 +236,22 @@ test("keeps owner team management and role-aware admin avatars", async () => {
   );
   assert.match(bookingHome, /openOwnerBarberPanel\(member\.id, "schedule"\)/);
   assert.match(bookingHome, /openOwnerBarberPanel\(member\.id, "analytics"\)/);
+  assert.match(bookingHome, /createTeamInvitation\(idToken/);
+  assert.match(bookingHome, /resendPendingTeamInvitation/);
+  assert.match(bookingHome, /claimTeamInvitation\(idToken/);
+  assert.doesNotMatch(bookingHome, /Identyfikator użytkownika Firebase/);
+  assert.match(invitationClient, /action: "create"/);
+  assert.match(invitationClient, /action: "resend"/);
+  assert.match(invitationClient, /action: "claim"/);
+  assert.match(invitationFunction, /inviteLifetimeMs = 7 \* 24 \* 60 \* 60 \* 1000/);
+  assert.match(invitationFunction, /hashInviteToken/);
+  assert.match(invitationFunction, /Zaloguj się kontem Google wskazanym w zaproszeniu/);
   assert.match(styles, /\.team-member-card/);
   assert.match(styles, /\.team-access-grid/);
   assert.match(styles, /--admin-nav-items/);
 });
 
-test("keeps barber ownership on operational records and Mateusz email routing", async () => {
+test("keeps barber ownership and excludes the owner from appointment notifications", async () => {
   const [bookingHome, notifications, sendPush] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/notifications.ts", import.meta.url), "utf8"),
@@ -255,8 +267,29 @@ test("keeps barber ownership on operational records and Mateusz email routing", 
   assert.match(bookingHome, /settlement: \{[\s\S]*amount: settledAmount/);
   assert.match(notifications, /barberId: string/);
   assert.match(sendPush, /process\.env\.BARBER_MATEUSZ_EMAIL/);
-  assert.match(sendPush, /appointment\.barberId === "mateusz"/);
+  assert.doesNotMatch(sendPush, /process\.env\.ADMIN_EMAIL/);
+  assert.match(sendPush, /target: "barber"/);
+  assert.match(sendPush, /uid === barberUserId/);
+  assert.match(sendPush, /Owner SMS notifications are disabled/);
+  assert.match(sendPush, /Owner WhatsApp notifications are disabled/);
+  assert.match(bookingHome, /if \(isOwner\) \{[\s\S]*previousAppointmentsRef\.current = currentAppointments/);
+  assert.match(bookingHome, /!isOwner \? notificationButton : null/);
   assert.match(sendPush, /appointmentBarberId: eventAppointment\.barberId/);
+});
+
+test("separates active visits from the client directory", async () => {
+  const [bookingHome, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /type ClientWorkspaceTab = "appointments" \| "directory"/);
+  assert.match(bookingHome, /const activeAdminClientProfiles = useMemo/);
+  assert.match(bookingHome, /role="tablist" aria-label="Widok bazy klientów"/);
+  assert.match(bookingHome, /Aktywne wizyty/);
+  assert.match(bookingHome, /clientWorkspaceTab === "directory"/);
+  assert.match(styles, /\.client-workspace-tabs/);
+  assert.match(styles, /\.client-workspace-tab-icon\.appointments/);
 });
 
 test("keeps the client barber selection and resilient profile photos", async () => {

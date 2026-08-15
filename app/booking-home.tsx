@@ -23,6 +23,11 @@ import { firebaseApp, realtimeDb } from "./lib/firebase";
 import {
   sendAppointmentNotification,
 } from "./lib/notifications";
+import {
+  claimTeamInvitation,
+  createTeamInvitation,
+  resendTeamInvitation,
+} from "./lib/team-invitations";
 
 type Availability = "high" | "medium" | "low" | "none";
 type Step = "booking" | "confirm" | "success" | "admin";
@@ -138,6 +143,7 @@ type AppNotification = {
 
 type SmsTemplate = "confirmation" | "reschedule" | "reminder" | "custom";
 type ClientFilter = "all" | "upcoming" | "rescheduled" | "missing-phone";
+type ClientWorkspaceTab = "appointments" | "directory";
 type AnalyticsPeriod = "week" | "month" | "quarter" | "year";
 
 type AdminClientProfile = {
@@ -205,6 +211,10 @@ type BarberProfile = {
   email: string;
   active: boolean;
   access: Record<BarberAdminSection, boolean>;
+  inviteStatus?: "pending" | "accepted" | "";
+  inviteSentAt?: number;
+  inviteExpiresAt?: number;
+  inviteAcceptedAt?: number;
   createdAt?: number;
   updatedAt?: number;
 };
@@ -212,8 +222,9 @@ type BarberProfile = {
 type TeamMemberDraft = {
   name: string;
   email: string;
-  userId: string;
 };
+
+type InvitationNotice = WorkFeedback | null;
 
 type BarberDetails = {
   displayName: string;
@@ -261,6 +272,7 @@ const defaultBarbers: BarberProfile[] = [
     email: "",
     active: true,
     access: fullBarberAccess,
+    inviteStatus: "accepted",
   },
   {
     id: "kacper",
@@ -271,6 +283,7 @@ const defaultBarbers: BarberProfile[] = [
     email: "",
     active: true,
     access: fullBarberAccess,
+    inviteStatus: "",
   },
 ];
 const shouldRunDataMigration = import.meta.env.PROD;
@@ -831,6 +844,13 @@ const normalizeTeamMember = (
   email: value?.email?.trim().toLocaleLowerCase("pl") ?? "",
   active: value?.active !== false,
   access: normalizeBarberAccess(value?.access),
+  inviteStatus:
+    value?.inviteStatus === "pending" || value?.inviteStatus === "accepted"
+      ? value.inviteStatus
+      : "",
+  inviteSentAt: Number(value?.inviteSentAt) || undefined,
+  inviteExpiresAt: Number(value?.inviteExpiresAt) || undefined,
+  inviteAcceptedAt: Number(value?.inviteAcceptedAt) || undefined,
   createdAt: Number(value?.createdAt) || undefined,
   updatedAt: Number(value?.updatedAt) || undefined,
 });
@@ -846,21 +866,12 @@ const teamMembersToRecord = (members: BarberProfile[]) =>
     ]),
   );
 
-const createBarberId = (name: string, existingIds: string[]) => {
-  const baseId =
-    name
-      .toLocaleLowerCase("pl")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "barber";
-  let nextId = baseId;
-  let suffix = 2;
-  while (existingIds.includes(nextId)) {
-    nextId = `${baseId}-${suffix}`;
-    suffix += 1;
-  }
-  return nextId;
+const readInvitationFromLocation = () => {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const barberId = params.get("barber")?.trim() ?? "";
+  const inviteToken = params.get("invite")?.trim() ?? "";
+  return barberId && inviteToken ? { barberId, inviteToken } : null;
 };
 
 const resizeProfilePhoto = async (file: File) => {
@@ -1063,10 +1074,11 @@ export function BookingHome() {
   const [teamMemberDraft, setTeamMemberDraft] = useState<TeamMemberDraft>({
     name: "",
     email: "",
-    userId: "",
   });
   const [teamFeedback, setTeamFeedback] = useState<WorkFeedback | null>(null);
   const [isTeamSaving, setIsTeamSaving] = useState(false);
+  const [invitationNotice, setInvitationNotice] = useState<InvitationNotice>(null);
+  const [openInvitedBarberPanel, setOpenInvitedBarberPanel] = useState(false);
   const [legacyServices, setLegacyServices] = useState<Service[]>(defaultServices);
   const [barberServices, setBarberServices] = useState<Service[] | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState(defaultServices[0].id);
@@ -1099,6 +1111,7 @@ export function BookingHome() {
   const [activeNotification, setActiveNotification] = useState<AppNotification | null>(null);
   const [clientSearch, setClientSearch] = useState("");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
+  const [clientWorkspaceTab, setClientWorkspaceTab] = useState<ClientWorkspaceTab>("appointments");
   const [clientDialog, setClientDialog] = useState<ClientDialogState | null>(null);
   const [clientSaveMode, setClientSaveMode] = useState<ClientSaveMode>("record");
   const [clientDraft, setClientDraft] = useState<ClientDraft>({
@@ -1131,6 +1144,7 @@ export function BookingHome() {
   const [isProfilePhotoProcessing, setIsProfilePhotoProcessing] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const previousAppointmentsRef = useRef<Map<string, AdminAppointment> | null>(null);
+  const processedInvitationRef = useRef<string | null>(null);
   const bookingServiceRef = useRef<HTMLDivElement | null>(null);
   const bookingBarberRef = useRef<HTMLDivElement | null>(null);
   const bookingCalendarRef = useRef<HTMLDivElement | null>(null);
@@ -1406,10 +1420,21 @@ export function BookingHome() {
         return first.name.localeCompare(second.name, "pl");
       });
   }, [activeBarberId, adminClientAppointments, clientRecords, currentDate]);
+  const activeAdminClientProfiles = useMemo(
+    () =>
+      adminClientProfiles.filter(
+        (client) =>
+          Boolean(client.nextAppointment) ||
+          client.appointments.some((appointment) => canSettleAppointment(appointment, currentDate)),
+      ),
+    [adminClientProfiles, currentDate],
+  );
+  const clientWorkspaceProfiles =
+    clientWorkspaceTab === "appointments" ? activeAdminClientProfiles : adminClientProfiles;
   const filteredAdminClients = useMemo(() => {
     const query = clientSearch.trim().toLocaleLowerCase("pl");
 
-    return adminClientProfiles.filter((client) => {
+    return clientWorkspaceProfiles.filter((client) => {
       const phoneDigits = getPhoneDigits(client.phone);
       const matchesQuery =
         !query ||
@@ -1427,7 +1452,7 @@ export function BookingHome() {
       if (clientFilter === "missing-phone") return phoneDigits.length !== 9;
       return true;
     });
-  }, [adminClientProfiles, clientFilter, clientSearch]);
+  }, [clientFilter, clientSearch, clientWorkspaceProfiles]);
   const analytics = useMemo(() => {
     const range = getAnalyticsRange(analyticsPeriod, currentDate);
     const isWithin = (appointment: AdminAppointment, start: Date, end: Date) => {
@@ -1847,12 +1872,61 @@ export function BookingHome() {
   }, []);
 
   useEffect(() => {
+    const invitation = readInvitationFromLocation();
+    if (!activeUser || !invitation) return;
+
+    const invitationKey = `${invitation.barberId}:${invitation.inviteToken}`;
+    if (processedInvitationRef.current === invitationKey) return;
+    processedInvitationRef.current = invitationKey;
+    let cancelled = false;
+
+    const claimInvitation = async () => {
+      const idToken = await getAuth(firebaseApp).currentUser?.getIdToken();
+      if (!idToken) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
+
+      const result = await claimTeamInvitation(idToken, invitation.barberId, invitation.inviteToken);
+      if (!result.ok) throw new Error(result.error);
+      if (cancelled) return;
+
+      const url = new URL(window.location.href);
+      url.searchParams.delete("barber");
+      url.searchParams.delete("invite");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      setInvitationNotice({
+        kind: "success",
+        message: "Konto barbera jest aktywne. Twój panel jest gotowy.",
+      });
+      setOpenInvitedBarberPanel(true);
+    };
+
+    void claimInvitation().catch((error) => {
+      if (!cancelled) {
+        processedInvitationRef.current = null;
+        setInvitationNotice({
+          kind: "error",
+          message: error instanceof Error ? error.message : "Nie udało się aktywować zaproszenia.",
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeUser]);
+
+  useEffect(() => {
+    if (!openInvitedBarberPanel || !isBarber) return;
+    setStep("admin");
+    setOpenInvitedBarberPanel(false);
+  }, [isBarber, openInvitedBarberPanel]);
+
+  useEffect(() => {
     previousAppointmentsRef.current = null;
     setSelectedBarberId(null);
     setNotificationPanelOpen(false);
     setActiveNotification(null);
-    setNotifications(activeUser ? readStoredNotifications(activeUser.uid) : []);
-  }, [activeUser, today]);
+    setNotifications(activeUser && !isOwner ? readStoredNotifications(activeUser.uid) : []);
+  }, [activeUser, isOwner, today]);
 
   useEffect(() => {
     if (!activeUser) {
@@ -2058,6 +2132,11 @@ export function BookingHome() {
       notificationAppointments.map((appointment) => [appointment.id, appointment]),
     );
 
+    if (isOwner) {
+      previousAppointmentsRef.current = currentAppointments;
+      return;
+    }
+
     if (!previousAppointments) {
       previousAppointmentsRef.current = currentAppointments;
       return;
@@ -2155,7 +2234,7 @@ export function BookingHome() {
     }
 
     previousAppointmentsRef.current = currentAppointments;
-  }, [activeUser, isAdmin, notificationAppointments, notifications]);
+  }, [activeUser, isAdmin, isOwner, notificationAppointments, notifications]);
 
   useEffect(() => {
     if (!activeNotification) return undefined;
@@ -2823,7 +2902,7 @@ export function BookingHome() {
   };
 
   const openNewTeamMemberDialog = () => {
-    setTeamMemberDraft({ name: "", email: "", userId: "" });
+    setTeamMemberDraft({ name: "", email: "" });
     setTeamFeedback(null);
     setTeamDialogMemberId("new");
   };
@@ -2832,7 +2911,6 @@ export function BookingHome() {
     setTeamMemberDraft({
       name: member.name,
       email: member.email,
-      userId: member.userId,
     });
     setTeamFeedback(null);
     setTeamDialogMemberId(member.id);
@@ -2843,46 +2921,63 @@ export function BookingHome() {
 
     const name = teamMemberDraft.name.trim();
     const email = teamMemberDraft.email.trim().toLocaleLowerCase("pl");
-    const userId = teamMemberDraft.userId.trim();
-    if (name.length < 2 || (email && !isValidEmail(email))) {
-      setTeamFeedback({
-        kind: "error",
-        message: "Podaj imię oraz poprawny adres e-mail albo pozostaw go pusty.",
-      });
-      return;
-    }
-    if (
-      userId &&
-      teamMembers.some(
-        (member) => member.id !== teamDialogMemberId && member.userId === userId,
-      )
-    ) {
-      setTeamFeedback({ kind: "error", message: "Ten identyfikator jest już przypisany." });
-      return;
-    }
-
     const existingMember =
       teamDialogMemberId && teamDialogMemberId !== "new"
         ? teamMembers.find((member) => member.id === teamDialogMemberId) ?? null
         : null;
-    const memberId =
-      existingMember?.id ?? createBarberId(name, teamMembers.map((member) => member.id));
-    const memberIndex = existingMember
-      ? Math.max(0, teamMembers.findIndex((member) => member.id === existingMember.id))
-      : teamMembers.length;
+
+    if (name.length < 2 || !isValidEmail(email)) {
+      setTeamFeedback({
+        kind: "error",
+        message: existingMember
+          ? "Podaj imię i poprawny adres e-mail."
+          : "Podaj imię i adres e-mail, na który wyślemy zaproszenie.",
+      });
+      return;
+    }
+
+    if (!existingMember) {
+      try {
+        setIsTeamSaving(true);
+        setTeamFeedback(null);
+        const idToken = await getAuth(firebaseApp).currentUser?.getIdToken();
+        if (!idToken) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
+        const result = await createTeamInvitation(idToken, {
+          name,
+          email,
+          access: fullBarberAccess,
+        });
+        if (!result.ok) throw new Error(result.error);
+        setTeamDialogMemberId(null);
+        setTeamFeedback({
+          kind: "success",
+          message: `Zaproszenie dla ${name} zostało wysłane na ${email}.`,
+        });
+      } catch (error) {
+        setTeamFeedback({
+          kind: "error",
+          message: error instanceof Error ? error.message : "Nie udało się wysłać zaproszenia.",
+        });
+      } finally {
+        setIsTeamSaving(false);
+      }
+      return;
+    }
+
+    const memberId = existingMember.id;
+    const memberIndex = Math.max(0, teamMembers.findIndex((member) => member.id === memberId));
     const now = Date.now();
     const member = normalizeTeamMember(
       memberId,
       {
         ...existingMember,
         name,
-        label: existingMember?.label || `Barber ${memberIndex + 1}`,
-        accent: existingMember?.accent || (memberIndex % 2 === 0 ? "blue" : "mint"),
+        label: existingMember.label || `Barber ${memberIndex + 1}`,
+        accent: existingMember.accent || (memberIndex % 2 === 0 ? "blue" : "mint"),
         email,
-        userId,
-        active: existingMember?.active ?? true,
-        access: existingMember?.access ?? fullBarberAccess,
-        createdAt: existingMember?.createdAt ?? now,
+        active: existingMember.active,
+        access: existingMember.access,
+        createdAt: existingMember.createdAt ?? now,
         updatedAt: now,
       },
       memberIndex,
@@ -2894,15 +2989,33 @@ export function BookingHome() {
       const updates: Record<string, unknown> = {
         [`team/barbers/${memberId}`]: member,
       };
-      if (!existingMember) {
-        updates[`barbers/${memberId}/profile/displayName`] = name;
-        updates[`barbers/${memberId}/profile/email`] = email;
-        updates[`barbers/${memberId}/profile/updatedAt`] = now;
-      }
+      updates[`barbers/${memberId}/profile/displayName`] = name;
+      updates[`barbers/${memberId}/profile/email`] = email;
+      updates[`barbers/${memberId}/profile/updatedAt`] = now;
       await update(ref(realtimeDb), updates);
       setTeamDialogMemberId(null);
     } catch {
       setTeamFeedback({ kind: "error", message: "Nie udało się zapisać członka zespołu." });
+    } finally {
+      setIsTeamSaving(false);
+    }
+  };
+
+  const resendPendingTeamInvitation = async (member: BarberProfile) => {
+    if (!isOwner || isTeamSaving || member.userId) return;
+    try {
+      setIsTeamSaving(true);
+      setTeamFeedback(null);
+      const idToken = await getAuth(firebaseApp).currentUser?.getIdToken();
+      if (!idToken) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
+      const result = await resendTeamInvitation(idToken, member.id);
+      if (!result.ok) throw new Error(result.error);
+      setTeamFeedback({ kind: "success", message: `Zaproszenie dla ${member.name} zostało wysłane ponownie.` });
+    } catch (error) {
+      setTeamFeedback({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Nie udało się wysłać zaproszenia.",
+      });
     } finally {
       setIsTeamSaving(false);
     }
@@ -3664,7 +3777,7 @@ export function BookingHome() {
               <p className="eyebrow">{isOwner ? "Właściciel" : "Barber"}</p>
               <h1>{selectedBarber ? adminSectionLabels[adminSection] : "Wybierz barbera"}</h1>
             </div>
-            {selectedBarber ? notificationButton : <span className="owner-topbar-spacer" />}
+            {selectedBarber && !isOwner ? notificationButton : <span className="owner-topbar-spacer" />}
           </div>
 
           {isOwner && !selectedBarber ? (
@@ -4106,29 +4219,72 @@ export function BookingHome() {
               <div className="admin-section-header">
                 <div className="client-section-title">
                   <div>
-                    <p className="eyebrow">Kartoteka kontaktów</p>
-                    <h2>Baza klientów</h2>
+                    <p className="eyebrow">
+                      {clientWorkspaceTab === "appointments" ? "Bieżąca obsługa" : "Kartoteka kontaktów"}
+                    </p>
+                    <h2>{clientWorkspaceTab === "appointments" ? "Aktywne wizyty" : "Klienci"}</h2>
                   </div>
-                  <button className="add-client-button" type="button" onClick={openClientCreator}>
-                    <span aria-hidden="true">+</span>
-                    Dodaj klienta
-                  </button>
+                  {clientWorkspaceTab === "directory" ? (
+                    <button className="add-client-button" type="button" onClick={openClientCreator}>
+                      <span aria-hidden="true">+</span>
+                      Dodaj klienta
+                    </button>
+                  ) : null}
                 </div>
                 <div className="admin-section-stats" aria-label="Podsumowanie klientów">
                   <span>
-                    <strong>{adminClientProfiles.length}</strong>
-                    klientów
+                    <strong>
+                      {clientWorkspaceTab === "appointments"
+                        ? activeAdminClientProfiles.length
+                        : adminClientProfiles.length}
+                    </strong>
+                    {clientWorkspaceTab === "appointments" ? "aktywnych" : "klientów"}
                   </span>
                   <span>
                     <strong>
-                      {adminClientProfiles.filter((client) => client.nextAppointment).length}
+                      {clientWorkspaceTab === "appointments"
+                        ? activeAdminClientProfiles.filter((client) => client.rescheduledCount > 0).length
+                        : adminClientProfiles.filter((client) => !client.nextAppointment).length}
                     </strong>
-                    aktywnych
+                    {clientWorkspaceTab === "appointments" ? "do potwierdzenia" : "bez wizyty"}
                   </span>
                 </div>
               </div>
 
               <div className="clients-view" aria-label="Lista klientów">
+                <div className="client-workspace-tabs" role="tablist" aria-label="Widok bazy klientów">
+                  <button
+                    className={clientWorkspaceTab === "appointments" ? "active" : ""}
+                    type="button"
+                    role="tab"
+                    aria-selected={clientWorkspaceTab === "appointments"}
+                    onClick={() => {
+                      setClientWorkspaceTab("appointments");
+                      setClientFilter("all");
+                      setClientSearch("");
+                    }}
+                  >
+                    <span className="client-workspace-tab-icon appointments" aria-hidden="true" />
+                    Aktywne wizyty
+                    <small>{activeAdminClientProfiles.length}</small>
+                  </button>
+                  <button
+                    className={clientWorkspaceTab === "directory" ? "active" : ""}
+                    type="button"
+                    role="tab"
+                    aria-selected={clientWorkspaceTab === "directory"}
+                    onClick={() => {
+                      setClientWorkspaceTab("directory");
+                      setClientFilter("all");
+                      setClientSearch("");
+                    }}
+                  >
+                    <span className="client-workspace-tab-icon directory" aria-hidden="true" />
+                    Klienci
+                    <small>{adminClientProfiles.length}</small>
+                  </button>
+                </div>
+
                 {clientFeedback ? (
                   <div className={`client-feedback ${clientFeedback.kind}`} role="status">
                     {clientFeedback.message}
@@ -4156,12 +4312,17 @@ export function BookingHome() {
                   </label>
                   <div className="client-filters" aria-label="Filtry klientów">
                     {(
-                      [
-                        ["all", "Wszyscy"],
-                        ["upcoming", "Nadchodzące"],
-                        ["rescheduled", "Do potwierdzenia"],
-                        ["missing-phone", "Brak telefonu"],
-                      ] as [ClientFilter, string][]
+                      (clientWorkspaceTab === "appointments"
+                        ? [
+                            ["all", "Wszystkie"],
+                            ["upcoming", "Nadchodzące"],
+                            ["rescheduled", "Do potwierdzenia"],
+                          ]
+                        : [
+                            ["all", "Wszyscy"],
+                            ["upcoming", "Z terminem"],
+                            ["missing-phone", "Brak telefonu"],
+                          ]) as [ClientFilter, string][]
                     ).map(([filter, label]) => (
                       <button
                         className={clientFilter === filter ? "active" : ""}
@@ -4316,8 +4477,16 @@ export function BookingHome() {
                     })
                   ) : (
                     <div className="clients-empty-state">
-                      <strong>Brak pasujących klientów</strong>
-                      <span>Zmień filtr albo wyczyść wyszukiwanie.</span>
+                      <strong>
+                        {clientWorkspaceTab === "appointments"
+                          ? "Brak aktywnych wizyt"
+                          : "Brak pasujących klientów"}
+                      </strong>
+                      <span>
+                        {clientWorkspaceTab === "appointments"
+                          ? "Klienci z nadchodzącym terminem lub wizytą do rozliczenia pojawią się tutaj."
+                          : "Zmień filtr albo wyczyść wyszukiwanie."}
+                      </span>
                     </div>
                   )}
                 </div>
@@ -4940,11 +5109,11 @@ export function BookingHome() {
                                 {member.email || profile.email || "Brak adresu e-mail"}
                               </span>
                             </div>
-                            <label className="team-active-switch">
+                            <label className="team-active-switch" title={member.userId ? undefined : "Konto aktywuje się po przyjęciu zaproszenia."}>
                               <input
                                 type="checkbox"
                                 checked={member.active}
-                                disabled={isTeamSaving}
+                                disabled={isTeamSaving || !member.userId}
                                 onChange={(event) =>
                                   void updateTeamMemberActive(member, event.target.checked)
                                 }
@@ -4957,11 +5126,30 @@ export function BookingHome() {
                           <div className="team-member-account">
                             <span>
                               <small>Konto Google</small>
-                              <strong>{member.userId ? "Połączone" : "Oczekuje na identyfikator"}</strong>
+                              <strong>
+                                {member.userId
+                                  ? "Połączone"
+                                  : member.inviteStatus === "pending"
+                                    ? "Zaproszenie wysłane"
+                                    : member.email
+                                      ? "Gotowe do zaproszenia"
+                                      : "Brak adresu e-mail"}
+                              </strong>
                             </span>
-                            <button type="button" onClick={() => openTeamMemberEditDialog(member)}>
-                              Edytuj dane
-                            </button>
+                            <div className="team-member-account-actions">
+                              {!member.userId && member.email ? (
+                                <button
+                                  type="button"
+                                  disabled={isTeamSaving}
+                                  onClick={() => void resendPendingTeamInvitation(member)}
+                                >
+                                  Wyślij ponownie
+                                </button>
+                              ) : null}
+                              <button type="button" onClick={() => openTeamMemberEditDialog(member)}>
+                                Edytuj dane
+                              </button>
+                            </div>
                           </div>
 
                           <div className="team-member-quick-actions">
@@ -5231,7 +5419,7 @@ export function BookingHome() {
                   photoUrl={activeUser.photoURL}
                 />
                 <strong>{activeUser.displayName ?? activeUser.email ?? "Klient"}</strong>
-                {notificationButton}
+                {!isOwner ? notificationButton : null}
                 <button
                   type="button"
                   onClick={() => {
@@ -5823,23 +6011,15 @@ export function BookingHome() {
                     setTeamMemberDraft((current) => ({ ...current, email: event.target.value }))
                   }
                   autoComplete="email"
-                  placeholder="Opcjonalnie"
+                  placeholder="barber@gmail.com"
+                  required
                 />
               </label>
-              <label className="team-member-user-id-field">
-                Identyfikator użytkownika Firebase
-                <input
-                  type="text"
-                  maxLength={128}
-                  value={teamMemberDraft.userId}
-                  onChange={(event) =>
-                    setTeamMemberDraft((current) => ({ ...current, userId: event.target.value }))
-                  }
-                  autoComplete="off"
-                  placeholder="Możesz uzupełnić później"
-                />
-                <small>Po tym identyfikatorze aplikacja rozpoznaje konto barbera.</small>
-              </label>
+              <p className="team-invitation-help">
+                {editingTeamMember
+                  ? "Zmiana adresu wymaga ponownego wysłania zaproszenia, jeśli konto nie jest jeszcze połączone."
+                  : "Wyślemy jednorazowe zaproszenie. Barber zaloguje się wskazanym kontem Google, a system połączy je automatycznie."}
+              </p>
 
               {teamFeedback ? (
                 <p className={`work-feedback ${teamFeedback.kind}`}>{teamFeedback.message}</p>
@@ -5860,6 +6040,16 @@ export function BookingHome() {
             </form>
           </section>
         </div>
+      ) : null}
+
+      {invitationNotice ? (
+        <aside className={`invitation-notice ${invitationNotice.kind}`} role="status">
+          <span aria-hidden="true">{invitationNotice.kind === "success" ? "✓" : "!"}</span>
+          <p>{invitationNotice.message}</p>
+          <button type="button" onClick={() => setInvitationNotice(null)} aria-label="Zamknij">
+            ×
+          </button>
+        </aside>
       ) : null}
 
       {notificationPanelOpen ? (

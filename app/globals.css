@@ -2940,6 +2940,16 @@ h2 {
   padding: 0 0.72rem;
 }
 
+.team-member-account-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.45rem;
+}
+
+.team-member-account-actions button:first-child {
+  color: #bfd5ff;
+}
+
 .team-member-quick-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -3086,16 +3096,18 @@ h2 {
   border-color: rgba(76, 141, 255, 0.66);
 }
 
-.team-member-user-id-field,
+.team-invitation-help,
 .team-member-form .work-feedback,
 .team-member-dialog-actions {
   grid-column: 1 / -1;
 }
 
-.team-member-user-id-field small {
+.team-invitation-help {
+  margin: -0.1rem 0 0;
   color: #7f8999;
-  font-size: 0.65rem;
+  font-size: 0.72rem;
   font-weight: 650;
+  line-height: 1.45;
 }
 
 .team-member-dialog-actions {
@@ -3120,6 +3132,63 @@ h2 {
   border-color: rgba(48, 209, 88, 0.4);
   background: rgba(48, 209, 88, 0.18);
   color: #eaffef;
+}
+
+.invitation-notice {
+  position: fixed;
+  z-index: 120;
+  right: 1rem;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  width: min(27rem, calc(100vw - 2rem));
+  padding: 0.82rem 0.9rem;
+  border: 1px solid rgba(76, 141, 255, 0.42);
+  border-radius: 0.85rem;
+  background: rgba(17, 22, 32, 0.98);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.38);
+}
+
+.invitation-notice.success {
+  border-color: rgba(48, 209, 88, 0.42);
+}
+
+.invitation-notice > span {
+  display: grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 50%;
+  background: rgba(76, 141, 255, 0.2);
+  color: #dbe9ff;
+  font-size: 0.85rem;
+  font-weight: 900;
+}
+
+.invitation-notice.success > span {
+  background: rgba(48, 209, 88, 0.2);
+  color: #aaffbf;
+}
+
+.invitation-notice p {
+  margin: 0;
+  color: #e6eaf1;
+  font-size: 0.8rem;
+  font-weight: 680;
+  line-height: 1.4;
+}
+
+.invitation-notice button {
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+  color: #dce1ea;
+  cursor: pointer;
+  font-size: 1.15rem;
 }
 
 .barber-profile-view {
@@ -3836,6 +3905,88 @@ h2 {
 
 .clients-view::-webkit-scrollbar {
   display: none;
+}
+
+.client-workspace-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+  padding: 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.client-workspace-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.48rem;
+  min-width: 0;
+  min-height: 2.85rem;
+  padding: 0 0.72rem;
+  border: 1px solid transparent;
+  border-radius: 0.65rem;
+  background: transparent;
+  color: #9199a8;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.client-workspace-tabs button.active {
+  border-color: rgba(76, 141, 255, 0.34);
+  background: rgba(76, 141, 255, 0.14);
+  color: #e8f0ff;
+}
+
+.client-workspace-tabs small {
+  display: grid;
+  place-items: center;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: currentColor;
+  font-size: 0.62rem;
+}
+
+.client-workspace-tab-icon {
+  position: relative;
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+}
+
+.client-workspace-tab-icon.appointments {
+  border: 1.5px solid currentColor;
+  border-radius: 0.2rem;
+}
+
+.client-workspace-tab-icon.appointments::before,
+.client-workspace-tab-icon.appointments::after {
+  position: absolute;
+  top: -0.22rem;
+  width: 0.12rem;
+  height: 0.38rem;
+  border-radius: 999px;
+  background: currentColor;
+  content: "";
+}
+
+.client-workspace-tab-icon.appointments::before {
+  left: 0.2rem;
+}
+
+.client-workspace-tab-icon.appointments::after {
+  right: 0.2rem;
+}
+
+.client-workspace-tab-icon.directory {
+  border: 1.5px solid currentColor;
+  border-radius: 50% 50% 0.3rem 0.3rem;
+  clip-path: polygon(20% 0, 80% 0, 100% 100%, 0 100%);
 }
 
 .client-directory-tools {
@@ -7790,10 +7941,19 @@ h2 {
   }
 
   .team-member-form label,
-  .team-member-user-id-field,
+  .team-invitation-help,
   .team-member-form .work-feedback,
   .team-member-dialog-actions {
     grid-column: 1;
+  }
+
+  .team-member-account {
+    align-items: flex-start;
+  }
+
+  .team-member-account-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .admin-section-header {
