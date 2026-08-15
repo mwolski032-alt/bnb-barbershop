@@ -618,6 +618,37 @@ input:focus-visible {
   font-weight: 720;
 }
 
+.profile-avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  aspect-ratio: 1;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: 50%;
+}
+
+.profile-avatar > img,
+.profile-avatar > .profile-avatar-fallback {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.profile-avatar > img {
+  object-fit: cover;
+  object-position: center;
+}
+
+.profile-avatar > .profile-avatar-fallback {
+  display: grid;
+  place-items: center;
+  background: inherit;
+  color: inherit;
+  font: inherit;
+}
+
 .avatar-button {
   position: absolute;
   top: 0.35rem;
@@ -838,6 +869,13 @@ h2 {
     border-color 160ms ease;
 }
 
+.avatar-button .admin-user-avatar {
+  width: 100%;
+  height: 100%;
+  border: 2px solid rgba(255, 255, 255, 0.68);
+  background: linear-gradient(135deg, #4c8dff, #75e1ff);
+}
+
 .month-controls button:disabled {
   cursor: not-allowed;
   opacity: 0.28;
@@ -1000,6 +1038,31 @@ h2 {
   font-size: 0.83rem;
   font-weight: 620;
   line-height: 1.35;
+}
+
+.client-visit-barber {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  width: fit-content;
+  min-width: 0;
+  color: #cbd3df;
+  font-size: 0.74rem;
+  font-weight: 760;
+}
+
+.client-visit-barber-avatar {
+  width: 1.5rem;
+  height: 1.5rem;
+  min-width: 1.5rem;
+  background: linear-gradient(135deg, #4c8dff, #76a8ff);
+  color: #ffffff;
+  font-size: 0.58rem;
+  font-weight: 860;
+}
+
+.client-visit-barber-avatar.mint {
+  background: linear-gradient(135deg, #35b99b, #7ae4d6);
 }
 
 .client-visit-meta {
@@ -1213,6 +1276,252 @@ h2 {
 
 .client-service-picker {
   margin-top: 1rem;
+}
+
+.client-barber-picker {
+  margin-top: 1rem;
+}
+
+.client-barber-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.65rem;
+}
+
+.client-barber-card {
+  display: grid;
+  grid-template-columns: 3.6rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 5.6rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--foreground);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.client-barber-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(76, 141, 255, 0.46);
+  background: rgba(76, 141, 255, 0.08);
+}
+
+.client-barber-card.selected {
+  border-color: rgba(76, 141, 255, 0.72);
+  background: rgba(76, 141, 255, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(76, 141, 255, 0.16);
+}
+
+.client-barber-card.mint.selected {
+  border-color: rgba(78, 211, 181, 0.66);
+  background: rgba(78, 211, 181, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(78, 211, 181, 0.14);
+}
+
+.client-barber-card:disabled {
+  cursor: default;
+}
+
+.client-barber-avatar {
+  width: 3.6rem;
+  height: 3.6rem;
+  min-width: 3.6rem;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(135deg, #4c8dff, #76a8ff);
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(76, 141, 255, 0.18);
+  font-size: 1rem;
+  font-weight: 880;
+}
+
+.client-barber-avatar.mint {
+  background: linear-gradient(135deg, #35b99b, #7ae4d6);
+  box-shadow: 0 10px 24px rgba(53, 185, 155, 0.16);
+}
+
+.client-barber-copy {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.client-barber-copy small {
+  color: #8290a3;
+  font-size: 0.62rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.client-barber-copy strong {
+  overflow: hidden;
+  font-size: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-barber-copy > span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-barber-card > i {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+  color: #b8c2d0;
+  font-size: 1.05rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.client-barber-card.selected > i {
+  background: #4c8dff;
+  color: #ffffff;
+}
+
+.client-barber-card.mint.selected > i {
+  background: #35b99b;
+}
+
+.client-booking-empty,
+.day-summary-empty {
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+  min-height: 11rem;
+  margin-top: 1rem;
+  padding: 1.25rem;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  text-align: center;
+}
+
+.client-booking-empty strong,
+.day-summary-empty strong {
+  color: #eef1f7;
+  font-size: 0.95rem;
+}
+
+.client-booking-empty > span:last-child,
+.day-summary-empty > span:last-child {
+  max-width: 18rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.client-booking-empty-icon {
+  position: relative;
+  width: 2.8rem;
+  height: 2.8rem;
+  border: 1px solid rgba(76, 141, 255, 0.28);
+  border-radius: 50%;
+  background: rgba(76, 141, 255, 0.1);
+}
+
+.client-booking-empty-icon::before,
+.client-booking-empty-icon::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  background: #8db7ff;
+  content: "";
+  transform: translate(-50%, -50%);
+}
+
+.client-booking-empty-icon::before {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 50%;
+  transform: translate(-50%, -72%);
+}
+
+.client-booking-empty-icon::after {
+  width: 1.35rem;
+  height: 0.62rem;
+  border-radius: 999px 999px 0.4rem 0.4rem;
+  transform: translate(-50%, 30%);
+}
+
+.client-selected-barber-summary {
+  display: grid;
+  grid-template-columns: 2.8rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.client-selected-barber-avatar {
+  width: 2.8rem;
+  height: 2.8rem;
+  min-width: 2.8rem;
+  background: linear-gradient(135deg, #4c8dff, #76a8ff);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 880;
+}
+
+.client-selected-barber-avatar.mint {
+  background: linear-gradient(135deg, #35b99b, #7ae4d6);
+}
+
+.client-selected-barber-summary > span {
+  display: grid;
+  gap: 0.08rem;
+  min-width: 0;
+}
+
+.client-selected-barber-summary small {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.client-selected-barber-summary strong {
+  overflow: hidden;
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-selected-barber-summary button {
+  min-height: 2.35rem;
+  padding: 0 0.72rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #dfe5ee;
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.day-summary-empty {
+  align-content: center;
+  min-height: 13rem;
+  margin-top: 0;
 }
 
 .client-service-picker .service-list {
@@ -1493,6 +1802,50 @@ h2 {
   background: var(--panel-strong);
 }
 
+.booking-recap-barber {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.booking-recap-barber-avatar {
+  width: 2.65rem;
+  height: 2.65rem;
+  min-width: 2.65rem;
+  background: linear-gradient(135deg, #4c8dff, #76a8ff);
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 860;
+}
+
+.booking-recap-barber-avatar.mint {
+  background: linear-gradient(135deg, #35b99b, #7ae4d6);
+}
+
+.booking-recap-barber > span {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.booking-recap-barber small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.booking-recap-barber strong {
+  overflow: hidden;
+  font-size: 0.94rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .booking-recap-service,
 .booking-recap-date {
   display: grid;
@@ -1657,6 +2010,63 @@ h2 {
 
 .modal-title h2 {
   line-height: 1.1;
+}
+
+.appointment-barber-row,
+.success-barber {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+  padding: 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.appointment-barber-avatar,
+.success-barber-avatar {
+  width: 2.8rem;
+  height: 2.8rem;
+  min-width: 2.8rem;
+  background: linear-gradient(135deg, #4c8dff, #76a8ff);
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 860;
+}
+
+.appointment-barber-avatar.mint {
+  background: linear-gradient(135deg, #35b99b, #7ae4d6);
+}
+
+.appointment-barber-row > span,
+.success-barber > span {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.appointment-barber-row small,
+.success-barber small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.appointment-barber-row strong,
+.success-barber strong {
+  overflow: hidden;
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.success-barber {
+  width: min(100%, 20rem);
+  margin-right: auto;
+  margin-left: auto;
+  text-align: left;
 }
 
 .modal-details {
@@ -2009,6 +2419,11 @@ h2 {
   font-size: 1.12rem;
   font-weight: 880;
   box-shadow: 0 12px 28px rgba(76, 141, 255, 0.2);
+  overflow: hidden;
+}
+
+.owner-barber-avatar {
+  min-width: 3.65rem;
 }
 
 .owner-barber-card.mint .owner-barber-avatar,
@@ -2100,6 +2515,7 @@ h2 {
 .selected-barber-avatar {
   width: 2.35rem;
   height: 2.35rem;
+  min-width: 2.35rem;
   font-size: 0.78rem;
 }
 
@@ -6847,6 +7263,7 @@ h2 {
   .owner-barber-avatar {
     width: 3.25rem;
     height: 3.25rem;
+    min-width: 3.25rem;
   }
 
   .owner-barber-metrics {
@@ -7320,18 +7737,48 @@ h2 {
   }
 
   .booking-progress {
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     width: 100%;
+    gap: 0.2rem;
   }
 
   .booking-progress li {
-    flex: 1 1 0;
+    min-width: 0;
   }
 
   .booking-progress li button {
     width: 100%;
     justify-content: center;
-    padding-inline: 0.25rem;
+    gap: 0.22rem;
+    padding-inline: 0.12rem;
+    font-size: 0.62rem;
+  }
+
+  .booking-progress li span {
+    width: 1.3rem;
+    height: 1.3rem;
+    font-size: 0.64rem;
+  }
+
+  .client-barber-list {
+    grid-template-columns: 1fr;
+  }
+
+  .client-barber-card {
+    grid-template-columns: 3.35rem minmax(0, 1fr) auto;
+    min-height: 5.2rem;
+    padding: 0.68rem;
+  }
+
+  .client-barber-avatar {
+    width: 3.35rem;
+    height: 3.35rem;
+    min-width: 3.35rem;
+  }
+
+  .client-booking-empty {
+    min-height: 9rem;
   }
 
   .client-service-picker .service-list {

@@ -74,6 +74,9 @@ type AppointmentStatus = "confirmed" | "rescheduled" | "cancelled" | "completed"
 type AppointmentColor = "blue" | "mint" | "pink" | "violet" | "amber" | "coral" | "sky" | "lime";
 
 type BookingSummary = {
+  barberId: string;
+  barberName: string;
+  barberPhotoUrl: string;
   serviceName: string;
   servicePrice: string;
   durationMinutes: number;
@@ -202,6 +205,13 @@ type BarberDetails = {
   updatedAt?: number;
 };
 
+type ProfileAvatarProps = {
+  className: string;
+  name: string;
+  photoUrl?: string | null;
+  alt?: string;
+};
+
 const ownerUserIds = new Set(["xkyDu2Lb1Ma8McF7yfyv8PIAj1M2"]);
 const barberUserIds = new Map([["XxBe4dwVYWZPtl004J4tWq6AMZ73", "mateusz"]]);
 const defaultBarberId = "mateusz";
@@ -219,6 +229,32 @@ const emptyBarberDetails: BarberDetails = {
   bio: "",
   photoUrl: "",
 };
+
+function ProfileAvatar({ className, name, photoUrl, alt = "" }: ProfileAvatarProps) {
+  const [failedPhotoUrl, setFailedPhotoUrl] = useState("");
+  const normalizedPhotoUrl = photoUrl?.trim() ?? "";
+  const showPhoto = Boolean(normalizedPhotoUrl && failedPhotoUrl !== normalizedPhotoUrl);
+  const initial = name.trim().slice(0, 1).toLocaleUpperCase("pl") || "?";
+
+  return (
+    <span className={`profile-avatar ${className}`}>
+      {showPhoto ? (
+        <img
+          src={normalizedPhotoUrl}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onError={() => setFailedPhotoUrl(normalizedPhotoUrl)}
+        />
+      ) : (
+        <span className="profile-avatar-fallback" aria-hidden={alt ? undefined : true}>
+          {initial}
+        </span>
+      )}
+    </span>
+  );
+}
 
 const defaultServices: Service[] = [
   {
@@ -485,6 +521,7 @@ const buildCalendarEvent = (summary: BookingSummary) => {
 
   const title = `BNB Barbershop - ${summary.serviceName}`;
   const description = [
+    `Barber: ${summary.barberName}`,
     `Usługa: ${summary.serviceName}`,
     `Cena: ${summary.servicePrice}`,
     `Czas trwania: ${formatDuration(summary.durationMinutes)}`,
@@ -511,6 +548,10 @@ const buildCalendarEvent = (summary: BookingSummary) => {
 };
 
 const appointmentToBookingSummary = (appointment: AdminAppointment): BookingSummary => ({
+  barberId: appointment.barberId,
+  barberName:
+    defaultBarbers.find((barber) => barber.id === appointment.barberId)?.name ?? "Barber",
+  barberPhotoUrl: "",
   serviceName: appointment.serviceName,
   servicePrice: appointment.price,
   durationMinutes: appointment.durationMinutes,
@@ -673,7 +714,9 @@ const normalizeServices = (
     }))
     .sort((first, second) => (first.order ?? 0) - (second.order ?? 0));
 
-  return loadedServices.length > 0 ? loadedServices : defaultServices;
+  return loadedServices.length > 0
+    ? loadedServices
+    : defaultServices.map((service) => ({ ...service, barberId }));
 };
 
 const servicesToRecord = (items: Service[], barberId = defaultBarberId) =>
@@ -714,14 +757,27 @@ const resizeProfilePhoto = async (file: File) => {
     preview.onerror = () => reject(new Error("Nie udało się przygotować zdjęcia."));
     preview.src = source;
   });
-  const scale = Math.min(1, 512 / Math.max(image.naturalWidth, image.naturalHeight));
+  const sourceSize = Math.min(image.naturalWidth, image.naturalHeight);
+  const sourceX = Math.max(0, (image.naturalWidth - sourceSize) / 2);
+  const sourceY = Math.max(0, (image.naturalHeight - sourceSize) / 2);
+  const targetSize = Math.max(1, Math.min(512, sourceSize));
   const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  canvas.width = targetSize;
+  canvas.height = targetSize;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Nie udało się przygotować zdjęcia.");
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/webp", 0.82);
+  context.drawImage(
+    image,
+    sourceX,
+    sourceY,
+    sourceSize,
+    sourceSize,
+    0,
+    0,
+    targetSize,
+    targetSize,
+  );
+  return canvas.toDataURL("image/webp", 0.86);
 };
 
 const createServiceId = (name: string) => {
@@ -940,6 +996,7 @@ export function BookingHome() {
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const previousAppointmentsRef = useRef<Map<string, AdminAppointment> | null>(null);
   const bookingServiceRef = useRef<HTMLDivElement | null>(null);
+  const bookingBarberRef = useRef<HTMLDivElement | null>(null);
   const bookingCalendarRef = useRef<HTMLDivElement | null>(null);
   const bookingTimeRef = useRef<HTMLDivElement | null>(null);
   const calendarGestureRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
@@ -966,13 +1023,33 @@ export function BookingHome() {
   const isBarber = Boolean(signedInBarberId);
   const isAdmin = isOwner || isBarber;
   const activeBarberId = signedInBarberId ?? selectedBarberId ?? defaultBarberId;
-  const visibleBarberId = isOwner ? selectedBarberId : signedInBarberId;
+  const visibleBarberId = isOwner ? selectedBarberId : signedInBarberId ?? selectedBarberId;
   const selectedBarber =
     defaultBarbers.find((barber) => barber.id === visibleBarberId) ?? null;
   const activeBarberProfile = barberProfiles[activeBarberId] ?? emptyBarberDetails;
   const activeBarberName = activeBarberProfile.displayName || selectedBarber?.name || "Barber";
+  const clientBarberOptions = useMemo(
+    () =>
+      defaultBarbers.map((barber) => {
+        const profile = barberProfiles[barber.id] ?? emptyBarberDetails;
+        return {
+          ...barber,
+          name: profile.displayName || barber.name,
+          photoUrl: profile.photoUrl,
+          bio: profile.bio,
+          instagram: profile.instagram,
+        };
+      }),
+    [barberProfiles],
+  );
+  const activeClientBarber =
+    clientBarberOptions.find((barber) => barber.id === activeBarberId) ?? clientBarberOptions[0];
   const services = useMemo(
-    () => barberServices ?? (activeBarberId === defaultBarberId ? legacyServices : []),
+    () =>
+      barberServices ??
+      (activeBarberId === defaultBarberId
+        ? legacyServices
+        : defaultServices.map((service) => ({ ...service, barberId: activeBarberId }))),
     [activeBarberId, barberServices, legacyServices],
   );
   const workSettings =
@@ -1020,9 +1097,15 @@ export function BookingHome() {
   );
   const reschedulingAppointment =
     adminAppointments.find((appointment) => appointment.id === reschedulingAppointmentId) ?? null;
+  const activeBarberAppointments = useMemo(
+    () => appointments.filter((appointment) => appointment.barberId === activeBarberId),
+    [activeBarberId, appointments],
+  );
   const schedulingAppointments = reschedulingAppointment
-    ? appointments.filter((appointment) => appointment.id !== reschedulingAppointment.id)
-    : appointments;
+    ? activeBarberAppointments.filter(
+        (appointment) => appointment.id !== reschedulingAppointment.id,
+      )
+    : activeBarberAppointments;
   const fallbackActiveService = useMemo(
     () => ({ ...defaultServices[0], barberId: activeBarberId }),
     [activeBarberId],
@@ -1391,11 +1474,20 @@ export function BookingHome() {
     [activeUser, adminAppointments, currentDate],
   );
   const nearestClientAppointment = clientAppointments[0] ?? null;
+  const nearestClientAppointmentBarber = nearestClientAppointment
+    ? clientBarberOptions.find((barber) => barber.id === nearestClientAppointment.barberId) ?? null
+    : null;
+  const reschedulingClientBarber = reschedulingAppointment
+    ? clientBarberOptions.find((barber) => barber.id === reschedulingAppointment.barberId) ?? null
+    : null;
   const clientFirstName = (activeUser?.displayName ?? "Kliencie").trim().split(/\s+/)[0] || "Kliencie";
   const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const canShiftToPreviousMonth = visibleMonth.getTime() > currentMonthStart.getTime();
   const selectedClientAppointment =
     clientAppointments.find((appointment) => appointment.id === clientAppointmentId) ?? null;
+  const selectedClientAppointmentBarber = selectedClientAppointment
+    ? clientBarberOptions.find((barber) => barber.id === selectedClientAppointment.barberId) ?? null
+    : null;
   const pendingClientCancellation =
     clientAppointments.find((appointment) => appointment.id === pendingClientCancellationId) ?? null;
   const selectedAdminEditAppointment =
@@ -1433,8 +1525,11 @@ export function BookingHome() {
     smsClient?.appointments.find((appointment) => appointment.id === smsComposer?.appointmentId) ??
     null;
   const editingService = services.find((service) => service.id === editingServiceId) ?? null;
+  const hasSelectedBarber = Boolean(selectedBarber);
   const hasSelectedDay = selectedKey === selectedDayKey && availableTimes.length > 0;
-  const canContinue = Boolean(selectedServiceId && hasSelectedDay && selectedTime);
+  const canContinue = Boolean(
+    hasSelectedBarber && selectedServiceId && hasSelectedDay && selectedTime,
+  );
   const canConfirm =
     Boolean(activeUser) && form.fullName.trim().length >= 3 && getPhoneDigits(form.phone).length === 9;
   const canSaveService =
@@ -1668,15 +1763,13 @@ export function BookingHome() {
 
       setAllAdminAppointments(loadedAppointments);
       setAppointments(
-        loadedAppointments
-          .filter((appointment) => appointment.barberId === defaultBarberId)
-          .map(({ id, barberId, dateKey, startTime, durationMinutes }) => ({
-            id,
-            barberId,
-            dateKey,
-            startTime,
-            durationMinutes,
-          })),
+        loadedAppointments.map(({ id, barberId, dateKey, startTime, durationMinutes }) => ({
+          id,
+          barberId,
+          dateKey,
+          startTime,
+          durationMinutes,
+        })),
       );
       if (shouldRunDataMigration && isAdmin && Object.keys(migrationUpdates).length > 0) {
         void update(ref(realtimeDb), migrationUpdates);
@@ -1715,15 +1808,15 @@ export function BookingHome() {
   }, [isAdmin]);
 
   useEffect(() => {
-    if (!isAdmin) {
+    if (!activeUser) {
       setBarberProfiles({});
       return undefined;
     }
 
     setBarberProfiles({});
-    const visibleProfiles = isOwner
-      ? defaultBarbers
-      : defaultBarbers.filter((barber) => barber.id === signedInBarberId);
+    const visibleProfiles = isBarber
+      ? defaultBarbers.filter((barber) => barber.id === signedInBarberId)
+      : defaultBarbers;
     const unsubscribeProfiles = visibleProfiles.map((barber) =>
       onValue(ref(realtimeDb, `barbers/${barber.id}/profile`), (snapshot) => {
         setBarberProfiles((current) => ({
@@ -1736,7 +1829,7 @@ export function BookingHome() {
     );
 
     return () => unsubscribeProfiles.forEach((unsubscribe) => unsubscribe());
-  }, [isAdmin, isOwner, signedInBarberId]);
+  }, [activeUser, isBarber, signedInBarberId]);
 
   useEffect(() => {
     const defaultProfile = defaultBarbers.find((barber) => barber.id === activeBarberId);
@@ -1992,6 +2085,19 @@ export function BookingHome() {
       }));
     }
   }, [manualBookingDraft.serviceId, selectedServiceId, services]);
+
+  useEffect(() => {
+    if (!reschedulingAppointment || reschedulingAppointment.barberId !== activeBarberId) return;
+
+    const matchingService =
+      services.find((service) => service.name === reschedulingAppointment.serviceName) ??
+      services.find(
+        (service) => service.durationMinutes === reschedulingAppointment.durationMinutes,
+      );
+    if (matchingService && matchingService.id !== selectedServiceId) {
+      setSelectedServiceId(matchingService.id);
+    }
+  }, [activeBarberId, reschedulingAppointment, selectedServiceId, services]);
 
   useEffect(() => {
     if (step === "admin" && !isAdmin) {
@@ -2511,16 +2617,26 @@ export function BookingHome() {
     setReschedulingAppointmentId(null);
   };
 
-  const getServiceForAppointment = (appointment: AdminAppointment) =>
-    services.find((service) => service.name === appointment.serviceName) ??
-    services.find((service) => service.durationMinutes === appointment.durationMinutes) ??
-    services[0];
+  const selectBookingBarber = (barberId: string, scrollToServices = true) => {
+    if (barberId === activeBarberId && selectedBarberId === barberId) return;
+
+    setBarberServices(null);
+    setBarberWorkSettings(null);
+    setSelectedBarberId(barberId);
+    setSelectedServiceId(defaultServices[0].id);
+    setSelectedTime("");
+    setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    setSelectedKey(dayKey(today));
+
+    if (scrollToServices && window.matchMedia("(max-width: 767px)").matches) {
+      window.requestAnimationFrame(() => scrollToBookingSection(bookingServiceRef.current));
+    }
+  };
 
   const beginClientReschedule = (appointment: AdminAppointment) => {
-    const service = getServiceForAppointment(appointment);
     const appointmentDate = dateFromKey(appointment.dateKey);
 
-    setSelectedServiceId(service.id);
+    selectBookingBarber(appointment.barberId, false);
     setVisibleMonth(new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), 1));
     setSelectedKey(appointment.dateKey);
     setSelectedTime(appointment.startTime);
@@ -2616,14 +2732,17 @@ export function BookingHome() {
   };
 
   const confirmBooking = async () => {
-    if (!canConfirm || !selectedTime || isSaving || !activeUser) return;
+    if (!canConfirm || !selectedTime || isSaving || !activeUser || !selectedBarber) return;
 
     const appointmentId = window.crypto?.randomUUID?.() ?? `${Date.now()}`;
     const clientId = activeUser.uid;
-    const appointmentColor = getNextAppointmentColor(selectedDayKey, adminAppointments);
+    const appointmentColor = getNextAppointmentColor(
+      selectedDayKey,
+      allAdminAppointments.filter((appointment) => appointment.barberId === activeBarberId),
+    );
     const adminAppointment: AdminAppointment = {
       id: appointmentId,
-      barberId: defaultBarberId,
+      barberId: activeBarberId,
       clientId,
       userId: activeUser.uid,
       dateKey: selectedDayKey,
@@ -2640,6 +2759,9 @@ export function BookingHome() {
     };
 
     setBookingSummary({
+      barberId: activeBarberId,
+      barberName: activeBarberName,
+      barberPhotoUrl: activeBarberProfile.photoUrl,
       serviceName: selectedService.name,
       servicePrice: selectedService.price,
       durationMinutes: selectedService.durationMinutes,
@@ -2661,7 +2783,7 @@ export function BookingHome() {
         [`clients/${clientId}/phone`]: form.phone,
         [`clients/${clientId}/photoUrl`]: activeUser.photoURL ?? "",
         [`clients/${clientId}/userId`]: activeUser.uid,
-        [`clients/${clientId}/barberIds/${defaultBarberId}`]: true,
+        [`clients/${clientId}/barberIds/${activeBarberId}`]: true,
         [`clients/${clientId}/updatedAt`]: now,
       });
       await sendAppointmentNotification("new_booking", adminAppointment);
@@ -2795,7 +2917,9 @@ export function BookingHome() {
 
   const footerLabel =
     visibleStep === "booking"
-      ? reschedulingAppointment
+      ? !selectedBarber
+        ? "Wybierz barbera"
+        : reschedulingAppointment
         ? isSaving
           ? "Zapisywanie..."
           : "Zapisz nowy termin"
@@ -2809,7 +2933,7 @@ export function BookingHome() {
         : "Wróć do panelu";
   const footerDisabled =
     visibleStep === "booking"
-      ? !canContinue || isSaving
+      ? !selectedBarber || !canContinue || isSaving
       : visibleStep === "confirm"
         ? !canConfirm || isSaving
         : !successReady;
@@ -3122,7 +3246,7 @@ export function BookingHome() {
             <p className="eyebrow">Witaj w B&apos;n&apos;B</p>
             <h1>Twój następny termin</h1>
             <p className="auth-copy">
-              Zaloguj się, wybierz usługę i godzinę, która pasuje do Twojego dnia.
+              Zaloguj się, wybierz barbera, usługę i godzinę, która pasuje do Twojego dnia.
             </p>
           </div>
 
@@ -3210,9 +3334,11 @@ export function BookingHome() {
                     }}
                     aria-label={`Otwórz pełny panel barbera ${barber.name}`}
                   >
-                    <span className="owner-barber-avatar">
-                      {barber.photoUrl ? <img src={barber.photoUrl} alt="" /> : barber.name.slice(0, 1)}
-                    </span>
+                    <ProfileAvatar
+                      className="owner-barber-avatar"
+                      name={barber.name}
+                      photoUrl={barber.photoUrl}
+                    />
                     <span className="owner-barber-main">
                       <small>{barber.label}</small>
                       <strong>{barber.name}</strong>
@@ -3242,13 +3368,11 @@ export function BookingHome() {
           ) : (
             <>
               <div className="selected-barber-context" aria-label="Wybrany barber">
-                <span className={`selected-barber-avatar ${selectedBarber.accent}`}>
-                  {activeBarberProfile.photoUrl ? (
-                    <img src={activeBarberProfile.photoUrl} alt="" />
-                  ) : (
-                    activeBarberName.slice(0, 1)
-                  )}
-                </span>
+                <ProfileAvatar
+                  className={`selected-barber-avatar ${selectedBarber.accent}`}
+                  name={activeBarberName}
+                  photoUrl={activeBarberProfile.photoUrl}
+                />
                 <span>
                   <small>{isOwner ? "Przeglądasz panel" : "Twój panel"}</small>
                   <strong>{activeBarberName}</strong>
@@ -3717,9 +3841,11 @@ export function BookingHome() {
                           onClick={() => setSelectedAdminClientId(client.id)}
                           aria-label={`Otwórz kartę klienta ${client.name}`}
                         >
-                          <span className="client-row-avatar">
-                            {client.photoUrl ? <img src={client.photoUrl} alt="" /> : client.name.slice(0, 1)}
-                          </span>
+                          <ProfileAvatar
+                            className="client-row-avatar"
+                            name={client.name}
+                            photoUrl={client.photoUrl}
+                          />
                           <span className="client-row-main">
                             <span className="client-row-name">
                               <strong>{client.name}</strong>
@@ -4416,13 +4542,12 @@ export function BookingHome() {
 
               <div className="barber-profile-view">
                 <section className="barber-profile-preview">
-                  <div className={`barber-profile-photo ${selectedBarber.accent}`}>
-                    {profileDraft.photoUrl ? (
-                      <img src={profileDraft.photoUrl} alt={`Profil ${activeBarberName}`} />
-                    ) : (
-                      <span aria-hidden="true">{activeBarberName.slice(0, 1)}</span>
-                    )}
-                  </div>
+                  <ProfileAvatar
+                    className={`barber-profile-photo ${selectedBarber.accent}`}
+                    name={activeBarberName}
+                    photoUrl={profileDraft.photoUrl}
+                    alt={`Profil ${activeBarberName}`}
+                  />
                   <div className="barber-profile-preview-copy">
                     <p className="eyebrow">{selectedBarber.label}</p>
                     <h3>{profileDraft.displayName || selectedBarber.name}</h3>
@@ -4640,11 +4765,11 @@ export function BookingHome() {
                 </div>
               </div>
               <div className="session-pill">
-                {activeUser.photoURL ? (
-                  <img src={activeUser.photoURL} alt="" />
-                ) : (
-                  <span aria-hidden="true">{(activeUser.displayName ?? "K").slice(0, 1)}</span>
-                )}
+                <ProfileAvatar
+                  className="session-avatar"
+                  name={activeUser.displayName ?? activeUser.email ?? "Klient"}
+                  photoUrl={activeUser.photoURL}
+                />
                 <strong>{activeUser.displayName ?? activeUser.email ?? "Klient"}</strong>
                 {notificationButton}
                 <button
@@ -4663,9 +4788,11 @@ export function BookingHome() {
                   onClick={() => setStep("admin")}
                   aria-label="Otwórz profil admina"
                 >
-                  <span className="avatar-icon" aria-hidden="true">
-                    <span />
-                  </span>
+                  <ProfileAvatar
+                    className="admin-user-avatar"
+                    name={activeUser.displayName ?? activeUser.email ?? "Admin"}
+                    photoUrl={activeUser.photoURL}
+                  />
                 </button>
               ) : null}
             </div>
@@ -4692,6 +4819,16 @@ export function BookingHome() {
                   <div className="client-visit-content">
                     <em>Zmiana terminu</em>
                     <strong>{reschedulingAppointment.serviceName}</strong>
+                    {reschedulingClientBarber ? (
+                      <span className="client-visit-barber">
+                        <ProfileAvatar
+                          className={`client-visit-barber-avatar ${reschedulingClientBarber.accent}`}
+                          name={reschedulingClientBarber.name}
+                          photoUrl={reschedulingClientBarber.photoUrl}
+                        />
+                        <span>{reschedulingClientBarber.name}</span>
+                      </span>
+                    ) : null}
                     <small>Wybierz poniżej nowy dzień i godzinę.</small>
                   </div>
                   <button
@@ -4718,6 +4855,16 @@ export function BookingHome() {
                   <span className="client-visit-content">
                     <em>{getAppointmentDistanceLabel(nearestClientAppointment.dateKey, today)}</em>
                     <strong>{nearestClientAppointment.serviceName}</strong>
+                    {nearestClientAppointmentBarber ? (
+                      <span className="client-visit-barber">
+                        <ProfileAvatar
+                          className={`client-visit-barber-avatar ${nearestClientAppointmentBarber.accent}`}
+                          name={nearestClientAppointmentBarber.name}
+                          photoUrl={nearestClientAppointmentBarber.photoUrl}
+                        />
+                        <span>{nearestClientAppointmentBarber.name}</span>
+                      </span>
+                    ) : null}
                     <small>
                       {nearestClientAppointment.startTime} -{" "}
                       {addMinutesToTime(
@@ -4738,7 +4885,7 @@ export function BookingHome() {
                   <span className="client-empty-icon" aria-hidden="true" />
                   <span>
                     <strong>Masz wolny kalendarz</strong>
-                    <span>Nową wizytę umówisz poniżej w trzech krótkich krokach.</span>
+                    <span>Nową wizytę umówisz poniżej w czterech krótkich krokach.</span>
                   </span>
                 </div>
               )}
@@ -4750,20 +4897,30 @@ export function BookingHome() {
                 <h2>Umów wizytę</h2>
               </div>
               <ol className="booking-progress" aria-label="Postęp rezerwacji">
-                <li className="complete">
+                <li className={selectedBarber ? "complete" : "active"}>
                   <button
                     type="button"
-                    onClick={() => scrollToBookingSection(bookingServiceRef.current)}
+                    onClick={() => scrollToBookingSection(bookingBarberRef.current)}
                   >
-                    <span>1</span> Usługa
+                    <span>1</span> Barber
                   </button>
                 </li>
-                <li className={hasSelectedDay ? "complete" : "active"}>
+                <li className={selectedBarber ? "complete" : ""}>
                   <button
                     type="button"
+                    disabled={!selectedBarber}
+                    onClick={() => scrollToBookingSection(bookingServiceRef.current)}
+                  >
+                    <span>2</span> Usługa
+                  </button>
+                </li>
+                <li className={hasSelectedDay && selectedBarber ? "complete" : selectedBarber ? "active" : ""}>
+                  <button
+                    type="button"
+                    disabled={!selectedBarber}
                     onClick={() => scrollToBookingSection(bookingCalendarRef.current)}
                   >
-                    <span>2</span> Dzień
+                    <span>3</span> Dzień
                   </button>
                 </li>
                 <li className={selectedTime ? "complete active" : hasSelectedDay ? "active" : ""}>
@@ -4772,12 +4929,47 @@ export function BookingHome() {
                     disabled={!hasSelectedDay}
                     onClick={() => scrollToBookingSection(bookingTimeRef.current)}
                   >
-                    <span>3</span> Godzina
+                    <span>4</span> Godzina
                   </button>
                 </li>
               </ol>
             </div>
 
+            <div className="client-barber-picker booking-scroll-target" ref={bookingBarberRef}>
+              <p className="section-label">Wybierz barbera</p>
+              <div className="client-barber-list">
+                {clientBarberOptions.map((barber) => {
+                  const isSelected = selectedBarber?.id === barber.id;
+                  return (
+                    <button
+                      className={`client-barber-card ${barber.accent} ${isSelected ? "selected" : ""}`}
+                      key={barber.id}
+                      type="button"
+                      disabled={Boolean(reschedulingAppointment)}
+                      onClick={() => selectBookingBarber(barber.id)}
+                      aria-pressed={isSelected}
+                    >
+                      <ProfileAvatar
+                        className={`client-barber-avatar ${barber.accent}`}
+                        name={barber.name}
+                        photoUrl={barber.photoUrl}
+                      />
+                      <span className="client-barber-copy">
+                        <small>{barber.label}</small>
+                        <strong>{barber.name}</strong>
+                        <span>
+                          {barber.bio || (barber.instagram ? `@${barber.instagram}` : "BNB Barbershop")}
+                        </span>
+                      </span>
+                      <i aria-hidden="true">{isSelected ? "✓" : "›"}</i>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {selectedBarber ? (
+              <>
             <div className="client-service-picker booking-scroll-target" ref={bookingServiceRef}>
               <p className="section-label">Wybierz usługę</p>
               <div className="service-list">
@@ -4887,9 +5079,39 @@ export function BookingHome() {
             </div>
             </div>
 
+              </>
+            ) : (
+              <div className="client-booking-empty" aria-live="polite">
+                <span className="client-booking-empty-icon" aria-hidden="true" />
+                <strong>Wybierz barbera</strong>
+                <span>Usługi i wolne terminy pojawią się po wyborze.</span>
+              </div>
+            )}
+
           </section>
 
           <aside className="day-summary" aria-label="Szczegóły rezerwacji">
+            {selectedBarber ? (
+              <>
+            <div className="client-selected-barber-summary">
+              <ProfileAvatar
+                className={`client-selected-barber-avatar ${activeClientBarber.accent}`}
+                name={activeBarberName}
+                photoUrl={activeBarberProfile.photoUrl}
+              />
+              <span>
+                <small>Twój barber</small>
+                <strong>{activeBarberName}</strong>
+              </span>
+              {!reschedulingAppointment ? (
+                <button
+                  type="button"
+                  onClick={() => scrollToBookingSection(bookingBarberRef.current)}
+                >
+                  Zmień
+                </button>
+              ) : null}
+            </div>
             <div className="summary-block nearest-slot-block">
               <p className="section-label">Szybki wybór</p>
               <button
@@ -4932,6 +5154,14 @@ export function BookingHome() {
                 )}
               </div>
             </div>
+              </>
+            ) : (
+              <div className="day-summary-empty">
+                <span className="client-booking-empty-icon" aria-hidden="true" />
+                <strong>Wybierz barbera</strong>
+                <span>Każdy barber ma własny terminarz i dostępne godziny.</span>
+              </div>
+            )}
           </aside>
         </>
       ) : visibleStep === "confirm" ? (
@@ -4946,6 +5176,17 @@ export function BookingHome() {
           </div>
 
           <div className="booking-recap" aria-label="Podsumowanie wyboru">
+            <span className="booking-recap-barber">
+              <ProfileAvatar
+                className={`booking-recap-barber-avatar ${activeClientBarber.accent}`}
+                name={activeBarberName}
+                photoUrl={activeBarberProfile.photoUrl}
+              />
+              <span>
+                <small>Barber</small>
+                <strong>{activeBarberName}</strong>
+              </span>
+            </span>
             <span className="booking-recap-service">
               <small>Usługa</small>
               <strong>{selectedService.name}</strong>
@@ -5022,6 +5263,17 @@ export function BookingHome() {
             <div className="success-summary">
               <p className="eyebrow">Wizyta potwierdzona</p>
               <h1>{bookingSummary.serviceName}</h1>
+              <div className="success-barber">
+                <ProfileAvatar
+                  className="success-barber-avatar"
+                  name={bookingSummary.barberName}
+                  photoUrl={bookingSummary.barberPhotoUrl}
+                />
+                <span>
+                  <small>Twój barber</small>
+                  <strong>{bookingSummary.barberName}</strong>
+                </span>
+              </div>
               <div className="success-details">
                 <span>{dayFormatter.format(bookingSummary.date)}</span>
                 <span>{bookingSummary.time}</span>
@@ -5373,13 +5625,11 @@ export function BookingHome() {
             </button>
 
             <header className="client-profile-header">
-              <span className="client-profile-avatar">
-                {selectedAdminClient.photoUrl ? (
-                  <img src={selectedAdminClient.photoUrl} alt="" />
-                ) : (
-                  selectedAdminClient.name.slice(0, 1)
-                )}
-              </span>
+              <ProfileAvatar
+                className="client-profile-avatar"
+                name={selectedAdminClient.name}
+                photoUrl={selectedAdminClient.photoUrl}
+              />
               <div>
                 <p className="eyebrow">Karta klienta</p>
                 <h2>{selectedAdminClient.name}</h2>
@@ -5806,6 +6056,9 @@ export function BookingHome() {
                       {dayFormatter.format(dateFromKey(appointment.dateKey))},{" "}
                       {appointment.startTime} -{" "}
                       {addMinutesToTime(appointment.startTime, appointment.durationMinutes)}
+                      {" · "}
+                      {clientBarberOptions.find((barber) => barber.id === appointment.barberId)
+                        ?.name ?? "Barber"}
                     </small>
                     <em className={`appointment-status ${normalizeAppointmentStatus(appointment.status)}`}>
                       {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
@@ -5865,6 +6118,20 @@ export function BookingHome() {
               <p className="eyebrow">Twoja wizyta</p>
               <h2>{selectedClientAppointment.serviceName}</h2>
             </div>
+
+            {selectedClientAppointmentBarber ? (
+              <div className="appointment-barber-row">
+                <ProfileAvatar
+                  className={`appointment-barber-avatar ${selectedClientAppointmentBarber.accent}`}
+                  name={selectedClientAppointmentBarber.name}
+                  photoUrl={selectedClientAppointmentBarber.photoUrl}
+                />
+                <span>
+                  <small>Barber</small>
+                  <strong>{selectedClientAppointmentBarber.name}</strong>
+                </span>
+              </div>
+            ) : null}
 
             <div className="modal-details">
               <span>
@@ -6003,7 +6270,7 @@ export function BookingHome() {
         </div>
       ) : null}
 
-      {visibleStep !== "admin" ? (
+      {visibleStep !== "admin" && (visibleStep !== "booking" || selectedBarber) ? (
         <footer className="bottom-footer" aria-label="Akcja rezerwacji">
           <button
             className={footerClassName}

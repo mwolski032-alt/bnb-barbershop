@@ -155,7 +155,7 @@ test("keeps the owner-only multi-barber workspace", async () => {
   assert.match(bookingHome, /appointment\.barberId \|\| defaultBarberId/);
   assert.match(bookingHome, /barbers\/\$\{activeBarberId\}\/workSettings/);
   assert.match(bookingHome, /barbers\/\$\{activeBarberId\}\/services/);
-  assert.match(bookingHome, /barberIds\/\$\{defaultBarberId\}/);
+  assert.match(bookingHome, /barberIds\/\$\{activeBarberId\}/);
   assert.match(styles, /\.owner-barber-grid/);
   assert.match(styles, /\.selected-barber-context/);
 });
@@ -234,4 +234,28 @@ test("keeps barber ownership on operational records and Mateusz email routing", 
   assert.match(sendPush, /process\.env\.BARBER_MATEUSZ_EMAIL/);
   assert.match(sendPush, /appointment\.barberId === "mateusz"/);
   assert.match(sendPush, /appointmentBarberId: eventAppointment\.barberId/);
+});
+
+test("keeps the client barber selection and resilient profile photos", async () => {
+  const [bookingHome, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /function ProfileAvatar/);
+  assert.match(bookingHome, /referrerPolicy="no-referrer"/);
+  assert.match(bookingHome, /onError=\{\(\) => setFailedPhotoUrl/);
+  assert.match(bookingHome, /const sourceSize = Math\.min\(image\.naturalWidth, image\.naturalHeight\)/);
+  assert.match(bookingHome, /className="client-barber-picker booking-scroll-target"/);
+  assert.match(bookingHome, /<span>1<\/span> Barber/);
+  assert.match(bookingHome, /const selectBookingBarber = \(barberId: string/);
+  assert.match(bookingHome, /appointments\.filter\(\(appointment\) => appointment\.barberId === activeBarberId\)/);
+  assert.match(bookingHome, /barberId: activeBarberId/);
+  assert.match(bookingHome, /barberIds\/\$\{activeBarberId\}/);
+  assert.match(bookingHome, /client-selected-barber-summary/);
+  assert.match(bookingHome, /appointment-barber-row/);
+  assert.match(styles, /\.profile-avatar\s*\{/);
+  assert.match(styles, /\.client-barber-list\s*\{/);
+  assert.match(styles, /\.client-barber-avatar\s*\{/);
+  assert.match(styles, /grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/);
 });
