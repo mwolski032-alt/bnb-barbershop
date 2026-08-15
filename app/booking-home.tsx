@@ -156,6 +156,7 @@ type AdminClientProfile = {
   nextAppointment: AdminAppointment | null;
   lastAppointment: AdminAppointment | null;
   rescheduledCount: number;
+  hiddenFromDirectory: boolean;
 };
 
 type ClientRecord = {
@@ -167,6 +168,7 @@ type ClientRecord = {
   photoUrl: string;
   userId?: string;
   barberIds?: Record<string, boolean>;
+  hiddenFor?: Record<string, boolean>;
   createdAt?: number;
   updatedAt?: number;
 };
@@ -1112,6 +1114,7 @@ export function BookingHome() {
   const [clientSearch, setClientSearch] = useState("");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
   const [clientWorkspaceTab, setClientWorkspaceTab] = useState<ClientWorkspaceTab>("appointments");
+  const [pendingClientRemovalId, setPendingClientRemovalId] = useState<string | null>(null);
   const [clientDialog, setClientDialog] = useState<ClientDialogState | null>(null);
   const [clientSaveMode, setClientSaveMode] = useState<ClientSaveMode>("record");
   const [clientDraft, setClientDraft] = useState<ClientDraft>({
@@ -1144,6 +1147,7 @@ export function BookingHome() {
   const [isProfilePhotoProcessing, setIsProfilePhotoProcessing] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const previousAppointmentsRef = useRef<Map<string, AdminAppointment> | null>(null);
+  const silentNewAppointmentToastIdRef = useRef<string | null>(null);
   const processedInvitationRef = useRef<string | null>(null);
   const bookingServiceRef = useRef<HTMLDivElement | null>(null);
   const bookingBarberRef = useRef<HTMLDivElement | null>(null);
@@ -1407,6 +1411,7 @@ export function BookingHome() {
           rescheduledCount: sortedAppointments.filter(
             (appointment) => normalizeAppointmentStatus(appointment.status) === "rescheduled",
           ).length,
+          hiddenFromDirectory: Boolean(clientRecord?.hiddenFor?.[activeBarberId]),
         };
       })
       .sort((first, second) => {
@@ -1429,8 +1434,14 @@ export function BookingHome() {
       ),
     [adminClientProfiles, currentDate],
   );
+  const directoryAdminClientProfiles = useMemo(
+    () => adminClientProfiles.filter((client) => !client.hiddenFromDirectory),
+    [adminClientProfiles],
+  );
   const clientWorkspaceProfiles =
-    clientWorkspaceTab === "appointments" ? activeAdminClientProfiles : adminClientProfiles;
+    clientWorkspaceTab === "appointments"
+      ? activeAdminClientProfiles
+      : directoryAdminClientProfiles;
   const filteredAdminClients = useMemo(() => {
     const query = clientSearch.trim().toLocaleLowerCase("pl");
 
@@ -1678,6 +1689,8 @@ export function BookingHome() {
     adminAppointments.find((appointment) => appointment.id === adminEditAppointmentId) ?? null;
   const selectedAdminClient =
     adminClientProfiles.find((client) => client.id === selectedAdminClientId) ?? null;
+  const pendingClientRemoval =
+    adminClientProfiles.find((client) => client.id === pendingClientRemovalId) ?? null;
   const manualBookingClient =
     clientDialog?.mode === "book"
       ? adminClientProfiles.find((client) => client.id === clientDialog.clientId) ?? null
@@ -2082,6 +2095,10 @@ export function BookingHome() {
           client.barberIds && typeof client.barberIds === "object"
             ? client.barberIds
             : undefined,
+        hiddenFor:
+          client.hiddenFor && typeof client.hiddenFor === "object"
+            ? client.hiddenFor
+            : undefined,
         createdAt: Number(client.createdAt) || undefined,
         updatedAt: Number(client.updatedAt) || undefined,
       }));
@@ -2229,7 +2246,14 @@ export function BookingHome() {
 
         writeStoredNotifications(activeUser.uid, updatedNotifications);
         setNotifications(updatedNotifications);
-        setActiveNotification(uniqueNotifications[0]);
+        const silentAppointmentId = silentNewAppointmentToastIdRef.current;
+        const toastNotification = uniqueNotifications.find(
+          (notification) => notification.appointmentId !== silentAppointmentId,
+        );
+        if (uniqueNotifications.some((notification) => notification.appointmentId === silentAppointmentId)) {
+          silentNewAppointmentToastIdRef.current = null;
+        }
+        if (toastNotification) setActiveNotification(toastNotification);
       }
     }
 
@@ -2427,6 +2451,7 @@ export function BookingHome() {
         pendingClientCancellation ||
         selectedAdminEditAppointment ||
         selectedAdminClient ||
+        pendingClientRemovalId ||
         clientDialog ||
         smsComposer ||
         notificationPanelOpen,
@@ -2440,6 +2465,8 @@ export function BookingHome() {
 
       if (notificationPanelOpen) {
         setNotificationPanelOpen(false);
+      } else if (pendingClientRemovalId) {
+        setPendingClientRemovalId(null);
       } else if (pendingClientCancellation) {
         setPendingClientCancellationId(null);
       } else if (smsComposer) {
@@ -2467,6 +2494,7 @@ export function BookingHome() {
     clientDialog,
     notificationPanelOpen,
     pendingClientCancellation,
+    pendingClientRemovalId,
     selectedAdminClient,
     selectedAdminEditAppointment,
     selectedClientAppointment,
@@ -3243,6 +3271,7 @@ export function BookingHome() {
       fullName: form.fullName.trim(),
       phone: form.phone,
     });
+    silentNewAppointmentToastIdRef.current = appointmentId;
     try {
       setIsSaving(true);
       const name = splitClientName(form.fullName);
@@ -3257,11 +3286,17 @@ export function BookingHome() {
         [`clients/${clientId}/photoUrl`]: activeUser.photoURL ?? "",
         [`clients/${clientId}/userId`]: activeUser.uid,
         [`clients/${clientId}/barberIds/${activeBarberId}`]: true,
+        [`clients/${clientId}/hiddenFor/${activeBarberId}`]: null,
         [`clients/${clientId}/updatedAt`]: now,
       });
       await sendAppointmentNotification("new_booking", adminAppointment);
       setForm({ fullName: "", phone: "" });
       setStep("success");
+    } catch (error) {
+      if (silentNewAppointmentToastIdRef.current === appointmentId) {
+        silentNewAppointmentToastIdRef.current = null;
+      }
+      throw error;
     } finally {
       setIsSaving(false);
     }
@@ -3554,6 +3589,10 @@ export function BookingHome() {
         ...(existingRecord?.barberIds ?? {}),
         [activeBarberId]: true,
       },
+      hiddenFor: {
+        ...(existingRecord?.hiddenFor ?? {}),
+        [activeBarberId]: false,
+      },
       createdAt: existingRecord?.createdAt ?? now,
       updatedAt: now,
     } satisfies ClientRecord;
@@ -3607,6 +3646,28 @@ export function BookingHome() {
       });
     } catch {
       setClientFeedback({ kind: "error", message: "Nie udało się zapisać klienta. Spróbuj ponownie." });
+    } finally {
+      setIsClientSaving(false);
+    }
+  };
+
+  const removeClientFromDirectory = async () => {
+    if (!pendingClientRemovalId || !isAdmin || isClientSaving) return;
+
+    try {
+      setIsClientSaving(true);
+      await update(ref(realtimeDb), {
+        [`clients/${pendingClientRemovalId}/hiddenFor/${activeBarberId}`]: true,
+        [`clients/${pendingClientRemovalId}/updatedAt`]: serverTimestamp(),
+      });
+      setPendingClientRemovalId(null);
+      setSelectedAdminClientId(null);
+      setClientFeedback({
+        kind: "success",
+        message: "Klient został usunięty z kartoteki. Historia wizyt pozostała bez zmian.",
+      });
+    } catch {
+      setClientFeedback({ kind: "error", message: "Nie udało się usunąć klienta z kartoteki." });
     } finally {
       setIsClientSaving(false);
     }
@@ -4236,7 +4297,7 @@ export function BookingHome() {
                     <strong>
                       {clientWorkspaceTab === "appointments"
                         ? activeAdminClientProfiles.length
-                        : adminClientProfiles.length}
+                        : directoryAdminClientProfiles.length}
                     </strong>
                     {clientWorkspaceTab === "appointments" ? "aktywnych" : "klientów"}
                   </span>
@@ -4244,7 +4305,7 @@ export function BookingHome() {
                     <strong>
                       {clientWorkspaceTab === "appointments"
                         ? activeAdminClientProfiles.filter((client) => client.rescheduledCount > 0).length
-                        : adminClientProfiles.filter((client) => !client.nextAppointment).length}
+                        : directoryAdminClientProfiles.filter((client) => !client.nextAppointment).length}
                     </strong>
                     {clientWorkspaceTab === "appointments" ? "do potwierdzenia" : "bez wizyty"}
                   </span>
@@ -6562,6 +6623,73 @@ export function BookingHome() {
                   </article>
                 );
               })}
+            </div>
+            {clientWorkspaceTab === "directory" ? (
+              <footer className="client-profile-footer">
+                <button
+                  className="remove-client-button"
+                  type="button"
+                  onClick={() => setPendingClientRemovalId(selectedAdminClient.id)}
+                >
+                  <span className="trash-icon" aria-hidden="true" />
+                  Usuń z bazy
+                </button>
+              </footer>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
+
+      {pendingClientRemoval && visibleStep === "admin" ? (
+        <div
+          className="client-modal-backdrop cancellation-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isClientSaving) {
+              setPendingClientRemovalId(null);
+            }
+          }}
+        >
+          <section
+            className="client-appointment-modal cancellation-sheet client-removal-sheet"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="client-removal-title"
+            aria-describedby="client-removal-description"
+          >
+            <button
+              className="modal-close-button"
+              type="button"
+              disabled={isClientSaving}
+              onClick={() => setPendingClientRemovalId(null)}
+              aria-label="Wróć bez usuwania klienta"
+            >
+              ×
+            </button>
+            <div className="modal-title">
+              <p className="eyebrow">Kartoteka klientów</p>
+              <h2 id="client-removal-title">Usunąć z bazy?</h2>
+            </div>
+            <p className="cancellation-copy" id="client-removal-description">
+              {pendingClientRemoval.name} zniknie z kartoteki {activeBarberName}. Historia wizyt,
+              terminarz i analiza pozostaną bez zmian.
+            </p>
+            <div className="modal-actions cancellation-actions">
+              <button
+                type="button"
+                disabled={isClientSaving}
+                onClick={() => setPendingClientRemovalId(null)}
+              >
+                Anuluj
+              </button>
+              <button
+                className="danger"
+                type="button"
+                disabled={isClientSaving}
+                onClick={() => void removeClientFromDirectory()}
+              >
+                {isClientSaving ? "Usuwanie..." : "Usuń z bazy"}
+              </button>
             </div>
           </section>
         </div>

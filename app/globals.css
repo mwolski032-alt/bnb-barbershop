@@ -4768,7 +4768,7 @@ h2 {
 
 .admin-client-profile-modal {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   width: min(100%, 46rem);
   max-height: min(46rem, calc(100svh - 2rem));
   padding: 1.1rem;
@@ -4889,6 +4889,61 @@ h2 {
 .client-profile-contact-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.3;
+}
+
+.client-profile-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+}
+
+.remove-client-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0 0.9rem;
+  border: 1px solid rgba(255, 69, 58, 0.26);
+  border-radius: 0.72rem;
+  background: rgba(255, 69, 58, 0.1);
+  color: #ffb4ae;
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 820;
+}
+
+.trash-icon {
+  position: relative;
+  width: 0.85rem;
+  height: 0.9rem;
+  border: 1.5px solid currentColor;
+  border-top: 0;
+  border-radius: 0 0 0.18rem 0.18rem;
+}
+
+.trash-icon::before {
+  position: absolute;
+  top: -0.28rem;
+  right: -0.14rem;
+  left: -0.14rem;
+  height: 1.5px;
+  background: currentColor;
+  content: "";
+}
+
+.trash-icon::after {
+  position: absolute;
+  top: -0.48rem;
+  left: 50%;
+  width: 0.36rem;
+  height: 0.2rem;
+  border: 1.5px solid currentColor;
+  border-bottom: 0;
+  border-radius: 0.12rem 0.12rem 0 0;
+  content: "";
+  transform: translateX(-50%);
 }
 
 .client-history-heading {

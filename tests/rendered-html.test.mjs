@@ -64,6 +64,8 @@ test("keeps the premium client booking flow and safety controls", async () => {
   assert.match(bookingHome, /Odwołaj wizytę/);
   assert.match(bookingHome, /if \(direction === -1 && !canShiftToPreviousMonth\) return/);
   assert.match(bookingHome, /event\.key !== "Escape"/);
+  assert.match(bookingHome, /silentNewAppointmentToastIdRef/);
+  assert.match(bookingHome, /notification\.appointmentId !== silentAppointmentId/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(styles, /\.client-service-picker \.service-list/);
 });
@@ -131,11 +133,16 @@ test("keeps the persistent client base and manual admin booking workflow", async
   assert.match(bookingHome, /Zapisz i umów/);
   assert.match(bookingHome, /Poza grafikiem/);
   assert.match(bookingHome, /const handleSaveClientFromDialog = async/);
+  assert.match(bookingHome, /const removeClientFromDirectory = async/);
+  assert.match(bookingHome, /hiddenFor\/\$\{activeBarberId\}/);
+  assert.match(bookingHome, /Historia wizyt,\s*terminarz i analiza pozostaną bez zmian/);
   assert.match(bookingHome, /Ten termin nakłada się na inną wizytę/);
   assert.match(bookingHome, /\[`appointments\/\$\{appointmentId\}`\] = manualAppointment/);
   assert.match(styles, /\.client-creator-modal/);
   assert.match(styles, /\.manual-booking-grid/);
   assert.match(styles, /\.book-client-button/);
+  assert.match(styles, /\.remove-client-button/);
+  assert.match(styles, /\.trash-icon/);
 });
 
 test("keeps the owner-only multi-barber workspace", async () => {
