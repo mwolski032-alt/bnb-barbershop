@@ -81,6 +81,7 @@ type BookingSummary = {
 };
 
 type AdminAppointment = Appointment & {
+  clientId?: string;
   clientName: string;
   clientEmail?: string;
   clientPhotoUrl?: string;
@@ -131,6 +132,35 @@ type AdminClientProfile = {
   rescheduledCount: number;
 };
 
+type ClientRecord = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  photoUrl: string;
+  userId?: string;
+  createdAt?: number;
+  updatedAt?: number;
+};
+
+type ClientDraft = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+};
+
+type ManualBookingDraft = {
+  serviceId: string;
+  dateKey: string;
+  startTime: string;
+};
+
+type ClientDialogState =
+  | { mode: "create" }
+  | { mode: "book"; clientId: string };
+
 type SmsComposerState = {
   clientId: string;
   appointmentId: string;
@@ -142,6 +172,8 @@ type WorkFeedback = {
   kind: "success" | "error";
   message: string;
 };
+
+type ClientSaveMode = "record" | "booking";
 
 const adminUserIds = new Set(["XxBe4dwVYWZPtl004J4tWq6AMZ73"]);
 const maxStoredNotifications = 40;
@@ -194,7 +226,7 @@ const appointmentStatusLabels: Record<AppointmentStatus, string> = {
 
 const adminSectionLabels: Record<AdminSection, string> = {
   schedule: "Terminarz",
-  clients: "Klienci",
+  clients: "Baza klientów",
   analytics: "Analiza",
   work: "Praca",
   services: "Usługi",
@@ -314,7 +346,10 @@ const formatDuration = (minutes: number) => {
     .join(" ");
 };
 
-const getPhoneDigits = (value: string) => value.replace(/\D/g, "").slice(0, 9);
+const getPhoneDigits = (value: string) => {
+  const digits = value.replace(/\D/g, "");
+  return digits.startsWith("48") && digits.length >= 11 ? digits.slice(2, 11) : digits.slice(0, 9);
+};
 
 const getServicePriceValue = (value: string) =>
   Number(value.trim().replace(",", ".").replace(/[^\d.]/g, ""));
@@ -497,10 +532,32 @@ const buildClientSmsMessage = (template: SmsTemplate, appointment: AdminAppointm
 };
 
 const getAdminClientId = (appointment: AdminAppointment) =>
+  appointment.clientId?.trim() ||
   appointment.userId?.trim() ||
   appointment.clientEmail?.trim().toLowerCase() ||
   getPhoneDigits(appointment.phone ?? "") ||
   appointment.clientName.trim().toLowerCase();
+
+const splitClientName = (fullName: string) => {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  return {
+    firstName: parts[0] ?? "",
+    lastName: parts.slice(1).join(" "),
+  };
+};
+
+const getClientFullName = (client: Pick<ClientRecord, "firstName" | "lastName">) =>
+  [client.firstName, client.lastName].filter(Boolean).join(" ").trim() || "Klient";
+
+const isValidEmail = (email: string) =>
+  !email.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+const isFirebaseKeySafe = (value: string) => !/[.#$\[\]\/]/.test(value);
+
+const createEntityId = (prefix: "client" | "appointment") =>
+  globalThis.crypto?.randomUUID?.() ?? `${prefix}-${Date.now()}`;
+
+const getTimestamp = () => Date.now();
 
 const getAppointmentSortValue = (appointment: AdminAppointment) =>
   `${appointment.dateKey}T${appointment.startTime}`;
@@ -715,6 +772,7 @@ export function BookingHome() {
   const [selectedTime, setSelectedTime] = useState("");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [adminAppointments, setAdminAppointments] = useState<AdminAppointment[]>([]);
+  const [clientRecords, setClientRecords] = useState<ClientRecord[]>([]);
   const [workSettings, setWorkSettings] = useState<WorkSettings>(defaultWorkSettings);
   const [form, setForm] = useState<FormState>({ fullName: "", phone: "" });
   const [serviceDraft, setServiceDraft] = useState<ServiceDraft>({
@@ -739,6 +797,21 @@ export function BookingHome() {
   const [activeNotification, setActiveNotification] = useState<AppNotification | null>(null);
   const [clientSearch, setClientSearch] = useState("");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
+  const [clientDialog, setClientDialog] = useState<ClientDialogState | null>(null);
+  const [clientSaveMode, setClientSaveMode] = useState<ClientSaveMode>("record");
+  const [clientDraft, setClientDraft] = useState<ClientDraft>({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+  });
+  const [manualBookingDraft, setManualBookingDraft] = useState<ManualBookingDraft>({
+    serviceId: defaultServices[0].id,
+    dateKey: dayKey(today),
+    startTime: "18:00",
+  });
+  const [clientFeedback, setClientFeedback] = useState<WorkFeedback | null>(null);
+  const [isClientSaving, setIsClientSaving] = useState(false);
   const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("month");
   const [selectedAdminClientId, setSelectedAdminClientId] = useState<string | null>(null);
   const [settlingAppointmentId, setSettlingAppointmentId] = useState<string | null>(null);
@@ -847,15 +920,20 @@ export function BookingHome() {
     return Array.from(keys).sort((first, second) => first.localeCompare(second));
   }, [adminAppointmentDays, adminSelectedKey, today, workSettings.availability]);
   const adminClientProfiles = useMemo<AdminClientProfile[]>(() => {
-    const profiles = new Map<string, AdminAppointment[]>();
+    const appointmentGroups = new Map<string, AdminAppointment[]>();
 
     adminClientAppointments.forEach((appointment) => {
       const clientId = getAdminClientId(appointment);
-      profiles.set(clientId, [...(profiles.get(clientId) ?? []), appointment]);
+      appointmentGroups.set(clientId, [...(appointmentGroups.get(clientId) ?? []), appointment]);
     });
 
-    return Array.from(profiles.entries())
-      .map(([id, clientAppointments]) => {
+    const recordsById = new Map(clientRecords.map((client) => [client.id, client]));
+    const clientIds = new Set([...recordsById.keys(), ...appointmentGroups.keys()]);
+
+    return Array.from(clientIds)
+      .map((id) => {
+        const clientRecord = recordsById.get(id);
+        const clientAppointments = appointmentGroups.get(id) ?? [];
         const sortedAppointments = [...clientAppointments].sort((first, second) =>
           getAppointmentSortValue(first).localeCompare(getAppointmentSortValue(second)),
         );
@@ -879,10 +957,10 @@ export function BookingHome() {
 
         return {
           id,
-          name: newestContact.clientName,
-          email: newestContact.clientEmail ?? "",
-          phone: newestContact.phone ?? "",
-          photoUrl: newestContact.clientPhotoUrl ?? "",
+          name: clientRecord ? getClientFullName(clientRecord) : newestContact?.clientName ?? "Klient",
+          email: clientRecord?.email || newestContact?.clientEmail || "",
+          phone: clientRecord?.phone || newestContact?.phone || "",
+          photoUrl: clientRecord?.photoUrl || newestContact?.clientPhotoUrl || "",
           appointments: sortedAppointments,
           nextAppointment,
           lastAppointment,
@@ -901,7 +979,7 @@ export function BookingHome() {
         if (second.nextAppointment) return 1;
         return first.name.localeCompare(second.name, "pl");
       });
-  }, [adminClientAppointments, currentDate]);
+  }, [adminClientAppointments, clientRecords, currentDate]);
   const filteredAdminClients = useMemo(() => {
     const query = clientSearch.trim().toLocaleLowerCase("pl");
 
@@ -1140,6 +1218,31 @@ export function BookingHome() {
     adminAppointments.find((appointment) => appointment.id === adminEditAppointmentId) ?? null;
   const selectedAdminClient =
     adminClientProfiles.find((client) => client.id === selectedAdminClientId) ?? null;
+  const manualBookingClient =
+    clientDialog?.mode === "book"
+      ? adminClientProfiles.find((client) => client.id === clientDialog.clientId) ?? null
+      : null;
+  const manualBookingService =
+    services.find((service) => service.id === manualBookingDraft.serviceId) ?? services[0];
+  const manualBookingHasConflict = Boolean(
+    manualBookingService &&
+      adminAppointments.some(
+        (appointment) =>
+          appointment.dateKey === manualBookingDraft.dateKey &&
+          rangesOverlap(
+            timeToMinutes(manualBookingDraft.startTime),
+            manualBookingService.durationMinutes,
+            timeToMinutes(appointment.startTime),
+            appointment.durationMinutes,
+          ),
+      ),
+  );
+  const clientDraftIsValid = Boolean(
+    clientDraft.firstName.trim() &&
+      clientDraft.lastName.trim() &&
+      getPhoneDigits(clientDraft.phone).length === 9 &&
+      isValidEmail(clientDraft.email),
+  );
   const smsClient =
     adminClientProfiles.find((client) => client.id === smsComposer?.clientId) ?? null;
   const smsAppointment =
@@ -1324,6 +1427,7 @@ export function BookingHome() {
           dateKey: appointment.dateKey ?? dayKey(today),
           startTime: appointment.startTime ?? "00:00",
           durationMinutes: Number(appointment.durationMinutes) || 30,
+          clientId: appointment.clientId ?? "",
           clientName: appointment.clientName ?? "Klient",
           clientEmail: appointment.clientEmail ?? "",
           clientPhotoUrl: appointment.clientPhotoUrl ?? "",
@@ -1355,6 +1459,32 @@ export function BookingHome() {
       );
     });
   }, [activeUser, today]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setClientRecords([]);
+      return undefined;
+    }
+
+    const clientsRef = ref(realtimeDb, "clients");
+
+    return onValue(clientsRef, (snapshot) => {
+      const value = snapshot.val() as Record<string, Partial<ClientRecord>> | null;
+      const loadedClients = Object.entries(value ?? {}).map(([id, client]) => ({
+        id,
+        firstName: client.firstName?.trim() ?? "",
+        lastName: client.lastName?.trim() ?? "",
+        email: client.email?.trim() ?? "",
+        phone: client.phone?.trim() ?? "",
+        photoUrl: client.photoUrl?.trim() ?? "",
+        userId: client.userId?.trim() || undefined,
+        createdAt: Number(client.createdAt) || undefined,
+        updatedAt: Number(client.updatedAt) || undefined,
+      }));
+
+      setClientRecords(loadedClients);
+    });
+  }, [isAdmin]);
 
   useEffect(() => {
     if (!activeUser) return;
@@ -1520,7 +1650,14 @@ export function BookingHome() {
       setSelectedServiceId(services[0]?.id ?? defaultServices[0].id);
       setSelectedTime("");
     }
-  }, [selectedServiceId, services]);
+
+    if (!services.some((service) => service.id === manualBookingDraft.serviceId)) {
+      setManualBookingDraft((current) => ({
+        ...current,
+        serviceId: services[0]?.id ?? defaultServices[0].id,
+      }));
+    }
+  }, [manualBookingDraft.serviceId, selectedServiceId, services]);
 
   useEffect(() => {
     if (step === "admin" && !isAdmin) {
@@ -1548,6 +1685,7 @@ export function BookingHome() {
         pendingClientCancellation ||
         selectedAdminEditAppointment ||
         selectedAdminClient ||
+        clientDialog ||
         smsComposer ||
         notificationPanelOpen,
     );
@@ -1566,6 +1704,8 @@ export function BookingHome() {
         setSmsComposer(null);
       } else if (selectedAdminEditAppointment) {
         setAdminEditAppointmentId(null);
+      } else if (clientDialog) {
+        setClientDialog(null);
       } else if (selectedAdminClient) {
         setSelectedAdminClientId(null);
       } else if (selectedClientAppointment) {
@@ -1582,6 +1722,7 @@ export function BookingHome() {
     };
   }, [
     clientAppointmentsListOpen,
+    clientDialog,
     notificationPanelOpen,
     pendingClientCancellation,
     selectedAdminClient,
@@ -2072,9 +2213,11 @@ export function BookingHome() {
     if (!canConfirm || !selectedTime || isSaving || !activeUser) return;
 
     const appointmentId = window.crypto?.randomUUID?.() ?? `${Date.now()}`;
+    const clientId = activeUser.uid;
     const appointmentColor = getNextAppointmentColor(selectedDayKey, adminAppointments);
     const adminAppointment: AdminAppointment = {
       id: appointmentId,
+      clientId,
       userId: activeUser.uid,
       dateKey: selectedDayKey,
       startTime: selectedTime,
@@ -2100,7 +2243,19 @@ export function BookingHome() {
     });
     try {
       setIsSaving(true);
-      await set(ref(realtimeDb, `appointments/${appointmentId}`), adminAppointment);
+      const name = splitClientName(form.fullName);
+      const now = Date.now();
+      await update(ref(realtimeDb), {
+        [`appointments/${appointmentId}`]: adminAppointment,
+        [`clients/${clientId}/id`]: clientId,
+        [`clients/${clientId}/firstName`]: name.firstName,
+        [`clients/${clientId}/lastName`]: name.lastName,
+        [`clients/${clientId}/email`]: activeUser.email ?? "",
+        [`clients/${clientId}/phone`]: form.phone,
+        [`clients/${clientId}/photoUrl`]: activeUser.photoURL ?? "",
+        [`clients/${clientId}/userId`]: activeUser.uid,
+        [`clients/${clientId}/updatedAt`]: now,
+      });
       await sendAppointmentNotification("new_booking", adminAppointment);
       setForm({ fullName: "", phone: "" });
       setStep("success");
@@ -2280,6 +2435,169 @@ export function BookingHome() {
       template: "confirmation",
       message: buildClientSmsMessage("confirmation", appointment),
     });
+  };
+
+  const resetManualBookingDraft = () => {
+    const todayKey = dayKey(today);
+    setManualBookingDraft({
+      serviceId: services[0]?.id ?? defaultServices[0].id,
+      dateKey: adminSelectedKey >= todayKey ? adminSelectedKey : todayKey,
+      startTime: "18:00",
+    });
+  };
+
+  const openClientCreator = () => {
+    setClientDraft({ firstName: "", lastName: "", email: "", phone: "" });
+    setClientSaveMode("record");
+    setClientFeedback(null);
+    resetManualBookingDraft();
+    setClientDialog({ mode: "create" });
+  };
+
+  const openManualClientBooking = (client: AdminClientProfile) => {
+    setSelectedAdminClientId(null);
+    setClientFeedback(null);
+    resetManualBookingDraft();
+    setClientDialog({ mode: "book", clientId: client.id });
+  };
+
+  const handleSaveClientFromDialog = async () => {
+    if (!clientDialog || !isAdmin || isClientSaving) return;
+
+    const isCreating = clientDialog.mode === "create";
+    const shouldBook = clientDialog.mode === "book" || clientSaveMode === "booking";
+    const phoneDigits = getPhoneDigits(isCreating ? clientDraft.phone : manualBookingClient?.phone ?? "");
+    const email = (isCreating ? clientDraft.email : manualBookingClient?.email ?? "").trim().toLowerCase();
+    const fullName = isCreating
+      ? `${clientDraft.firstName.trim()} ${clientDraft.lastName.trim()}`.trim()
+      : manualBookingClient?.name ?? "";
+
+    if (isCreating && (!clientDraft.firstName.trim() || !clientDraft.lastName.trim())) {
+      setClientFeedback({ kind: "error", message: "Uzupełnij imię i nazwisko klienta." });
+      return;
+    }
+    if (isCreating && phoneDigits.length !== 9) {
+      setClientFeedback({ kind: "error", message: "Podaj poprawny, 9-cyfrowy numer telefonu." });
+      return;
+    }
+    if (!isValidEmail(email)) {
+      setClientFeedback({ kind: "error", message: "Sprawdź poprawność adresu e-mail." });
+      return;
+    }
+    if (shouldBook && (!manualBookingService || !manualBookingDraft.dateKey || !manualBookingDraft.startTime)) {
+      setClientFeedback({ kind: "error", message: "Wybierz usługę, datę i godzinę wizyty." });
+      return;
+    }
+
+    const hasConflict = shouldBook && manualBookingService
+      ? adminAppointments.some(
+          (appointment) =>
+            appointment.dateKey === manualBookingDraft.dateKey &&
+            rangesOverlap(
+              timeToMinutes(manualBookingDraft.startTime),
+              manualBookingService.durationMinutes,
+              timeToMinutes(appointment.startTime),
+              appointment.durationMinutes,
+            ),
+        )
+      : false;
+
+    if (hasConflict) {
+      setClientFeedback({
+        kind: "error",
+        message: "Ten termin nakłada się na inną wizytę. Wybierz inną godzinę.",
+      });
+      return;
+    }
+
+    const matchingClient = isCreating
+      ? adminClientProfiles.find((client) => {
+          const samePhone = phoneDigits.length === 9 && getPhoneDigits(client.phone) === phoneDigits;
+          const sameEmail = email && client.email.trim().toLowerCase() === email;
+          return samePhone || sameEmail;
+        }) ?? null
+      : manualBookingClient;
+    const hasStoredRecord = matchingClient
+      ? clientRecords.some((record) => record.id === matchingClient.id)
+      : false;
+    const generatedClientId = createEntityId("client");
+    const clientId = matchingClient
+      ? hasStoredRecord || isFirebaseKeySafe(matchingClient.id)
+        ? matchingClient.id
+        : generatedClientId
+      : generatedClientId;
+    const linkedUserId =
+      clientRecords.find((record) => record.id === matchingClient?.id)?.userId ||
+      matchingClient?.appointments.find((appointment) => appointment.userId)?.userId ||
+      undefined;
+    const name = splitClientName(fullName);
+    const now = getTimestamp();
+    const updates: Record<string, unknown> = {};
+    const existingRecord = clientRecords.find((record) => record.id === clientId);
+
+    updates[`clients/${clientId}`] = {
+      id: clientId,
+      firstName: isCreating ? clientDraft.firstName.trim() : name.firstName,
+      lastName: isCreating ? clientDraft.lastName.trim() : name.lastName,
+      email,
+      phone: phoneDigits,
+      photoUrl: matchingClient?.photoUrl ?? "",
+      ...(linkedUserId ? { userId: linkedUserId } : {}),
+      createdAt: existingRecord?.createdAt ?? now,
+      updatedAt: now,
+    } satisfies ClientRecord;
+
+    if (matchingClient && matchingClient.id !== clientId) {
+      matchingClient.appointments.forEach((appointment) => {
+        updates[`appointments/${appointment.id}/clientId`] = clientId;
+      });
+    }
+
+    let manualAppointment: AdminAppointment | null = null;
+    if (shouldBook && manualBookingService) {
+      const appointmentId = createEntityId("appointment");
+      manualAppointment = {
+        id: appointmentId,
+        clientId,
+        ...(linkedUserId ? { userId: linkedUserId } : {}),
+        dateKey: manualBookingDraft.dateKey,
+        startTime: manualBookingDraft.startTime,
+        durationMinutes: manualBookingService.durationMinutes,
+        clientName: fullName,
+        clientEmail: email,
+        clientPhotoUrl: matchingClient?.photoUrl ?? "",
+        phone: phoneDigits,
+        serviceName: manualBookingService.name,
+        price: manualBookingService.price,
+        color: getNextAppointmentColor(manualBookingDraft.dateKey, adminAppointments),
+        status: "confirmed",
+      };
+      updates[`appointments/${appointmentId}`] = manualAppointment;
+    }
+
+    try {
+      setIsClientSaving(true);
+      await update(ref(realtimeDb), updates);
+      if (manualAppointment) {
+        await sendAppointmentNotification("new_booking", manualAppointment);
+        setAdminSelectedKey(manualAppointment.dateKey);
+      }
+      setClientDialog(null);
+      setClientFeedback({
+        kind: "success",
+        message: manualAppointment
+          ? `Klient zapisany. Wizyta: ${adminClientDateFormatter.format(
+              dateFromKey(manualAppointment.dateKey),
+            )}, ${manualAppointment.startTime}.`
+          : matchingClient
+            ? "Dane klienta zostały połączone z istniejącą kartą."
+            : "Klient został dodany do bazy.",
+      });
+    } catch {
+      setClientFeedback({ kind: "error", message: "Nie udało się zapisać klienta. Spróbuj ponownie." });
+    } finally {
+      setIsClientSaving(false);
+    }
   };
 
   const settleAdminAppointment = async (appointment: AdminAppointment) => {
@@ -2789,9 +3107,15 @@ export function BookingHome() {
 
             <div className={`admin-tab-panel ${adminSection === "clients" ? "active" : ""}`}>
               <div className="admin-section-header">
-                <div>
-                  <p className="eyebrow">Obsługa klienta</p>
-                  <h2>Klienci</h2>
+                <div className="client-section-title">
+                  <div>
+                    <p className="eyebrow">Kartoteka kontaktów</p>
+                    <h2>Baza klientów</h2>
+                  </div>
+                  <button className="add-client-button" type="button" onClick={openClientCreator}>
+                    <span aria-hidden="true">+</span>
+                    Dodaj klienta
+                  </button>
                 </div>
                 <div className="admin-section-stats" aria-label="Podsumowanie klientów">
                   <span>
@@ -2808,6 +3132,11 @@ export function BookingHome() {
               </div>
 
               <div className="clients-view" aria-label="Lista klientów">
+                {clientFeedback ? (
+                  <div className={`client-feedback ${clientFeedback.kind}`} role="status">
+                    {clientFeedback.message}
+                  </div>
+                ) : null}
                 <div className="client-directory-tools">
                   <label className="client-search">
                     <span className="client-search-icon" aria-hidden="true" />
@@ -2919,6 +3248,8 @@ export function BookingHome() {
                               </em>
                             ) : client.nextAppointment ? (
                               <em className="appointment-status">Aktywny</em>
+                            ) : client.appointments.length === 0 ? (
+                              <em className="client-history-status">Nowy klient</em>
                             ) : (
                               <em className="client-history-status">Historia</em>
                             )}
@@ -2939,6 +3270,15 @@ export function BookingHome() {
                                 : "Rozlicz"}
                             </button>
                           ) : null}
+                          <button
+                            className="book-client-button"
+                            type="button"
+                            onClick={() => openManualClientBooking(client)}
+                            aria-label={`Umów wizytę dla ${client.name}`}
+                            title="Umów wizytę"
+                          >
+                            <span className="small-calendar-icon" aria-hidden="true" />
+                          </button>
                           <button
                             className="sms-button"
                             type="button"
@@ -3562,7 +3902,7 @@ export function BookingHome() {
               onClick={() => setAdminSection("clients")}
             >
               <span className="admin-nav-icon clients-icon" aria-hidden="true" />
-              <span>Klienci</span>
+              <span>Baza</span>
             </button>
             <button
               className={adminSection === "analytics" ? "active" : ""}
@@ -4082,6 +4422,245 @@ export function BookingHome() {
         </div>
       ) : null}
 
+      {clientDialog &&
+      (clientDialog.mode === "create" || manualBookingClient) &&
+      visibleStep === "admin" ? (
+        <div
+          className="client-modal-backdrop client-creator-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isClientSaving) {
+              setClientDialog(null);
+              setClientFeedback(null);
+            }
+          }}
+        >
+          <section
+            className="client-appointment-modal client-creator-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={clientDialog.mode === "create" ? "Dodaj klienta" : "Umów klienta"}
+          >
+            <button
+              className="modal-close-button"
+              type="button"
+              disabled={isClientSaving}
+              onClick={() => {
+                setClientDialog(null);
+                setClientFeedback(null);
+              }}
+              aria-label="Zamknij"
+            >
+              ×
+            </button>
+
+            <header className="client-creator-header">
+              <span className="client-creator-icon" aria-hidden="true">
+                {clientDialog.mode === "create" ? "+" : <span className="small-calendar-icon" />}
+              </span>
+              <div>
+                <p className="eyebrow">
+                  {clientDialog.mode === "create" ? "Nowy kontakt" : "Ręczna rezerwacja"}
+                </p>
+                <h2>
+                  {clientDialog.mode === "create" ? "Dodaj klienta" : manualBookingClient?.name}
+                </h2>
+              </div>
+            </header>
+
+            {clientDialog.mode === "create" ? (
+              <>
+                <div className="client-save-mode" aria-label="Sposób zapisu">
+                  <button
+                    className={clientSaveMode === "record" ? "active" : ""}
+                    type="button"
+                    onClick={() => {
+                      setClientSaveMode("record");
+                      setClientFeedback(null);
+                    }}
+                  >
+                    Tylko zapisz
+                  </button>
+                  <button
+                    className={clientSaveMode === "booking" ? "active" : ""}
+                    type="button"
+                    onClick={() => {
+                      setClientSaveMode("booking");
+                      setClientFeedback(null);
+                    }}
+                  >
+                    Zapisz i umów
+                  </button>
+                </div>
+
+                <div className="client-form-grid">
+                  <label>
+                    <span>Imię</span>
+                    <input
+                      type="text"
+                      autoComplete="given-name"
+                      value={clientDraft.firstName}
+                      onChange={(event) =>
+                        setClientDraft((current) => ({ ...current, firstName: event.target.value }))
+                      }
+                      placeholder="Jan"
+                    />
+                  </label>
+                  <label>
+                    <span>Nazwisko</span>
+                    <input
+                      type="text"
+                      autoComplete="family-name"
+                      value={clientDraft.lastName}
+                      onChange={(event) =>
+                        setClientDraft((current) => ({ ...current, lastName: event.target.value }))
+                      }
+                      placeholder="Kowalski"
+                    />
+                  </label>
+                  <label>
+                    <span>E-mail <small>opcjonalnie</small></span>
+                    <input
+                      type="email"
+                      autoComplete="email"
+                      inputMode="email"
+                      value={clientDraft.email}
+                      onChange={(event) =>
+                        setClientDraft((current) => ({ ...current, email: event.target.value }))
+                      }
+                      placeholder="jan@gmail.com"
+                    />
+                  </label>
+                  <label>
+                    <span>Numer telefonu</span>
+                    <input
+                      type="tel"
+                      autoComplete="tel"
+                      inputMode="tel"
+                      value={clientDraft.phone}
+                      onChange={(event) =>
+                        setClientDraft((current) => ({
+                          ...current,
+                          phone: formatPhoneNumber(getPhoneDigits(event.target.value)),
+                        }))
+                      }
+                      placeholder="500 000 000"
+                    />
+                  </label>
+                </div>
+              </>
+            ) : (
+              <div className="manual-client-recap">
+                <span>{formatPhoneNumber(getPhoneDigits(manualBookingClient?.phone ?? ""))}</span>
+                {manualBookingClient?.email ? <span>{manualBookingClient.email}</span> : null}
+              </div>
+            )}
+
+            {clientDialog.mode === "book" || clientSaveMode === "booking" ? (
+              <div className="manual-booking-section">
+                <div className="manual-booking-heading">
+                  <div>
+                    <p className="section-label">Termin wizyty</p>
+                    <strong>Dowolny dzień w kalendarzu</strong>
+                  </div>
+                  <span>Poza grafikiem</span>
+                </div>
+                <div className="manual-booking-grid">
+                  <label className="service-field">
+                    <span>Usługa</span>
+                    <select
+                      value={manualBookingDraft.serviceId}
+                      onChange={(event) =>
+                        setManualBookingDraft((current) => ({
+                          ...current,
+                          serviceId: event.target.value,
+                        }))
+                      }
+                    >
+                      {services.map((service) => (
+                        <option key={service.id} value={service.id}>
+                          {service.name} · {service.price} · {service.durationMinutes} min
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Data</span>
+                    <input
+                      type="date"
+                      min={dayKey(today)}
+                      value={manualBookingDraft.dateKey}
+                      onChange={(event) =>
+                        setManualBookingDraft((current) => ({
+                          ...current,
+                          dateKey: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>Godzina</span>
+                    <input
+                      type="time"
+                      step="900"
+                      value={manualBookingDraft.startTime}
+                      onChange={(event) =>
+                        setManualBookingDraft((current) => ({
+                          ...current,
+                          startTime: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className={`manual-booking-status ${manualBookingHasConflict ? "conflict" : "free"}`}>
+                  <span aria-hidden="true" />
+                  {manualBookingHasConflict
+                    ? "Termin koliduje z inną wizytą"
+                    : "Termin jest wolny i może zostać zapisany"}
+                </div>
+              </div>
+            ) : null}
+
+            {clientFeedback ? (
+              <div className={`client-dialog-feedback ${clientFeedback.kind}`} role="alert">
+                {clientFeedback.message}
+              </div>
+            ) : null}
+
+            <footer className="client-creator-footer">
+              <button
+                type="button"
+                disabled={isClientSaving}
+                onClick={() => {
+                  setClientDialog(null);
+                  setClientFeedback(null);
+                }}
+              >
+                Anuluj
+              </button>
+              <button
+                className="primary"
+                type="button"
+                disabled={
+                  isClientSaving ||
+                  (clientDialog.mode === "create" && !clientDraftIsValid) ||
+                  ((clientDialog.mode === "book" || clientSaveMode === "booking") &&
+                    manualBookingHasConflict)
+                }
+                onClick={() => void handleSaveClientFromDialog()}
+              >
+                {isClientSaving
+                  ? "Zapisywanie..."
+                  : clientDialog.mode === "book" || clientSaveMode === "booking"
+                    ? "Zapisz wizytę"
+                    : "Dodaj do bazy"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+
       {selectedAdminClient && visibleStep === "admin" ? (
         <div
           className="client-modal-backdrop admin-client-backdrop"
@@ -4118,7 +4697,11 @@ export function BookingHome() {
                 <h2>{selectedAdminClient.name}</h2>
                 <span>
                   {selectedAdminClient.appointments.length} wizyt ·{" "}
-                  {selectedAdminClient.nextAppointment ? "ma kolejny termin" : "tylko historia"}
+                  {selectedAdminClient.nextAppointment
+                    ? "ma kolejny termin"
+                    : selectedAdminClient.appointments.length > 0
+                      ? "tylko historia"
+                      : "gotowy do umówienia"}
                 </span>
               </div>
             </header>
@@ -4137,6 +4720,14 @@ export function BookingHome() {
                 <strong>{selectedAdminClient.email || "Brak adresu"}</strong>
               </div>
               <div className="client-profile-contact-actions">
+                <button
+                  className="book"
+                  type="button"
+                  onClick={() => openManualClientBooking(selectedAdminClient)}
+                >
+                  <span className="small-calendar-icon" aria-hidden="true" />
+                  Umów
+                </button>
                 <button
                   className="sms-button"
                   type="button"
@@ -4175,7 +4766,15 @@ export function BookingHome() {
             </div>
 
             <div className="client-history-list">
-              {[...selectedAdminClient.appointments].reverse().map((appointment) => {
+              {selectedAdminClient.appointments.length === 0 ? (
+                <div className="client-profile-empty-history">
+                  <strong>Brak wizyt w historii</strong>
+                  <span>Klient jest już w bazie i możesz umówić jego pierwszy termin.</span>
+                  <button type="button" onClick={() => openManualClientBooking(selectedAdminClient)}>
+                    Umów pierwszą wizytę
+                  </button>
+                </div>
+              ) : [...selectedAdminClient.appointments].reverse().map((appointment) => {
                 const isPast = getAppointmentEndDateTime(appointment).getTime() <= currentDate.getTime();
                 const isRescheduled =
                   normalizeAppointmentStatus(appointment.status) === "rescheduled";

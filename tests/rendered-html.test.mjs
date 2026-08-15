@@ -118,6 +118,26 @@ test("keeps the professional admin client directory and SMS workflow", async () 
   assert.match(styles, /\.sms-template-picker/);
 });
 
+test("keeps the persistent client base and manual admin booking workflow", async () => {
+  const [bookingHome, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /type ClientRecord/);
+  assert.match(bookingHome, /ref\(realtimeDb, "clients"\)/);
+  assert.match(bookingHome, /Baza klientów/);
+  assert.match(bookingHome, /Dodaj klienta/);
+  assert.match(bookingHome, /Zapisz i umów/);
+  assert.match(bookingHome, /Poza grafikiem/);
+  assert.match(bookingHome, /const handleSaveClientFromDialog = async/);
+  assert.match(bookingHome, /Ten termin nakłada się na inną wizytę/);
+  assert.match(bookingHome, /\[`appointments\/\$\{appointmentId\}`\] = manualAppointment/);
+  assert.match(styles, /\.client-creator-modal/);
+  assert.match(styles, /\.manual-booking-grid/);
+  assert.match(styles, /\.book-client-button/);
+});
+
 test("keeps the mastered admin schedule and availability editor", async () => {
   const [bookingHome, styles] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
