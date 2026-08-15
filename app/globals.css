@@ -2728,34 +2728,6 @@ h2 {
   font-size: 1.1rem;
 }
 
-.add-team-member-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  min-height: 2.75rem;
-  padding: 0 0.88rem 0 0.62rem;
-  border: 1px solid rgba(76, 141, 255, 0.48);
-  border-radius: 999px;
-  background: rgba(76, 141, 255, 0.16);
-  color: #edf4ff;
-  cursor: pointer;
-  font-size: 0.76rem;
-  font-weight: 820;
-}
-
-.add-team-member-button > span {
-  display: grid;
-  place-items: center;
-  width: 1.55rem;
-  height: 1.55rem;
-  border-radius: 50%;
-  background: #4c8dff;
-  color: #ffffff;
-  font-size: 1.15rem;
-  line-height: 1;
-}
-
 .team-member-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2946,10 +2918,6 @@ h2 {
   gap: 0.45rem;
 }
 
-.team-member-account-actions button:first-child {
-  color: #bfd5ff;
-}
-
 .team-member-quick-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -3096,13 +3064,13 @@ h2 {
   border-color: rgba(76, 141, 255, 0.66);
 }
 
-.team-invitation-help,
+.team-account-help,
 .team-member-form .work-feedback,
 .team-member-dialog-actions {
   grid-column: 1 / -1;
 }
 
-.team-invitation-help {
+.team-account-help {
   margin: -0.1rem 0 0;
   color: #7f8999;
   font-size: 0.72rem;
@@ -3132,63 +3100,6 @@ h2 {
   border-color: rgba(48, 209, 88, 0.4);
   background: rgba(48, 209, 88, 0.18);
   color: #eaffef;
-}
-
-.invitation-notice {
-  position: fixed;
-  z-index: 120;
-  right: 1rem;
-  bottom: calc(1rem + env(safe-area-inset-bottom));
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.65rem;
-  width: min(27rem, calc(100vw - 2rem));
-  padding: 0.82rem 0.9rem;
-  border: 1px solid rgba(76, 141, 255, 0.42);
-  border-radius: 0.85rem;
-  background: rgba(17, 22, 32, 0.98);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.38);
-}
-
-.invitation-notice.success {
-  border-color: rgba(48, 209, 88, 0.42);
-}
-
-.invitation-notice > span {
-  display: grid;
-  place-items: center;
-  width: 1.55rem;
-  height: 1.55rem;
-  border-radius: 50%;
-  background: rgba(76, 141, 255, 0.2);
-  color: #dbe9ff;
-  font-size: 0.85rem;
-  font-weight: 900;
-}
-
-.invitation-notice.success > span {
-  background: rgba(48, 209, 88, 0.2);
-  color: #aaffbf;
-}
-
-.invitation-notice p {
-  margin: 0;
-  color: #e6eaf1;
-  font-size: 0.8rem;
-  font-weight: 680;
-  line-height: 1.4;
-}
-
-.invitation-notice button {
-  width: 2rem;
-  height: 2rem;
-  border: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.07);
-  color: #dce1ea;
-  cursor: pointer;
-  font-size: 1.15rem;
 }
 
 .barber-profile-view {
@@ -7957,10 +7868,6 @@ h2 {
     flex-direction: column;
   }
 
-  .add-team-member-button {
-    width: 100%;
-  }
-
   .team-member-list {
     grid-template-columns: 1fr;
   }
@@ -7996,7 +7903,7 @@ h2 {
   }
 
   .team-member-form label,
-  .team-invitation-help,
+  .team-account-help,
   .team-member-form .work-feedback,
   .team-member-dialog-actions {
     grid-column: 1;

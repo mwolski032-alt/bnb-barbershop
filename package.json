@@ -10,7 +10,7 @@
     "build": "vinext build",
     "build:netlify": "node build/netlify-build.mjs",
     "start": "vinext start",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/team-invitations.test.mjs",
+    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/notification-routing.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },

@@ -4,6 +4,11 @@ const databaseUrl =
   process.env.FIREBASE_DATABASE_URL ??
   "https://bnbbarber-9a7bd-default-rtdb.europe-west1.firebasedatabase.app";
 
+const fixedBarberUserIds = {
+  mateusz: "XxBe4dwVYWZPtl004J4tWq6AMZ73",
+  kacper: "TVwF6j7ePiTFhiGTWWPrq9nmRvJ3",
+};
+
 const getSiteUrl = (request) => {
   const netlifyUrl = process.env.URL || process.env.DEPLOY_PRIME_URL;
   if (netlifyUrl) return netlifyUrl;
@@ -170,9 +175,11 @@ const readBarberContact = async (accessToken, barberId) => {
   }
 
   const member = (await response.json()) ?? {};
+  const active = member.active !== false;
   return {
-    email: String(member.email ?? "").trim().toLocaleLowerCase("pl"),
-    userId: String(member.userId ?? "").trim(),
+    active,
+    email: active ? String(member.email ?? "").trim().toLocaleLowerCase("pl") : "",
+    userId: active ? String(member.userId || fixedBarberUserIds[barberId] || "").trim() : "",
     name: String(member.name ?? "").trim(),
   };
 };
@@ -360,6 +367,10 @@ const sendBarberEmail = async (copy, appointment) => {
       failed: 1,
       error: error instanceof Error ? error.message : "Could not resolve barber email.",
     };
+  }
+
+  if (!barberContact.active) {
+    return { enabled: false, sent: 0, failed: 0, error: "Barber account is inactive." };
   }
 
   const recipient =

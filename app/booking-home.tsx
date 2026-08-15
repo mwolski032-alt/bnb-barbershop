@@ -23,11 +23,6 @@ import { firebaseApp, realtimeDb } from "./lib/firebase";
 import {
   sendAppointmentNotification,
 } from "./lib/notifications";
-import {
-  claimTeamInvitation,
-  createTeamInvitation,
-  resendTeamInvitation,
-} from "./lib/team-invitations";
 
 type Availability = "high" | "medium" | "low" | "none";
 type Step = "booking" | "confirm" | "success" | "admin";
@@ -213,10 +208,6 @@ type BarberProfile = {
   email: string;
   active: boolean;
   access: Record<BarberAdminSection, boolean>;
-  inviteStatus?: "pending" | "accepted" | "";
-  inviteSentAt?: number;
-  inviteExpiresAt?: number;
-  inviteAcceptedAt?: number;
   createdAt?: number;
   updatedAt?: number;
 };
@@ -225,8 +216,6 @@ type TeamMemberDraft = {
   name: string;
   email: string;
 };
-
-type InvitationNotice = WorkFeedback | null;
 
 type BarberDetails = {
   displayName: string;
@@ -246,7 +235,10 @@ type ProfileAvatarProps = {
 };
 
 const ownerUserIds = new Set(["xkyDu2Lb1Ma8McF7yfyv8PIAj1M2"]);
-const barberUserIds = new Map([["XxBe4dwVYWZPtl004J4tWq6AMZ73", "mateusz"]]);
+const fixedBarberUserIds: Record<string, string> = {
+  mateusz: "XxBe4dwVYWZPtl004J4tWq6AMZ73",
+  kacper: "TVwF6j7ePiTFhiGTWWPrq9nmRvJ3",
+};
 const defaultBarberId = "mateusz";
 const barberAdminSections: BarberAdminSection[] = [
   "schedule",
@@ -270,22 +262,20 @@ const defaultBarbers: BarberProfile[] = [
     name: "Mateusz",
     label: "Barber 1",
     accent: "blue",
-    userId: "XxBe4dwVYWZPtl004J4tWq6AMZ73",
+    userId: fixedBarberUserIds.mateusz,
     email: "",
     active: true,
     access: fullBarberAccess,
-    inviteStatus: "accepted",
   },
   {
     id: "kacper",
     name: "Kacper",
     label: "Barber 2",
     accent: "mint",
-    userId: "",
+    userId: fixedBarberUserIds.kacper,
     email: "",
     active: true,
     access: fullBarberAccess,
-    inviteStatus: "",
   },
 ];
 const shouldRunDataMigration = import.meta.env.PROD;
@@ -842,17 +832,10 @@ const normalizeTeamMember = (
   name: value?.name?.trim() || `Barber ${index + 1}`,
   label: value?.label?.trim() || `Barber ${index + 1}`,
   accent: value?.accent === "mint" ? "mint" : index % 2 === 0 ? "blue" : "mint",
-  userId: value?.userId?.trim() ?? "",
+  userId: fixedBarberUserIds[id] ?? value?.userId?.trim() ?? "",
   email: value?.email?.trim().toLocaleLowerCase("pl") ?? "",
   active: value?.active !== false,
   access: normalizeBarberAccess(value?.access),
-  inviteStatus:
-    value?.inviteStatus === "pending" || value?.inviteStatus === "accepted"
-      ? value.inviteStatus
-      : "",
-  inviteSentAt: Number(value?.inviteSentAt) || undefined,
-  inviteExpiresAt: Number(value?.inviteExpiresAt) || undefined,
-  inviteAcceptedAt: Number(value?.inviteAcceptedAt) || undefined,
   createdAt: Number(value?.createdAt) || undefined,
   updatedAt: Number(value?.updatedAt) || undefined,
 });
@@ -867,14 +850,6 @@ const teamMembersToRecord = (members: BarberProfile[]) =>
       },
     ]),
   );
-
-const readInvitationFromLocation = () => {
-  if (typeof window === "undefined") return null;
-  const params = new URLSearchParams(window.location.search);
-  const barberId = params.get("barber")?.trim() ?? "";
-  const inviteToken = params.get("invite")?.trim() ?? "";
-  return barberId && inviteToken ? { barberId, inviteToken } : null;
-};
 
 const resizeProfilePhoto = async (file: File) => {
   if (!file.type.startsWith("image/")) {
@@ -1072,15 +1047,13 @@ export function BookingHome() {
   const [selectedBarberId, setSelectedBarberId] = useState<string | null>(null);
   const [teamMembers, setTeamMembers] = useState<BarberProfile[]>(defaultBarbers);
   const [teamReady, setTeamReady] = useState(false);
-  const [teamDialogMemberId, setTeamDialogMemberId] = useState<"new" | string | null>(null);
+  const [teamDialogMemberId, setTeamDialogMemberId] = useState<string | null>(null);
   const [teamMemberDraft, setTeamMemberDraft] = useState<TeamMemberDraft>({
     name: "",
     email: "",
   });
   const [teamFeedback, setTeamFeedback] = useState<WorkFeedback | null>(null);
   const [isTeamSaving, setIsTeamSaving] = useState(false);
-  const [invitationNotice, setInvitationNotice] = useState<InvitationNotice>(null);
-  const [openInvitedBarberPanel, setOpenInvitedBarberPanel] = useState(false);
   const [legacyServices, setLegacyServices] = useState<Service[]>(defaultServices);
   const [barberServices, setBarberServices] = useState<Service[] | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState(defaultServices[0].id);
@@ -1148,7 +1121,6 @@ export function BookingHome() {
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const previousAppointmentsRef = useRef<Map<string, AdminAppointment> | null>(null);
   const silentNewAppointmentToastIdRef = useRef<string | null>(null);
-  const processedInvitationRef = useRef<string | null>(null);
   const bookingServiceRef = useRef<HTMLDivElement | null>(null);
   const bookingBarberRef = useRef<HTMLDivElement | null>(null);
   const bookingCalendarRef = useRef<HTMLDivElement | null>(null);
@@ -1173,18 +1145,11 @@ export function BookingHome() {
 
   const activeUser = currentUser;
   const isOwner = Boolean(activeUser && ownerUserIds.has(activeUser.uid));
-  const configuredSignedInBarber = activeUser
+  const configuredSignedInBarber = activeUser && teamReady
     ? teamMembers.find((member) => member.userId && member.userId === activeUser.uid) ?? null
     : null;
-  const legacySignedInBarberId = activeUser ? (barberUserIds.get(activeUser.uid) ?? null) : null;
-  const signedInBarberId = activeUser
-    ? configuredSignedInBarber
-      ? configuredSignedInBarber.active
-        ? configuredSignedInBarber.id
-        : null
-      : teamReady
-        ? null
-        : legacySignedInBarberId
+  const signedInBarberId = configuredSignedInBarber?.active
+    ? configuredSignedInBarber.id
     : null;
   const isBarber = Boolean(signedInBarberId);
   const isAdmin = isOwner || isBarber;
@@ -1722,10 +1687,9 @@ export function BookingHome() {
     smsClient?.appointments.find((appointment) => appointment.id === smsComposer?.appointmentId) ??
     null;
   const editingService = services.find((service) => service.id === editingServiceId) ?? null;
-  const editingTeamMember =
-    teamDialogMemberId && teamDialogMemberId !== "new"
-      ? teamMembers.find((member) => member.id === teamDialogMemberId) ?? null
-      : null;
+  const editingTeamMember = teamDialogMemberId
+    ? teamMembers.find((member) => member.id === teamDialogMemberId) ?? null
+    : null;
   const activeTeamMembersCount = teamMembers.filter((member) => member.active).length;
   const hasSelectedBarber = Boolean(selectedBarber);
   const hasSelectedDay = selectedKey === selectedDayKey && availableTimes.length > 0;
@@ -1885,55 +1849,6 @@ export function BookingHome() {
   }, []);
 
   useEffect(() => {
-    const invitation = readInvitationFromLocation();
-    if (!activeUser || !invitation) return;
-
-    const invitationKey = `${invitation.barberId}:${invitation.inviteToken}`;
-    if (processedInvitationRef.current === invitationKey) return;
-    processedInvitationRef.current = invitationKey;
-    let cancelled = false;
-
-    const claimInvitation = async () => {
-      const idToken = await getAuth(firebaseApp).currentUser?.getIdToken();
-      if (!idToken) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
-
-      const result = await claimTeamInvitation(idToken, invitation.barberId, invitation.inviteToken);
-      if (!result.ok) throw new Error(result.error);
-      if (cancelled) return;
-
-      const url = new URL(window.location.href);
-      url.searchParams.delete("barber");
-      url.searchParams.delete("invite");
-      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-      setInvitationNotice({
-        kind: "success",
-        message: "Konto barbera jest aktywne. Twój panel jest gotowy.",
-      });
-      setOpenInvitedBarberPanel(true);
-    };
-
-    void claimInvitation().catch((error) => {
-      if (!cancelled) {
-        processedInvitationRef.current = null;
-        setInvitationNotice({
-          kind: "error",
-          message: error instanceof Error ? error.message : "Nie udało się aktywować zaproszenia.",
-        });
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeUser]);
-
-  useEffect(() => {
-    if (!openInvitedBarberPanel || !isBarber) return;
-    setStep("admin");
-    setOpenInvitedBarberPanel(false);
-  }, [isBarber, openInvitedBarberPanel]);
-
-  useEffect(() => {
     previousAppointmentsRef.current = null;
     setSelectedBarberId(null);
     setNotificationPanelOpen(false);
@@ -1960,16 +1875,25 @@ export function BookingHome() {
         return;
       }
 
-      const loadedMembers = Object.entries(value)
-        .map(([id, member], index) => normalizeTeamMember(id, member, index))
-        .sort((first, second) => first.label.localeCompare(second.label, "pl"));
-      setTeamMembers(loadedMembers.length > 0 ? loadedMembers : defaultBarbers);
+      const loadedMembers = defaultBarbers.map((fallback, index) =>
+        normalizeTeamMember(fallback.id, value[fallback.id] ?? fallback, index),
+      );
+      setTeamMembers(loadedMembers);
       setTeamReady(true);
 
       if (shouldRunDataMigration && isOwner) {
         const migrationUpdates: Record<string, unknown> = {};
-        Object.entries(value).forEach(([id, member], index) => {
-          const normalized = normalizeTeamMember(id, member, index);
+        defaultBarbers.forEach((fallback, index) => {
+          const member = value[fallback.id];
+          const normalized = normalizeTeamMember(fallback.id, member ?? fallback, index);
+          if (!member) {
+            migrationUpdates[fallback.id] = normalized;
+            return;
+          }
+          const id = fallback.id;
+          if (member.userId !== fixedBarberUserIds[id]) {
+            migrationUpdates[`${id}/userId`] = fixedBarberUserIds[id];
+          }
           if (typeof member.active !== "boolean") {
             migrationUpdates[`${id}/active`] = normalized.active;
           }
@@ -1977,6 +1901,15 @@ export function BookingHome() {
             if (typeof member.access?.[section] !== "boolean") {
               migrationUpdates[`${id}/access/${section}`] = true;
             }
+          });
+          [
+            "inviteStatus",
+            "inviteTokenHash",
+            "inviteSentAt",
+            "inviteExpiresAt",
+            "inviteAcceptedAt",
+          ].forEach((field) => {
+            if (field in member) migrationUpdates[`${id}/${field}`] = null;
           });
         });
         if (Object.keys(migrationUpdates).length > 0) {
@@ -2929,12 +2862,6 @@ export function BookingHome() {
     setWorkFeedback(null);
   };
 
-  const openNewTeamMemberDialog = () => {
-    setTeamMemberDraft({ name: "", email: "" });
-    setTeamFeedback(null);
-    setTeamDialogMemberId("new");
-  };
-
   const openTeamMemberEditDialog = (member: BarberProfile) => {
     setTeamMemberDraft({
       name: member.name,
@@ -2949,46 +2876,20 @@ export function BookingHome() {
 
     const name = teamMemberDraft.name.trim();
     const email = teamMemberDraft.email.trim().toLocaleLowerCase("pl");
-    const existingMember =
-      teamDialogMemberId && teamDialogMemberId !== "new"
-        ? teamMembers.find((member) => member.id === teamDialogMemberId) ?? null
-        : null;
+    const existingMember = teamDialogMemberId
+      ? teamMembers.find((member) => member.id === teamDialogMemberId) ?? null
+      : null;
 
-    if (name.length < 2 || !isValidEmail(email)) {
-      setTeamFeedback({
-        kind: "error",
-        message: existingMember
-          ? "Podaj imię i poprawny adres e-mail."
-          : "Podaj imię i adres e-mail, na który wyślemy zaproszenie.",
-      });
+    if (!existingMember) {
+      setTeamFeedback({ kind: "error", message: "Nie znaleziono konta barbera." });
       return;
     }
 
-    if (!existingMember) {
-      try {
-        setIsTeamSaving(true);
-        setTeamFeedback(null);
-        const idToken = await getAuth(firebaseApp).currentUser?.getIdToken();
-        if (!idToken) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
-        const result = await createTeamInvitation(idToken, {
-          name,
-          email,
-          access: fullBarberAccess,
-        });
-        if (!result.ok) throw new Error(result.error);
-        setTeamDialogMemberId(null);
-        setTeamFeedback({
-          kind: "success",
-          message: `Zaproszenie dla ${name} zostało wysłane na ${email}.`,
-        });
-      } catch (error) {
-        setTeamFeedback({
-          kind: "error",
-          message: error instanceof Error ? error.message : "Nie udało się wysłać zaproszenia.",
-        });
-      } finally {
-        setIsTeamSaving(false);
-      }
+    if (name.length < 2 || (email && !isValidEmail(email))) {
+      setTeamFeedback({
+        kind: "error",
+        message: "Podaj imię oraz poprawny adres e-mail albo pozostaw go pusty.",
+      });
       return;
     }
 
@@ -3024,26 +2925,6 @@ export function BookingHome() {
       setTeamDialogMemberId(null);
     } catch {
       setTeamFeedback({ kind: "error", message: "Nie udało się zapisać członka zespołu." });
-    } finally {
-      setIsTeamSaving(false);
-    }
-  };
-
-  const resendPendingTeamInvitation = async (member: BarberProfile) => {
-    if (!isOwner || isTeamSaving || member.userId) return;
-    try {
-      setIsTeamSaving(true);
-      setTeamFeedback(null);
-      const idToken = await getAuth(firebaseApp).currentUser?.getIdToken();
-      if (!idToken) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
-      const result = await resendTeamInvitation(idToken, member.id);
-      if (!result.ok) throw new Error(result.error);
-      setTeamFeedback({ kind: "success", message: `Zaproszenie dla ${member.name} zostało wysłane ponownie.` });
-    } catch (error) {
-      setTeamFeedback({
-        kind: "error",
-        message: error instanceof Error ? error.message : "Nie udało się wysłać zaproszenia.",
-      });
     } finally {
       setIsTeamSaving(false);
     }
@@ -5136,13 +5017,9 @@ export function BookingHome() {
                 <div className="team-management-view">
                   <div className="team-management-toolbar">
                     <div>
-                      <p className="section-label">Konta i dostęp</p>
-                      <strong>Zarządzaj barberami</strong>
+                      <p className="section-label">Stały skład</p>
+                      <strong>Konta i zakres dostępu</strong>
                     </div>
-                    <button className="add-team-member-button" type="button" onClick={openNewTeamMemberDialog}>
-                      <span aria-hidden="true">+</span>
-                      Dodaj barbera
-                    </button>
                   </div>
 
                   {teamFeedback && !teamDialogMemberId ? (
@@ -5170,11 +5047,11 @@ export function BookingHome() {
                                 {member.email || profile.email || "Brak adresu e-mail"}
                               </span>
                             </div>
-                            <label className="team-active-switch" title={member.userId ? undefined : "Konto aktywuje się po przyjęciu zaproszenia."}>
+                            <label className="team-active-switch">
                               <input
                                 type="checkbox"
                                 checked={member.active}
-                                disabled={isTeamSaving || !member.userId}
+                                disabled={isTeamSaving}
                                 onChange={(event) =>
                                   void updateTeamMemberActive(member, event.target.checked)
                                 }
@@ -5187,26 +5064,9 @@ export function BookingHome() {
                           <div className="team-member-account">
                             <span>
                               <small>Konto Google</small>
-                              <strong>
-                                {member.userId
-                                  ? "Połączone"
-                                  : member.inviteStatus === "pending"
-                                    ? "Zaproszenie wysłane"
-                                    : member.email
-                                      ? "Gotowe do zaproszenia"
-                                      : "Brak adresu e-mail"}
-                              </strong>
+                              <strong>Połączone</strong>
                             </span>
                             <div className="team-member-account-actions">
-                              {!member.userId && member.email ? (
-                                <button
-                                  type="button"
-                                  disabled={isTeamSaving}
-                                  onClick={() => void resendPendingTeamInvitation(member)}
-                                >
-                                  Wyślij ponownie
-                                </button>
-                              ) : null}
                               <button type="button" onClick={() => openTeamMemberEditDialog(member)}>
                                 Edytuj dane
                               </button>
@@ -5998,7 +5858,7 @@ export function BookingHome() {
         </section>
       )}
 
-      {teamDialogMemberId && isOwner && visibleStep === "admin" ? (
+      {teamDialogMemberId && editingTeamMember && isOwner && visibleStep === "admin" ? (
         <div
           className="client-modal-backdrop team-member-dialog-backdrop"
           role="presentation"
@@ -6033,12 +5893,8 @@ export function BookingHome() {
                 <span className="team-icon" />
               </span>
               <div>
-                <p className="eyebrow">
-                  {editingTeamMember ? "Edycja konta" : "Nowy członek zespołu"}
-                </p>
-                <h2 id="team-member-dialog-title">
-                  {editingTeamMember ? editingTeamMember.name : "Dodaj barbera"}
-                </h2>
+                <p className="eyebrow">Edycja konta</p>
+                <h2 id="team-member-dialog-title">{editingTeamMember.name}</h2>
               </div>
             </div>
 
@@ -6073,13 +5929,10 @@ export function BookingHome() {
                   }
                   autoComplete="email"
                   placeholder="barber@gmail.com"
-                  required
                 />
               </label>
-              <p className="team-invitation-help">
-                {editingTeamMember
-                  ? "Zmiana adresu wymaga ponownego wysłania zaproszenia, jeśli konto nie jest jeszcze połączone."
-                  : "Wyślemy jednorazowe zaproszenie. Barber zaloguje się wskazanym kontem Google, a system połączy je automatycznie."}
+              <p className="team-account-help">
+                E-mail jest opcjonalny i służy do powiadomień o wizytach. Dostęp Google jest przypisany na stałe.
               </p>
 
               {teamFeedback ? (
@@ -6095,22 +5948,12 @@ export function BookingHome() {
                   Anuluj
                 </button>
                 <button className="primary" type="submit" disabled={isTeamSaving}>
-                  {isTeamSaving ? "Zapisywanie..." : editingTeamMember ? "Zapisz zmiany" : "Dodaj barbera"}
+                  {isTeamSaving ? "Zapisywanie..." : "Zapisz zmiany"}
                 </button>
               </div>
             </form>
           </section>
         </div>
-      ) : null}
-
-      {invitationNotice ? (
-        <aside className={`invitation-notice ${invitationNotice.kind}`} role="status">
-          <span aria-hidden="true">{invitationNotice.kind === "success" ? "✓" : "!"}</span>
-          <p>{invitationNotice.message}</p>
-          <button type="button" onClick={() => setInvitationNotice(null)} aria-label="Zamknij">
-            ×
-          </button>
-        </aside>
       ) : null}
 
       {notificationPanelOpen ? (

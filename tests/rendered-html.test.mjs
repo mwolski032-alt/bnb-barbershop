@@ -152,10 +152,8 @@ test("keeps the owner-only multi-barber workspace", async () => {
   ]);
 
   assert.match(bookingHome, /ownerUserIds = new Set\(\["xkyDu2Lb1Ma8McF7yfyv8PIAj1M2"\]\)/);
-  assert.match(
-    bookingHome,
-    /barberUserIds = new Map\(\[\["XxBe4dwVYWZPtl004J4tWq6AMZ73", "mateusz"\]\]\)/,
-  );
+  assert.match(bookingHome, /mateusz: "XxBe4dwVYWZPtl004J4tWq6AMZ73"/);
+  assert.match(bookingHome, /kacper: "TVwF6j7ePiTFhiGTWWPrq9nmRvJ3"/);
   assert.match(bookingHome, /name: "Mateusz",[\s\S]*label: "Barber 1"/);
   assert.match(bookingHome, /name: "Kacper",[\s\S]*label: "Barber 2"/);
   assert.match(bookingHome, /Czyj panel chcesz otworzyć\?/);
@@ -223,11 +221,9 @@ test("keeps settlement-driven admin analytics", async () => {
   assert.match(styles, /repeat\(var\(--admin-nav-items, 6\), minmax\(0, 1fr\)\)/);
 });
 
-test("keeps owner team management, invitations and role-aware admin avatars", async () => {
-  const [bookingHome, invitationClient, invitationFunction, styles] = await Promise.all([
+test("keeps the fixed owner-managed team and role-aware admin avatars", async () => {
+  const [bookingHome, styles] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/lib/team-invitations.ts", import.meta.url), "utf8"),
-    readFile(new URL("../netlify/functions/team-invitations.mjs", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
@@ -243,16 +239,12 @@ test("keeps owner team management, invitations and role-aware admin avatars", as
   );
   assert.match(bookingHome, /openOwnerBarberPanel\(member\.id, "schedule"\)/);
   assert.match(bookingHome, /openOwnerBarberPanel\(member\.id, "analytics"\)/);
-  assert.match(bookingHome, /createTeamInvitation\(idToken/);
-  assert.match(bookingHome, /resendPendingTeamInvitation/);
-  assert.match(bookingHome, /claimTeamInvitation\(idToken/);
+  assert.match(bookingHome, /activeUser && teamReady/);
+  assert.match(bookingHome, /configuredSignedInBarber\?\.active/);
+  assert.match(bookingHome, /fixedBarberUserIds\[id\]/);
+  assert.doesNotMatch(bookingHome, /Dodaj barbera/);
+  assert.doesNotMatch(bookingHome, /createTeamInvitation/);
   assert.doesNotMatch(bookingHome, /Identyfikator użytkownika Firebase/);
-  assert.match(invitationClient, /action: "create"/);
-  assert.match(invitationClient, /action: "resend"/);
-  assert.match(invitationClient, /action: "claim"/);
-  assert.match(invitationFunction, /inviteLifetimeMs = 7 \* 24 \* 60 \* 60 \* 1000/);
-  assert.match(invitationFunction, /hashInviteToken/);
-  assert.match(invitationFunction, /Zaloguj się kontem Google wskazanym w zaproszeniu/);
   assert.match(styles, /\.team-member-card/);
   assert.match(styles, /\.team-access-grid/);
   assert.match(styles, /--admin-nav-items/);
@@ -275,6 +267,8 @@ test("keeps barber ownership and excludes the owner from appointment notificatio
   assert.match(notifications, /barberId: string/);
   assert.match(sendPush, /process\.env\.BARBER_MATEUSZ_EMAIL/);
   assert.doesNotMatch(sendPush, /process\.env\.ADMIN_EMAIL/);
+  assert.match(sendPush, /kacper: "TVwF6j7ePiTFhiGTWWPrq9nmRvJ3"/);
+  assert.match(sendPush, /if \(!barberContact\.active\)/);
   assert.match(sendPush, /target: "barber"/);
   assert.match(sendPush, /uid === barberUserId/);
   assert.match(sendPush, /Owner SMS notifications are disabled/);
