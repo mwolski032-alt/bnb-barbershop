@@ -206,11 +206,32 @@ test("keeps settlement-driven admin analytics", async () => {
   assert.match(bookingHome, /const isPotentialNoShow/);
   assert.match(bookingHome, /const settleAdminAppointment = async/);
   assert.match(bookingHome, /status: "completed"/);
-  assert.match(bookingHome, /settledAmount: getServicePriceValue/);
+  assert.match(bookingHome, /const settledAmount = getServicePriceValue/);
+  assert.match(bookingHome, /settlement: \{[\s\S]*barberId: appointment\.barberId/);
   assert.match(bookingHome, /aria-label="Analiza działalności"/);
   assert.match(bookingHome, /Potencjalne nieobecności/);
   assert.match(styles, /\.analytics-kpi-grid/);
   assert.match(styles, /\.analytics-chart/);
   assert.match(styles, /\.admin-nav-pill\.analytics/);
   assert.match(styles, /repeat\(6, minmax\(0, 1fr\)\)/);
+});
+
+test("keeps barber ownership on operational records and Mateusz email routing", async () => {
+  const [bookingHome, notifications, sendPush] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/notifications.ts", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/send-push.mjs", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /type Service = \{[\s\S]*barberId: string/);
+  assert.match(bookingHome, /type Appointment = \{[\s\S]*barberId: string/);
+  assert.match(bookingHome, /type AvailabilityWindow = \{[\s\S]*barberId: string/);
+  assert.match(bookingHome, /servicesToRecord = \(items: Service\[\], barberId/);
+  assert.match(bookingHome, /migrationUpdates\[`appointments\/\$\{id\}\/barberId`\]/);
+  assert.match(bookingHome, /shouldRunDataMigration && isAdmin/);
+  assert.match(bookingHome, /settlement: \{[\s\S]*amount: settledAmount/);
+  assert.match(notifications, /barberId: string/);
+  assert.match(sendPush, /process\.env\.BARBER_MATEUSZ_EMAIL/);
+  assert.match(sendPush, /appointment\.barberId === "mateusz"/);
+  assert.match(sendPush, /appointmentBarberId: eventAppointment\.barberId/);
 });

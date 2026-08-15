@@ -30,6 +30,7 @@ type AdminSection = "schedule" | "clients" | "analytics" | "work" | "services" |
 
 type Service = {
   id: string;
+  barberId: string;
   name: string;
   price: string;
   durationMinutes: number;
@@ -38,6 +39,7 @@ type Service = {
 
 type Appointment = {
   id: string;
+  barberId: string;
   dateKey: string;
   startTime: string;
   durationMinutes: number;
@@ -82,7 +84,6 @@ type BookingSummary = {
 };
 
 type AdminAppointment = Appointment & {
-  barberId?: string;
   clientId?: string;
   clientName: string;
   clientEmail?: string;
@@ -95,10 +96,16 @@ type AdminAppointment = Appointment & {
   status?: AppointmentStatus;
   settledAt?: number;
   settledAmount?: number;
+  settlement?: {
+    barberId: string;
+    settledAt: number;
+    amount: number;
+  };
 };
 
 type AvailabilityWindow = {
   id: string;
+  barberId: string;
   dateKey: string;
   startTime: string;
   endTime: string;
@@ -202,6 +209,7 @@ const defaultBarbers: BarberProfile[] = [
   { id: "mateusz", name: "Mateusz", label: "Barber 1", accent: "blue" },
   { id: "kacper", name: "Kacper", label: "Barber 2", accent: "mint" },
 ];
+const shouldRunDataMigration = import.meta.env.PROD;
 const maxStoredNotifications = 40;
 const emptyBarberDetails: BarberDetails = {
   displayName: "",
@@ -215,6 +223,7 @@ const emptyBarberDetails: BarberDetails = {
 const defaultServices: Service[] = [
   {
     id: "mens-haircut",
+    barberId: defaultBarberId,
     name: "Strzyżenie męskie",
     price: "30 zł",
     durationMinutes: 90,
@@ -222,6 +231,7 @@ const defaultServices: Service[] = [
   },
   {
     id: "beard-trim",
+    barberId: defaultBarberId,
     name: "Trymowanie brody",
     price: "20 zł",
     durationMinutes: 60,
@@ -631,14 +641,31 @@ const rangesOverlap = (
   durationB: number,
 ) => startA < startB + durationB && startA + durationA > startB;
 
-const normalizeWorkSettings = (value: Partial<WorkSettings> | null): WorkSettings => ({
-  availability: value?.availability ?? {},
+const normalizeWorkSettings = (
+  value: Partial<WorkSettings> | null,
+  barberId = defaultBarberId,
+): WorkSettings => ({
+  availability: Object.fromEntries(
+    Object.entries(value?.availability ?? {}).map(([key, windowItem]) => [
+      key,
+      {
+        ...windowItem,
+        id: windowItem.id || key,
+        barberId: windowItem.barberId || barberId,
+        dateKey: windowItem.dateKey || key,
+      },
+    ]),
+  ),
 });
 
-const normalizeServices = (value: Record<string, Partial<Service>> | null): Service[] => {
+const normalizeServices = (
+  value: Record<string, Partial<Service>> | null,
+  barberId = defaultBarberId,
+): Service[] => {
   const loadedServices = Object.entries(value ?? {})
     .map(([id, service], index) => ({
       id: service.id ?? id,
+      barberId: service.barberId || barberId,
       name: service.name?.trim() || "Usługa",
       price: service.price?.trim() || "0 zł",
       durationMinutes: Number(service.durationMinutes) || 30,
@@ -649,8 +676,13 @@ const normalizeServices = (value: Record<string, Partial<Service>> | null): Serv
   return loadedServices.length > 0 ? loadedServices : defaultServices;
 };
 
-const servicesToRecord = (items: Service[]) =>
-  Object.fromEntries(items.map((service, index) => [service.id, { ...service, order: index }]));
+const servicesToRecord = (items: Service[], barberId = defaultBarberId) =>
+  Object.fromEntries(
+    items.map((service, index) => [
+      service.id,
+      { ...service, barberId, order: index },
+    ]),
+  );
 
 const normalizeBarberDetails = (value: Partial<BarberDetails> | null): BarberDetails => ({
   displayName: value?.displayName?.trim() ?? "",
@@ -991,8 +1023,12 @@ export function BookingHome() {
   const schedulingAppointments = reschedulingAppointment
     ? appointments.filter((appointment) => appointment.id !== reschedulingAppointment.id)
     : appointments;
+  const fallbackActiveService = useMemo(
+    () => ({ ...defaultServices[0], barberId: activeBarberId }),
+    [activeBarberId],
+  );
   const selectedService =
-    services.find((item) => item.id === selectedServiceId) ?? services[0] ?? defaultServices[0];
+    services.find((item) => item.id === selectedServiceId) ?? services[0] ?? fallbackActiveService;
   const days = useMemo(
     () => buildCalendarDays(visibleMonth, selectedService, schedulingAppointments, workSettings, today),
     [schedulingAppointments, selectedService, visibleMonth, workSettings, today],
@@ -1570,28 +1606,60 @@ export function BookingHome() {
 
     return onValue(appointmentsRef, (snapshot) => {
       const value = snapshot.val() as Record<string, Partial<AdminAppointment>> | null;
+      const migrationUpdates: Record<string, unknown> = {};
       const loadedAppointments = Object.entries(value ?? {})
-        .map(([id, appointment]) => ({
-          id: appointment.id ?? id,
-          dateKey: appointment.dateKey ?? dayKey(today),
-          startTime: appointment.startTime ?? "00:00",
-          durationMinutes: Number(appointment.durationMinutes) || 30,
-          barberId: appointment.barberId || defaultBarberId,
-          clientId: appointment.clientId ?? "",
-          clientName: appointment.clientName ?? "Klient",
-          clientEmail: appointment.clientEmail ?? "",
-          clientPhotoUrl: appointment.clientPhotoUrl ?? "",
-          phone: appointment.phone ?? "",
-          userId: appointment.userId ?? "",
-          serviceName: appointment.serviceName ?? "Usługa",
-          price: appointment.price ?? "0 zł",
-          color: normalizeAppointmentColor(appointment.color),
-          status: normalizeAppointmentStatus(appointment.status),
-          settledAt: Number(appointment.settledAt) || undefined,
-          settledAmount: Number.isFinite(Number(appointment.settledAmount))
-            ? Number(appointment.settledAmount)
-            : undefined,
-        }))
+        .map(([id, appointment]) => {
+          const barberId = appointment.barberId || defaultBarberId;
+          const settledAt =
+            Number(appointment.settlement?.settledAt ?? appointment.settledAt) || undefined;
+          const rawSettledAmount = appointment.settlement?.amount ?? appointment.settledAmount;
+          const settledAmount = Number.isFinite(Number(rawSettledAmount))
+            ? Number(rawSettledAmount)
+            : undefined;
+
+          if (!appointment.barberId) {
+            migrationUpdates[`appointments/${id}/barberId`] = barberId;
+          }
+          if (
+            settledAt !== undefined &&
+            settledAmount !== undefined &&
+            !appointment.settlement?.barberId
+          ) {
+            migrationUpdates[`appointments/${id}/settlement`] = {
+              barberId,
+              settledAt,
+              amount: settledAmount,
+            };
+          }
+
+          return {
+            id: appointment.id ?? id,
+            barberId,
+            dateKey: appointment.dateKey ?? dayKey(today),
+            startTime: appointment.startTime ?? "00:00",
+            durationMinutes: Number(appointment.durationMinutes) || 30,
+            clientId: appointment.clientId ?? "",
+            clientName: appointment.clientName ?? "Klient",
+            clientEmail: appointment.clientEmail ?? "",
+            clientPhotoUrl: appointment.clientPhotoUrl ?? "",
+            phone: appointment.phone ?? "",
+            userId: appointment.userId ?? "",
+            serviceName: appointment.serviceName ?? "Usługa",
+            price: appointment.price ?? "0 zł",
+            color: normalizeAppointmentColor(appointment.color),
+            status: normalizeAppointmentStatus(appointment.status),
+            settledAt,
+            settledAmount,
+            settlement:
+              settledAt !== undefined && settledAmount !== undefined
+                ? {
+                    barberId: appointment.settlement?.barberId || barberId,
+                    settledAt,
+                    amount: settledAmount,
+                  }
+                : undefined,
+          };
+        })
         .filter((appointment) => appointment.status !== "cancelled")
         .sort((first, second) => {
           if (first.dateKey !== second.dateKey) return first.dateKey.localeCompare(second.dateKey);
@@ -1602,15 +1670,19 @@ export function BookingHome() {
       setAppointments(
         loadedAppointments
           .filter((appointment) => appointment.barberId === defaultBarberId)
-          .map(({ id, dateKey, startTime, durationMinutes }) => ({
+          .map(({ id, barberId, dateKey, startTime, durationMinutes }) => ({
             id,
+            barberId,
             dateKey,
             startTime,
             durationMinutes,
           })),
       );
+      if (shouldRunDataMigration && isAdmin && Object.keys(migrationUpdates).length > 0) {
+        void update(ref(realtimeDb), migrationUpdates);
+      }
     });
-  }, [activeUser, today]);
+  }, [activeUser, isAdmin, today]);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -1799,9 +1871,20 @@ export function BookingHome() {
     const workSettingsRef = ref(realtimeDb, "workSettings");
 
     return onValue(workSettingsRef, (snapshot) => {
-      setLegacyWorkSettings(normalizeWorkSettings(snapshot.val() as Partial<WorkSettings> | null));
+      const value = snapshot.val() as Partial<WorkSettings> | null;
+      setLegacyWorkSettings(normalizeWorkSettings(value, defaultBarberId));
+      if (shouldRunDataMigration && isAdmin && value?.availability) {
+        const missingBarberIds = Object.fromEntries(
+          Object.entries(value.availability)
+            .filter(([, windowItem]) => !windowItem.barberId)
+            .map(([key]) => [`availability/${key}/barberId`, defaultBarberId]),
+        );
+        if (Object.keys(missingBarberIds).length > 0) {
+          void update(workSettingsRef, missingBarberIds);
+        }
+      }
     });
-  }, [activeUser]);
+  }, [activeUser, isAdmin]);
 
   useEffect(() => {
     if (!activeUser) {
@@ -1811,13 +1894,24 @@ export function BookingHome() {
 
     const barberWorkSettingsRef = ref(realtimeDb, `barbers/${activeBarberId}/workSettings`);
     return onValue(barberWorkSettingsRef, (snapshot) => {
+      const value = snapshot.val() as Partial<WorkSettings> | null;
       setBarberWorkSettings(
         snapshot.exists()
-          ? normalizeWorkSettings(snapshot.val() as Partial<WorkSettings> | null)
+          ? normalizeWorkSettings(value, activeBarberId)
           : null,
       );
+      if (shouldRunDataMigration && isAdmin && value?.availability) {
+        const missingBarberIds = Object.fromEntries(
+          Object.entries(value.availability)
+            .filter(([, windowItem]) => !windowItem.barberId)
+            .map(([key]) => [`availability/${key}/barberId`, activeBarberId]),
+        );
+        if (Object.keys(missingBarberIds).length > 0) {
+          void update(barberWorkSettingsRef, missingBarberIds);
+        }
+      }
     });
-  }, [activeBarberId, activeUser]);
+  }, [activeBarberId, activeUser, isAdmin]);
 
   useEffect(() => {
     if (!activeUser) {
@@ -1829,10 +1923,19 @@ export function BookingHome() {
 
     return onValue(servicesRef, (snapshot) => {
       const value = snapshot.val() as Record<string, Partial<Service>> | null;
-      setLegacyServices(normalizeServices(value));
+      setLegacyServices(normalizeServices(value, defaultBarberId));
 
       if (!value && isAdmin) {
-        void set(servicesRef, servicesToRecord(defaultServices));
+        void set(servicesRef, servicesToRecord(defaultServices, defaultBarberId));
+      } else if (value && shouldRunDataMigration && isAdmin) {
+        const missingBarberIds = Object.fromEntries(
+          Object.entries(value)
+            .filter(([, service]) => !service.barberId)
+            .map(([id]) => [`${id}/barberId`, defaultBarberId]),
+        );
+        if (Object.keys(missingBarberIds).length > 0) {
+          void update(servicesRef, missingBarberIds);
+        }
       }
     });
   }, [activeUser, isAdmin]);
@@ -1846,9 +1949,19 @@ export function BookingHome() {
     const barberServicesRef = ref(realtimeDb, `barbers/${activeBarberId}/services`);
     return onValue(barberServicesRef, (snapshot) => {
       const value = snapshot.val() as Record<string, Partial<Service>> | null;
-      setBarberServices(snapshot.exists() ? normalizeServices(value) : null);
+      setBarberServices(snapshot.exists() ? normalizeServices(value, activeBarberId) : null);
+      if (value && shouldRunDataMigration && isAdmin) {
+        const missingBarberIds = Object.fromEntries(
+          Object.entries(value)
+            .filter(([, service]) => !service.barberId)
+            .map(([id]) => [`${id}/barberId`, activeBarberId]),
+        );
+        if (Object.keys(missingBarberIds).length > 0) {
+          void update(barberServicesRef, missingBarberIds);
+        }
+      }
     });
-  }, [activeBarberId, activeUser]);
+  }, [activeBarberId, activeUser, isAdmin]);
 
   useEffect(() => {
     if (selectedTime && !availableTimes.includes(selectedTime)) {
@@ -2109,6 +2222,7 @@ export function BookingHome() {
         key,
         {
           id: key,
+          barberId: activeBarberId,
           dateKey: key,
           startTime: availabilityDraft.startTime,
           endTime: availabilityDraft.endTime,
@@ -2200,6 +2314,7 @@ export function BookingHome() {
         ...workSettings.availability,
         [key]: {
           id: key,
+          barberId: activeBarberId,
           dateKey: key,
           startTime,
           endTime,
@@ -2267,6 +2382,7 @@ export function BookingHome() {
     const serviceId = editingServiceId ?? createServiceId(serviceDraft.name);
     const nextService: Service = {
       id: serviceId,
+      barberId: activeBarberId,
       name: serviceDraft.name.trim(),
       price: formatServicePrice(serviceDraft.price),
       durationMinutes,
@@ -2280,7 +2396,7 @@ export function BookingHome() {
       setIsSaving(true);
       await set(
         ref(realtimeDb, `barbers/${activeBarberId}/services`),
-        servicesToRecord(nextServices),
+        servicesToRecord(nextServices, activeBarberId),
       );
       if (!editingServiceId) {
         setSelectedServiceId(serviceId);
@@ -2303,7 +2419,7 @@ export function BookingHome() {
       setIsSaving(true);
       await set(
         ref(realtimeDb, `barbers/${activeBarberId}/services`),
-        servicesToRecord(nextServices),
+        servicesToRecord(nextServices, activeBarberId),
       );
       if (selectedServiceId === serviceId) {
         setSelectedServiceId(nextServices[0]?.id ?? defaultServices[0].id);
@@ -2435,10 +2551,12 @@ export function BookingHome() {
 
   const confirmClientRescheduledAppointment = async (appointmentId: string) => {
     if (isSaving) return;
+    const appointment = allAdminAppointments.find((item) => item.id === appointmentId);
 
     try {
       setIsSaving(true);
       await update(ref(realtimeDb, `appointments/${appointmentId}`), {
+        barberId: appointment?.barberId ?? defaultBarberId,
         status: "confirmed",
       });
     } finally {
@@ -2452,6 +2570,7 @@ export function BookingHome() {
     try {
       setIsSaving(true);
       await update(ref(realtimeDb, `appointments/${reschedulingAppointment.id}`), {
+        barberId: reschedulingAppointment.barberId,
         dateKey: selectedDayKey,
         startTime: selectedTime,
         status: "rescheduled",
@@ -2614,6 +2733,7 @@ export function BookingHome() {
     try {
       setIsSaving(true);
       await update(ref(realtimeDb, `appointments/${selectedAdminEditAppointment.id}`), {
+        barberId: selectedAdminEditAppointment.barberId,
         dateKey: adminEditDraft.dateKey,
         startTime: adminEditDraft.startTime,
         status: "rescheduled",
@@ -2638,6 +2758,7 @@ export function BookingHome() {
     }
 
     void update(ref(realtimeDb, `appointments/${appointmentId}`), {
+      barberId: appointment.barberId,
       dateKey: adminSelectedKey,
       startTime,
       status: "rescheduled",
@@ -2905,10 +3026,18 @@ export function BookingHome() {
 
     try {
       setSettlingAppointmentId(appointment.id);
+      const settledAt = Date.now();
+      const settledAmount = getServicePriceValue(appointment.price);
       await update(ref(realtimeDb, `appointments/${appointment.id}`), {
+        barberId: appointment.barberId,
         status: "completed",
-        settledAt: Date.now(),
-        settledAmount: getServicePriceValue(appointment.price),
+        settledAt,
+        settledAmount,
+        settlement: {
+          barberId: appointment.barberId,
+          settledAt,
+          amount: settledAmount,
+        },
       });
     } finally {
       setSettlingAppointmentId(null);

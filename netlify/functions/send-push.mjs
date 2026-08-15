@@ -100,6 +100,7 @@ const renderAppointmentEmail = (copy, appointment, intro) => `
     <p>${escapeHtml(intro ?? copy.body(appointment))}</p>
     <table style="border-collapse: collapse; margin-top: 16px;">
       <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Klient</td><td>${escapeHtml(appointment.clientName)}</td></tr>
+      <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Barber</td><td>${escapeHtml(appointment.barberId === "mateusz" ? "Mateusz" : appointment.barberId)}</td></tr>
       <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Telefon</td><td>${escapeHtml(appointment.phone ?? "brak")}</td></tr>
       <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Usluga</td><td>${escapeHtml(appointment.serviceName)}</td></tr>
       <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Termin</td><td>${escapeHtml(`${appointment.dateKey} ${appointment.startTime}`)}</td></tr>
@@ -467,12 +468,20 @@ const sendAdminEmail = async (copy, appointment) => {
     return { enabled: false, sent: 0, failed: 0, error: "" };
   }
 
+  const recipient =
+    appointment.barberId === "mateusz"
+      ? process.env.BARBER_MATEUSZ_EMAIL || process.env.ADMIN_EMAIL
+      : "";
+  if (!recipient) {
+    return { enabled: false, sent: 0, failed: 0, error: "" };
+  }
+
   return sendResendEmail({
-    to: process.env.ADMIN_EMAIL,
+    to: recipient,
     subject: `PILNE BNB: ${copy.title}`,
     text: buildWhatsAppMessageBody(copy, appointment),
     html: renderAppointmentEmail(copy, appointment),
-    idempotencyKey: `${appointment.id}-${appointment.event ?? "event"}-admin-email`,
+    idempotencyKey: `${appointment.id}-${appointment.event ?? "event"}-${appointment.barberId}-email`,
   });
 };
 
@@ -546,14 +555,18 @@ const handler = async (request) => {
     }
 
     const siteUrl = getSiteUrl(request);
+    const eventAppointment = {
+      ...appointment,
+      barberId: appointment.barberId || "mateusz",
+      event,
+    };
     const notification = {
       title: copy.title,
-      body: copy.body(appointment),
+      body: copy.body(eventAppointment),
     };
-    const eventAppointment = { ...appointment, event };
     const [sms, whatsapp, email, clientEmail, push] = await Promise.all([
-      sendAdminSms(copy, appointment),
-      sendAdminWhatsApp(copy, appointment),
+      sendAdminSms(copy, eventAppointment),
+      sendAdminWhatsApp(copy, eventAppointment),
       sendAdminEmail(copy, eventAppointment),
       sendClientEmail(event, eventAppointment),
       sendPushNotifications(copy, eventAppointment, notification, siteUrl),
@@ -564,6 +577,7 @@ const handler = async (request) => {
       appointmentId: appointment.id,
       target: copy.target,
       appointmentUserId: appointment.userId ?? "",
+      appointmentBarberId: eventAppointment.barberId,
       sent: push.result.sent,
       targets: push.result.targets,
       failed: push.result.failed,

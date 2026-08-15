@@ -128,6 +128,7 @@ export const sendAppointmentNotification = async (
     | "test_push",
   appointment: {
     id: string;
+    barberId: string;
     userId?: string;
     clientName: string;
     serviceName: string;
@@ -169,6 +170,7 @@ export const sendAppointmentNotification = async (
 export const sendTestNotification = async (user: NotificationUser) =>
   sendAppointmentNotification("test_push", {
     id: `test-${Date.now()}`,
+    barberId: "mateusz",
     userId: user.uid,
     clientName: user.displayName ?? "Klient",
     serviceName: "Test powiadomienia",
