@@ -266,6 +266,7 @@ test("keeps barber ownership and excludes the owner from appointment notificatio
   assert.match(bookingHome, /settlement: \{[\s\S]*amount: settledAmount/);
   assert.match(notifications, /barberId: string/);
   assert.match(sendPush, /process\.env\.BARBER_MATEUSZ_EMAIL/);
+  assert.match(sendPush, /process\.env\.BARBER_KACPER_EMAIL/);
   assert.doesNotMatch(sendPush, /process\.env\.ADMIN_EMAIL/);
   assert.match(sendPush, /kacper: "TVwF6j7ePiTFhiGTWWPrq9nmRvJ3"/);
   assert.match(sendPush, /if \(!barberContact\.active\)/);

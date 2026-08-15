@@ -9,6 +9,12 @@ const fixedBarberUserIds = {
   kacper: "TVwF6j7ePiTFhiGTWWPrq9nmRvJ3",
 };
 
+const getBarberFallbackEmail = (barberId) => {
+  if (barberId === "mateusz") return process.env.BARBER_MATEUSZ_EMAIL || "";
+  if (barberId === "kacper") return process.env.BARBER_KACPER_EMAIL || "";
+  return "";
+};
+
 const getSiteUrl = (request) => {
   const netlifyUrl = process.env.URL || process.env.DEPLOY_PRIME_URL;
   if (netlifyUrl) return netlifyUrl;
@@ -373,9 +379,7 @@ const sendBarberEmail = async (copy, appointment) => {
     return { enabled: false, sent: 0, failed: 0, error: "Barber account is inactive." };
   }
 
-  const recipient =
-    barberContact.email ||
-    (appointment.barberId === "mateusz" ? process.env.BARBER_MATEUSZ_EMAIL || "" : "");
+  const recipient = barberContact.email || getBarberFallbackEmail(appointment.barberId);
   if (!recipient) {
     return { enabled: false, sent: 0, failed: 0, error: "" };
   }

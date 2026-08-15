@@ -13,6 +13,7 @@ process.env.FIREBASE_DATABASE_URL = databaseUrl;
 process.env.FIREBASE_PROJECT_ID = "bnb-test";
 process.env.RESEND_API_KEY = "re_test";
 process.env.RESEND_FROM_EMAIL = "BNB <notifications@bnb.test>";
+process.env.BARBER_KACPER_EMAIL = "kacper-env@example.com";
 process.env.URL = "https://bnb.example";
 
 const database = {
@@ -21,7 +22,7 @@ const database = {
       kacper: {
         id: "kacper",
         name: "Kacper",
-        email: "kacper@example.com",
+        email: "",
         userId: "",
         active: true,
       },
@@ -65,13 +66,13 @@ globalThis.fetch = async (input, options = {}) => {
 
 const notificationModule = await import("../netlify/functions/send-push.mjs");
 
-const sendBookingNotification = (id) =>
+const sendBookingNotification = (id, event = "new_booking") =>
   notificationModule.default(
     new Request("https://bnb.example/.netlify/functions/send-push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        event: "new_booking",
+        event,
         appointment: {
           id,
           barberId: "kacper",
@@ -95,10 +96,27 @@ test("appointment notifications go only to the assigned active barber", async ()
   assert.deepEqual(sentPushes.map((payload) => payload.message.token), ["barber-token"]);
   assert.deepEqual(
     sentEmails.map((email) => email.to).sort(),
-    ["client@example.com", "kacper@example.com"],
+    ["client@example.com", "kacper-env@example.com"],
   );
   assert.equal(sentEmails.some((email) => email.to === "owner@example.com"), false);
   assert.equal(sentPushes.some((payload) => payload.message.token === "owner-token"), false);
+});
+
+test("Kacper email receives booking, reschedule and cancellation events", async () => {
+  sentEmails = [];
+  sentPushes = [];
+
+  for (const event of ["new_booking", "client_rescheduled", "client_cancelled"]) {
+    const response = await sendBookingNotification(`appointment-${event}`, event);
+    assert.equal(response.status, 200);
+  }
+
+  const kacperEmails = sentEmails.filter((email) => email.to === "kacper-env@example.com");
+  assert.equal(kacperEmails.length, 3);
+  assert.deepEqual(
+    kacperEmails.map((email) => email.subject),
+    ["PILNE BNB: Nowa wizyta", "PILNE BNB: Klient przesunal wizyte", "PILNE BNB: Klient odwolal wizyte"],
+  );
 });
 
 test("deactivated barber loses push and email notifications", async () => {
