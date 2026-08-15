@@ -17,7 +17,7 @@ import {
   signOut,
   type User,
 } from "firebase/auth";
-import { onValue, ref, remove, set, update } from "firebase/database";
+import { onValue, ref, remove, serverTimestamp, set, update } from "firebase/database";
 
 import { firebaseApp, realtimeDb } from "./lib/firebase";
 import {
@@ -26,7 +26,15 @@ import {
 
 type Availability = "high" | "medium" | "low" | "none";
 type Step = "booking" | "confirm" | "success" | "admin";
-type AdminSection = "schedule" | "clients" | "analytics" | "work" | "services" | "profile";
+type AdminSection =
+  | "schedule"
+  | "clients"
+  | "analytics"
+  | "work"
+  | "services"
+  | "profile"
+  | "team";
+type BarberAdminSection = Exclude<AdminSection, "team">;
 
 type Service = {
   id: string;
@@ -193,6 +201,18 @@ type BarberProfile = {
   name: string;
   label: string;
   accent: "blue" | "mint";
+  userId: string;
+  email: string;
+  active: boolean;
+  access: Record<BarberAdminSection, boolean>;
+  createdAt?: number;
+  updatedAt?: number;
+};
+
+type TeamMemberDraft = {
+  name: string;
+  email: string;
+  userId: string;
 };
 
 type BarberDetails = {
@@ -215,9 +235,43 @@ type ProfileAvatarProps = {
 const ownerUserIds = new Set(["xkyDu2Lb1Ma8McF7yfyv8PIAj1M2"]);
 const barberUserIds = new Map([["XxBe4dwVYWZPtl004J4tWq6AMZ73", "mateusz"]]);
 const defaultBarberId = "mateusz";
+const barberAdminSections: BarberAdminSection[] = [
+  "schedule",
+  "clients",
+  "analytics",
+  "work",
+  "services",
+  "profile",
+];
+const fullBarberAccess: Record<BarberAdminSection, boolean> = {
+  schedule: true,
+  clients: true,
+  analytics: true,
+  work: true,
+  services: true,
+  profile: true,
+};
 const defaultBarbers: BarberProfile[] = [
-  { id: "mateusz", name: "Mateusz", label: "Barber 1", accent: "blue" },
-  { id: "kacper", name: "Kacper", label: "Barber 2", accent: "mint" },
+  {
+    id: "mateusz",
+    name: "Mateusz",
+    label: "Barber 1",
+    accent: "blue",
+    userId: "XxBe4dwVYWZPtl004J4tWq6AMZ73",
+    email: "",
+    active: true,
+    access: fullBarberAccess,
+  },
+  {
+    id: "kacper",
+    name: "Kacper",
+    label: "Barber 2",
+    accent: "mint",
+    userId: "",
+    email: "",
+    active: true,
+    access: fullBarberAccess,
+  },
 ];
 const shouldRunDataMigration = import.meta.env.PROD;
 const maxStoredNotifications = 40;
@@ -311,6 +365,26 @@ const adminSectionLabels: Record<AdminSection, string> = {
   work: "Praca",
   services: "Usługi",
   profile: "Profil",
+  team: "Zespół",
+};
+
+const teamAccessLabels: Record<BarberAdminSection, string> = {
+  schedule: "Terminarz",
+  clients: "Baza klientów",
+  analytics: "Analiza",
+  work: "Praca",
+  services: "Usługi",
+  profile: "Profil",
+};
+
+const adminNavigationLabels: Record<AdminSection, string> = {
+  schedule: "Terminarz",
+  clients: "Baza",
+  analytics: "Analiza",
+  work: "Praca",
+  services: "Usługi",
+  profile: "Profil",
+  team: "Zespół",
 };
 
 const analyticsPeriodLabels: Record<AnalyticsPeriod, string> = {
@@ -737,6 +811,58 @@ const normalizeBarberDetails = (value: Partial<BarberDetails> | null): BarberDet
   updatedAt: Number(value?.updatedAt) || undefined,
 });
 
+const normalizeBarberAccess = (
+  value: Partial<Record<BarberAdminSection, boolean>> | null | undefined,
+): Record<BarberAdminSection, boolean> =>
+  Object.fromEntries(
+    barberAdminSections.map((section) => [section, value?.[section] !== false]),
+  ) as Record<BarberAdminSection, boolean>;
+
+const normalizeTeamMember = (
+  id: string,
+  value: Partial<BarberProfile> | null,
+  index: number,
+): BarberProfile => ({
+  id,
+  name: value?.name?.trim() || `Barber ${index + 1}`,
+  label: value?.label?.trim() || `Barber ${index + 1}`,
+  accent: value?.accent === "mint" ? "mint" : index % 2 === 0 ? "blue" : "mint",
+  userId: value?.userId?.trim() ?? "",
+  email: value?.email?.trim().toLocaleLowerCase("pl") ?? "",
+  active: value?.active !== false,
+  access: normalizeBarberAccess(value?.access),
+  createdAt: Number(value?.createdAt) || undefined,
+  updatedAt: Number(value?.updatedAt) || undefined,
+});
+
+const teamMembersToRecord = (members: BarberProfile[]) =>
+  Object.fromEntries(
+    members.map((member) => [
+      member.id,
+      {
+        ...member,
+        access: normalizeBarberAccess(member.access),
+      },
+    ]),
+  );
+
+const createBarberId = (name: string, existingIds: string[]) => {
+  const baseId =
+    name
+      .toLocaleLowerCase("pl")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "barber";
+  let nextId = baseId;
+  let suffix = 2;
+  while (existingIds.includes(nextId)) {
+    nextId = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+  return nextId;
+};
+
 const resizeProfilePhoto = async (file: File) => {
   if (!file.type.startsWith("image/")) {
     throw new Error("Wybierz plik graficzny.");
@@ -931,6 +1057,16 @@ export function BookingHome() {
   const [selectedKey, setSelectedKey] = useState(() => dayKey(today));
   const [adminSelectedKey, setAdminSelectedKey] = useState(() => dayKey(today));
   const [selectedBarberId, setSelectedBarberId] = useState<string | null>(null);
+  const [teamMembers, setTeamMembers] = useState<BarberProfile[]>(defaultBarbers);
+  const [teamReady, setTeamReady] = useState(false);
+  const [teamDialogMemberId, setTeamDialogMemberId] = useState<"new" | string | null>(null);
+  const [teamMemberDraft, setTeamMemberDraft] = useState<TeamMemberDraft>({
+    name: "",
+    email: "",
+    userId: "",
+  });
+  const [teamFeedback, setTeamFeedback] = useState<WorkFeedback | null>(null);
+  const [isTeamSaving, setIsTeamSaving] = useState(false);
   const [legacyServices, setLegacyServices] = useState<Service[]>(defaultServices);
   const [barberServices, setBarberServices] = useState<Service[] | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState(defaultServices[0].id);
@@ -1019,18 +1155,39 @@ export function BookingHome() {
 
   const activeUser = currentUser;
   const isOwner = Boolean(activeUser && ownerUserIds.has(activeUser.uid));
-  const signedInBarberId = activeUser ? (barberUserIds.get(activeUser.uid) ?? null) : null;
+  const configuredSignedInBarber = activeUser
+    ? teamMembers.find((member) => member.userId && member.userId === activeUser.uid) ?? null
+    : null;
+  const legacySignedInBarberId = activeUser ? (barberUserIds.get(activeUser.uid) ?? null) : null;
+  const signedInBarberId = activeUser
+    ? configuredSignedInBarber
+      ? configuredSignedInBarber.active
+        ? configuredSignedInBarber.id
+        : null
+      : teamReady
+        ? null
+        : legacySignedInBarberId
+    : null;
   const isBarber = Boolean(signedInBarberId);
   const isAdmin = isOwner || isBarber;
+  const signedInBarberAccess = configuredSignedInBarber?.access ?? fullBarberAccess;
+  const canAccessAdminSection = (section: AdminSection) =>
+    isOwner ||
+    (isBarber && section !== "team" && signedInBarberAccess[section as BarberAdminSection]);
+  const visibleAdminSections: AdminSection[] = [
+    ...barberAdminSections.filter((section) => canAccessAdminSection(section)),
+    ...(isOwner ? (["team"] as AdminSection[]) : []),
+  ];
+  const activeAdminNavIndex = Math.max(0, visibleAdminSections.indexOf(adminSection));
   const activeBarberId = signedInBarberId ?? selectedBarberId ?? defaultBarberId;
   const visibleBarberId = isOwner ? selectedBarberId : signedInBarberId ?? selectedBarberId;
   const selectedBarber =
-    defaultBarbers.find((barber) => barber.id === visibleBarberId) ?? null;
+    teamMembers.find((barber) => barber.id === visibleBarberId) ?? null;
   const activeBarberProfile = barberProfiles[activeBarberId] ?? emptyBarberDetails;
   const activeBarberName = activeBarberProfile.displayName || selectedBarber?.name || "Barber";
   const clientBarberOptions = useMemo(
     () =>
-      defaultBarbers.map((barber) => {
+      teamMembers.filter((barber) => barber.active).map((barber) => {
         const profile = barberProfiles[barber.id] ?? emptyBarberDetails;
         return {
           ...barber,
@@ -1040,10 +1197,12 @@ export function BookingHome() {
           instagram: profile.instagram,
         };
       }),
-    [barberProfiles],
+    [barberProfiles, teamMembers],
   );
   const activeClientBarber =
-    clientBarberOptions.find((barber) => barber.id === activeBarberId) ?? clientBarberOptions[0];
+    clientBarberOptions.find((barber) => barber.id === activeBarberId) ??
+    selectedBarber ??
+    teamMembers[0];
   const services = useMemo(
     () =>
       barberServices ??
@@ -1067,7 +1226,7 @@ export function BookingHome() {
   const notificationAppointments = isBarber ? adminAppointments : allAdminAppointments;
   const ownerBarberSummaries = useMemo(
     () =>
-      defaultBarbers.map((barber) => {
+      teamMembers.map((barber) => {
         const profile = barberProfiles[barber.id] ?? emptyBarberDetails;
         const barberAppointments = allAdminAppointments.filter(
           (appointment) => (appointment.barberId || defaultBarberId) === barber.id,
@@ -1093,7 +1252,7 @@ export function BookingHome() {
           nextAppointment: upcomingAppointments[0] ?? null,
         };
       }),
-    [allAdminAppointments, barberProfiles, currentDate, today],
+    [allAdminAppointments, barberProfiles, currentDate, teamMembers, today],
   );
   const reschedulingAppointment =
     adminAppointments.find((appointment) => appointment.id === reschedulingAppointmentId) ?? null;
@@ -1525,6 +1684,11 @@ export function BookingHome() {
     smsClient?.appointments.find((appointment) => appointment.id === smsComposer?.appointmentId) ??
     null;
   const editingService = services.find((service) => service.id === editingServiceId) ?? null;
+  const editingTeamMember =
+    teamDialogMemberId && teamDialogMemberId !== "new"
+      ? teamMembers.find((member) => member.id === teamDialogMemberId) ?? null
+      : null;
+  const activeTeamMembersCount = teamMembers.filter((member) => member.active).length;
   const hasSelectedBarber = Boolean(selectedBarber);
   const hasSelectedDay = selectedKey === selectedDayKey && availableTimes.length > 0;
   const canContinue = Boolean(
@@ -1692,6 +1856,51 @@ export function BookingHome() {
 
   useEffect(() => {
     if (!activeUser) {
+      setTeamMembers(defaultBarbers);
+      setTeamReady(false);
+      return undefined;
+    }
+
+    const teamRef = ref(realtimeDb, "team/barbers");
+    return onValue(teamRef, (snapshot) => {
+      const value = snapshot.val() as Record<string, Partial<BarberProfile>> | null;
+      if (!value) {
+        setTeamMembers(defaultBarbers);
+        setTeamReady(true);
+        if (isOwner) {
+          void set(teamRef, teamMembersToRecord(defaultBarbers));
+        }
+        return;
+      }
+
+      const loadedMembers = Object.entries(value)
+        .map(([id, member], index) => normalizeTeamMember(id, member, index))
+        .sort((first, second) => first.label.localeCompare(second.label, "pl"));
+      setTeamMembers(loadedMembers.length > 0 ? loadedMembers : defaultBarbers);
+      setTeamReady(true);
+
+      if (shouldRunDataMigration && isOwner) {
+        const migrationUpdates: Record<string, unknown> = {};
+        Object.entries(value).forEach(([id, member], index) => {
+          const normalized = normalizeTeamMember(id, member, index);
+          if (typeof member.active !== "boolean") {
+            migrationUpdates[`${id}/active`] = normalized.active;
+          }
+          barberAdminSections.forEach((section) => {
+            if (typeof member.access?.[section] !== "boolean") {
+              migrationUpdates[`${id}/access/${section}`] = true;
+            }
+          });
+        });
+        if (Object.keys(migrationUpdates).length > 0) {
+          void update(teamRef, migrationUpdates);
+        }
+      }
+    });
+  }, [activeUser, isOwner]);
+
+  useEffect(() => {
+    if (!activeUser) {
       setAppointments([]);
       setAllAdminAppointments([]);
       return undefined;
@@ -1815,8 +2024,8 @@ export function BookingHome() {
 
     setBarberProfiles({});
     const visibleProfiles = isBarber
-      ? defaultBarbers.filter((barber) => barber.id === signedInBarberId)
-      : defaultBarbers;
+      ? teamMembers.filter((barber) => barber.id === signedInBarberId)
+      : teamMembers;
     const unsubscribeProfiles = visibleProfiles.map((barber) =>
       onValue(ref(realtimeDb, `barbers/${barber.id}/profile`), (snapshot) => {
         setBarberProfiles((current) => ({
@@ -1829,17 +2038,17 @@ export function BookingHome() {
     );
 
     return () => unsubscribeProfiles.forEach((unsubscribe) => unsubscribe());
-  }, [activeUser, isBarber, signedInBarberId]);
+  }, [activeUser, isBarber, signedInBarberId, teamMembers]);
 
   useEffect(() => {
-    const defaultProfile = defaultBarbers.find((barber) => barber.id === activeBarberId);
+    const defaultProfile = teamMembers.find((barber) => barber.id === activeBarberId);
     setProfileDraft({
       ...activeBarberProfile,
       displayName: activeBarberProfile.displayName || defaultProfile?.name || "",
       photoUrl: activeBarberProfile.photoUrl,
     });
     setProfileFeedback(null);
-  }, [activeBarberId, activeBarberProfile]);
+  }, [activeBarberId, activeBarberProfile, teamMembers]);
 
   useEffect(() => {
     if (!activeUser) return;
@@ -2104,6 +2313,20 @@ export function BookingHome() {
       setStep("booking");
     }
   }, [isAdmin, step]);
+
+  useEffect(() => {
+    if (step !== "admin" || isOwner || !isBarber) return;
+    if (adminSection !== "team" && signedInBarberAccess[adminSection]) return;
+
+    const firstAllowedSection = barberAdminSections.find(
+      (section) => signedInBarberAccess[section],
+    );
+    if (firstAllowedSection) {
+      setAdminSection(firstAllowedSection);
+    } else {
+      setStep("booking");
+    }
+  }, [adminSection, isBarber, isOwner, signedInBarberAccess, step]);
 
   useEffect(() => {
     if (visibleStep !== "success") return undefined;
@@ -2564,7 +2787,7 @@ export function BookingHome() {
       ...profileDraft,
       displayName:
         profileDraft.displayName ||
-        defaultBarbers.find((barber) => barber.id === activeBarberId)?.name ||
+        teamMembers.find((barber) => barber.id === activeBarberId)?.name ||
         "Barber",
       phone: formatPhoneNumber(getPhoneDigits(profileDraft.phone)),
       email: profileDraft.email.toLocaleLowerCase("pl"),
@@ -2581,6 +2804,143 @@ export function BookingHome() {
       setProfileFeedback({ kind: "error", message: "Nie udało się zapisać profilu." });
     } finally {
       setIsProfileSaving(false);
+    }
+  };
+
+  const openOwnerBarberPanel = (
+    barberId: string,
+    section: AdminSection = "schedule",
+  ) => {
+    setBarberServices(null);
+    setBarberWorkSettings(null);
+    setSelectedBarberId(barberId);
+    setAdminSection(section);
+    setAdminSelectedKey(dayKey(today));
+    setClientSearch("");
+    setClientFilter("all");
+    setClientFeedback(null);
+    setWorkFeedback(null);
+  };
+
+  const openNewTeamMemberDialog = () => {
+    setTeamMemberDraft({ name: "", email: "", userId: "" });
+    setTeamFeedback(null);
+    setTeamDialogMemberId("new");
+  };
+
+  const openTeamMemberEditDialog = (member: BarberProfile) => {
+    setTeamMemberDraft({
+      name: member.name,
+      email: member.email,
+      userId: member.userId,
+    });
+    setTeamFeedback(null);
+    setTeamDialogMemberId(member.id);
+  };
+
+  const saveTeamMember = async () => {
+    if (!isOwner || isTeamSaving) return;
+
+    const name = teamMemberDraft.name.trim();
+    const email = teamMemberDraft.email.trim().toLocaleLowerCase("pl");
+    const userId = teamMemberDraft.userId.trim();
+    if (name.length < 2 || (email && !isValidEmail(email))) {
+      setTeamFeedback({
+        kind: "error",
+        message: "Podaj imię oraz poprawny adres e-mail albo pozostaw go pusty.",
+      });
+      return;
+    }
+    if (
+      userId &&
+      teamMembers.some(
+        (member) => member.id !== teamDialogMemberId && member.userId === userId,
+      )
+    ) {
+      setTeamFeedback({ kind: "error", message: "Ten identyfikator jest już przypisany." });
+      return;
+    }
+
+    const existingMember =
+      teamDialogMemberId && teamDialogMemberId !== "new"
+        ? teamMembers.find((member) => member.id === teamDialogMemberId) ?? null
+        : null;
+    const memberId =
+      existingMember?.id ?? createBarberId(name, teamMembers.map((member) => member.id));
+    const memberIndex = existingMember
+      ? Math.max(0, teamMembers.findIndex((member) => member.id === existingMember.id))
+      : teamMembers.length;
+    const now = Date.now();
+    const member = normalizeTeamMember(
+      memberId,
+      {
+        ...existingMember,
+        name,
+        label: existingMember?.label || `Barber ${memberIndex + 1}`,
+        accent: existingMember?.accent || (memberIndex % 2 === 0 ? "blue" : "mint"),
+        email,
+        userId,
+        active: existingMember?.active ?? true,
+        access: existingMember?.access ?? fullBarberAccess,
+        createdAt: existingMember?.createdAt ?? now,
+        updatedAt: now,
+      },
+      memberIndex,
+    );
+
+    try {
+      setIsTeamSaving(true);
+      setTeamFeedback(null);
+      const updates: Record<string, unknown> = {
+        [`team/barbers/${memberId}`]: member,
+      };
+      if (!existingMember) {
+        updates[`barbers/${memberId}/profile/displayName`] = name;
+        updates[`barbers/${memberId}/profile/email`] = email;
+        updates[`barbers/${memberId}/profile/updatedAt`] = now;
+      }
+      await update(ref(realtimeDb), updates);
+      setTeamDialogMemberId(null);
+    } catch {
+      setTeamFeedback({ kind: "error", message: "Nie udało się zapisać członka zespołu." });
+    } finally {
+      setIsTeamSaving(false);
+    }
+  };
+
+  const updateTeamMemberActive = async (member: BarberProfile, active: boolean) => {
+    if (!isOwner || isTeamSaving) return;
+    try {
+      setIsTeamSaving(true);
+      setTeamFeedback(null);
+      await update(ref(realtimeDb, `team/barbers/${member.id}`), {
+        active,
+        updatedAt: serverTimestamp(),
+      });
+    } catch {
+      setTeamFeedback({ kind: "error", message: "Nie udało się zmienić stanu konta." });
+    } finally {
+      setIsTeamSaving(false);
+    }
+  };
+
+  const updateTeamMemberAccess = async (
+    member: BarberProfile,
+    section: BarberAdminSection,
+    allowed: boolean,
+  ) => {
+    if (!isOwner || isTeamSaving) return;
+    try {
+      setIsTeamSaving(true);
+      setTeamFeedback(null);
+      await update(ref(realtimeDb, `team/barbers/${member.id}`), {
+        [`access/${section}`]: allowed,
+        updatedAt: serverTimestamp(),
+      });
+    } catch {
+      setTeamFeedback({ kind: "error", message: "Nie udało się zmienić zakresu dostępu." });
+    } finally {
+      setIsTeamSaving(false);
     }
   };
 
@@ -3313,6 +3673,14 @@ export function BookingHome() {
                 <p className="eyebrow">Panel zespołu</p>
                 <h2>Czyj panel chcesz otworzyć?</h2>
                 <span>Każdy barber ma osobny terminarz, klientów, analizę, pracę, usługi i profil.</span>
+                <button
+                  className="owner-team-button"
+                  type="button"
+                  onClick={() => openOwnerBarberPanel(teamMembers[0]?.id ?? defaultBarberId, "team")}
+                >
+                  <span className="team-icon" aria-hidden="true" />
+                  Zarządzaj zespołem
+                </button>
               </header>
 
               <div className="owner-barber-grid">
@@ -3321,17 +3689,7 @@ export function BookingHome() {
                     className={`owner-barber-card ${barber.accent}`}
                     type="button"
                     key={barber.id}
-                    onClick={() => {
-                      setBarberServices(null);
-                      setBarberWorkSettings(null);
-                      setSelectedBarberId(barber.id);
-                      setAdminSection("schedule");
-                      setAdminSelectedKey(dayKey(today));
-                      setClientSearch("");
-                      setClientFilter("all");
-                      setClientFeedback(null);
-                      setWorkFeedback(null);
-                    }}
+                    onClick={() => openOwnerBarberPanel(barber.id)}
                     aria-label={`Otwórz pełny panel barbera ${barber.name}`}
                   >
                     <ProfileAvatar
@@ -3340,7 +3698,9 @@ export function BookingHome() {
                       photoUrl={barber.photoUrl}
                     />
                     <span className="owner-barber-main">
-                      <small>{barber.label}</small>
+                      <small>
+                        {barber.label} · {barber.active ? "aktywne" : "wyłączone"}
+                      </small>
                       <strong>{barber.name}</strong>
                       <em>
                         {barber.nextAppointment
@@ -3367,7 +3727,8 @@ export function BookingHome() {
             </div>
           ) : (
             <>
-              <div className="selected-barber-context" aria-label="Wybrany barber">
+              {adminSection !== "team" ? (
+                <div className="selected-barber-context" aria-label="Wybrany barber">
                 <ProfileAvatar
                   className={`selected-barber-avatar ${selectedBarber.accent}`}
                   name={activeBarberName}
@@ -3382,7 +3743,8 @@ export function BookingHome() {
                     Zmień
                   </button>
                 ) : null}
-              </div>
+                </div>
+              ) : null}
 
               <div className="admin-content-frame">
             <div className={`admin-tab-panel ${adminSection === "schedule" ? "active" : ""}`}>
@@ -4522,6 +4884,132 @@ export function BookingHome() {
               </div>
             </div>
 
+            {isOwner ? (
+              <div className={`admin-tab-panel ${adminSection === "team" ? "active" : ""}`}>
+                <div className="admin-section-header team-section-header">
+                  <div>
+                    <p className="eyebrow">Ustawienia właściciela</p>
+                    <h2>Zespół BNB</h2>
+                  </div>
+                  <div className="admin-section-stats" aria-label="Stan zespołu">
+                    <span>
+                      <strong>{teamMembers.length}</strong>
+                      barberzy
+                    </span>
+                    <span>
+                      <strong>{activeTeamMembersCount}</strong>
+                      aktywne konta
+                    </span>
+                  </div>
+                </div>
+
+                <div className="team-management-view">
+                  <div className="team-management-toolbar">
+                    <div>
+                      <p className="section-label">Konta i dostęp</p>
+                      <strong>Zarządzaj barberami</strong>
+                    </div>
+                    <button className="add-team-member-button" type="button" onClick={openNewTeamMemberDialog}>
+                      <span aria-hidden="true">+</span>
+                      Dodaj barbera
+                    </button>
+                  </div>
+
+                  {teamFeedback && !teamDialogMemberId ? (
+                    <p className={`work-feedback ${teamFeedback.kind}`}>{teamFeedback.message}</p>
+                  ) : null}
+
+                  <div className="team-member-list">
+                    {teamMembers.map((member) => {
+                      const profile = barberProfiles[member.id] ?? emptyBarberDetails;
+                      return (
+                        <article
+                          className={`team-member-card ${member.active ? "active" : "inactive"}`}
+                          key={member.id}
+                        >
+                          <header className="team-member-header">
+                            <ProfileAvatar
+                              className={`team-member-avatar ${member.accent}`}
+                              name={profile.displayName || member.name}
+                              photoUrl={profile.photoUrl}
+                            />
+                            <div>
+                              <small>{member.label}</small>
+                              <strong>{profile.displayName || member.name}</strong>
+                              <span>
+                                {member.email || profile.email || "Brak adresu e-mail"}
+                              </span>
+                            </div>
+                            <label className="team-active-switch">
+                              <input
+                                type="checkbox"
+                                checked={member.active}
+                                disabled={isTeamSaving}
+                                onChange={(event) =>
+                                  void updateTeamMemberActive(member, event.target.checked)
+                                }
+                              />
+                              <span aria-hidden="true" />
+                              {member.active ? "Aktywne" : "Wyłączone"}
+                            </label>
+                          </header>
+
+                          <div className="team-member-account">
+                            <span>
+                              <small>Konto Google</small>
+                              <strong>{member.userId ? "Połączone" : "Oczekuje na identyfikator"}</strong>
+                            </span>
+                            <button type="button" onClick={() => openTeamMemberEditDialog(member)}>
+                              Edytuj dane
+                            </button>
+                          </div>
+
+                          <div className="team-member-quick-actions">
+                            <button
+                              type="button"
+                              onClick={() => openOwnerBarberPanel(member.id, "schedule")}
+                            >
+                              <span className="schedule-icon" aria-hidden="true" />
+                              Terminarz
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openOwnerBarberPanel(member.id, "analytics")}
+                            >
+                              <span className="analytics-icon" aria-hidden="true" />
+                              Analiza
+                            </button>
+                          </div>
+
+                          <fieldset className="team-access-grid">
+                            <legend>Zakres dostępu</legend>
+                            {barberAdminSections.map((section) => (
+                              <label key={section}>
+                                <input
+                                  type="checkbox"
+                                  checked={member.access[section]}
+                                  disabled={isTeamSaving}
+                                  onChange={(event) =>
+                                    void updateTeamMemberAccess(
+                                      member,
+                                      section,
+                                      event.target.checked,
+                                    )
+                                  }
+                                />
+                                <span aria-hidden="true" />
+                                {teamAccessLabels[section]}
+                              </label>
+                            ))}
+                          </fieldset>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             <div className={`admin-tab-panel ${adminSection === "profile" ? "active" : ""}`}>
               <div className="admin-section-header">
                 <div>
@@ -4689,56 +5177,28 @@ export function BookingHome() {
             </div>
           </div>
 
-          <nav className="admin-bottom-nav" aria-label="Sekcje admina">
-            <span className={`admin-nav-pill ${adminSection}`} aria-hidden="true" />
-            <button
-              className={adminSection === "schedule" ? "active" : ""}
-              type="button"
-              onClick={() => setAdminSection("schedule")}
-            >
-              <span className="admin-nav-icon schedule-icon" aria-hidden="true" />
-              <span>Terminarz</span>
-            </button>
-            <button
-              className={adminSection === "clients" ? "active" : ""}
-              type="button"
-              onClick={() => setAdminSection("clients")}
-            >
-              <span className="admin-nav-icon clients-icon" aria-hidden="true" />
-              <span>Baza</span>
-            </button>
-            <button
-              className={adminSection === "analytics" ? "active" : ""}
-              type="button"
-              onClick={() => setAdminSection("analytics")}
-            >
-              <span className="admin-nav-icon analytics-icon" aria-hidden="true" />
-              <span>Analiza</span>
-            </button>
-            <button
-              className={adminSection === "work" ? "active" : ""}
-              type="button"
-              onClick={() => setAdminSection("work")}
-            >
-              <span className="admin-nav-icon work-icon" aria-hidden="true" />
-              <span>Praca</span>
-            </button>
-            <button
-              className={adminSection === "services" ? "active" : ""}
-              type="button"
-              onClick={() => setAdminSection("services")}
-            >
-              <span className="admin-nav-icon services-icon" aria-hidden="true" />
-              <span>Usługi</span>
-            </button>
-            <button
-              className={adminSection === "profile" ? "active" : ""}
-              type="button"
-              onClick={() => setAdminSection("profile")}
-            >
-              <span className="admin-nav-icon profile-icon" aria-hidden="true" />
-              <span>Profil</span>
-            </button>
+          <nav
+            className={`admin-bottom-nav ${isOwner ? "owner-nav" : ""}`}
+            style={
+              {
+                "--admin-nav-items": visibleAdminSections.length,
+                "--admin-nav-index": activeAdminNavIndex,
+              } as CSSProperties
+            }
+            aria-label="Sekcje admina"
+          >
+            <span className="admin-nav-pill" aria-hidden="true" />
+            {visibleAdminSections.map((section) => (
+              <button
+                className={adminSection === section ? "active" : ""}
+                key={section}
+                type="button"
+                onClick={() => setAdminSection(section)}
+              >
+                <span className={`admin-nav-icon ${section}-icon`} aria-hidden="true" />
+                <span>{adminNavigationLabels[section]}</span>
+              </button>
+            ))}
           </nav>
             </>
           )}
@@ -4790,8 +5250,8 @@ export function BookingHome() {
                 >
                   <ProfileAvatar
                     className="admin-user-avatar"
-                    name={activeUser.displayName ?? activeUser.email ?? "Admin"}
-                    photoUrl={activeUser.photoURL}
+                    name={isBarber ? activeBarberName : activeUser.displayName ?? activeUser.email ?? "Admin"}
+                    photoUrl={isBarber ? activeBarberProfile.photoUrl : activeUser.photoURL}
                   />
                 </button>
               ) : null}
@@ -5288,6 +5748,119 @@ export function BookingHome() {
           ) : null}
         </section>
       )}
+
+      {teamDialogMemberId && isOwner && visibleStep === "admin" ? (
+        <div
+          className="client-modal-backdrop team-member-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isTeamSaving) {
+              setTeamDialogMemberId(null);
+              setTeamFeedback(null);
+            }
+          }}
+        >
+          <section
+            className="client-appointment-modal team-member-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="team-member-dialog-title"
+          >
+            <button
+              className="modal-close-button"
+              type="button"
+              disabled={isTeamSaving}
+              onClick={() => {
+                setTeamDialogMemberId(null);
+                setTeamFeedback(null);
+              }}
+              aria-label="Zamknij"
+            >
+              ×
+            </button>
+
+            <div className="team-member-dialog-heading">
+              <span className="team-dialog-icon" aria-hidden="true">
+                <span className="team-icon" />
+              </span>
+              <div>
+                <p className="eyebrow">
+                  {editingTeamMember ? "Edycja konta" : "Nowy członek zespołu"}
+                </p>
+                <h2 id="team-member-dialog-title">
+                  {editingTeamMember ? editingTeamMember.name : "Dodaj barbera"}
+                </h2>
+              </div>
+            </div>
+
+            <form
+              className="team-member-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveTeamMember();
+              }}
+            >
+              <label>
+                Imię wyświetlane
+                <input
+                  type="text"
+                  maxLength={50}
+                  value={teamMemberDraft.name}
+                  onChange={(event) =>
+                    setTeamMemberDraft((current) => ({ ...current, name: event.target.value }))
+                  }
+                  autoComplete="name"
+                  required
+                />
+              </label>
+              <label>
+                E-mail
+                <input
+                  type="email"
+                  maxLength={100}
+                  value={teamMemberDraft.email}
+                  onChange={(event) =>
+                    setTeamMemberDraft((current) => ({ ...current, email: event.target.value }))
+                  }
+                  autoComplete="email"
+                  placeholder="Opcjonalnie"
+                />
+              </label>
+              <label className="team-member-user-id-field">
+                Identyfikator użytkownika Firebase
+                <input
+                  type="text"
+                  maxLength={128}
+                  value={teamMemberDraft.userId}
+                  onChange={(event) =>
+                    setTeamMemberDraft((current) => ({ ...current, userId: event.target.value }))
+                  }
+                  autoComplete="off"
+                  placeholder="Możesz uzupełnić później"
+                />
+                <small>Po tym identyfikatorze aplikacja rozpoznaje konto barbera.</small>
+              </label>
+
+              {teamFeedback ? (
+                <p className={`work-feedback ${teamFeedback.kind}`}>{teamFeedback.message}</p>
+              ) : null}
+
+              <div className="team-member-dialog-actions">
+                <button
+                  type="button"
+                  disabled={isTeamSaving}
+                  onClick={() => setTeamDialogMemberId(null)}
+                >
+                  Anuluj
+                </button>
+                <button className="primary" type="submit" disabled={isTeamSaving}>
+                  {isTeamSaving ? "Zapisywanie..." : editingTeamMember ? "Zapisz zmiany" : "Dodaj barbera"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
 
       {notificationPanelOpen ? (
         <div

@@ -149,8 +149,8 @@ test("keeps the owner-only multi-barber workspace", async () => {
     bookingHome,
     /barberUserIds = new Map\(\[\["XxBe4dwVYWZPtl004J4tWq6AMZ73", "mateusz"\]\]\)/,
   );
-  assert.match(bookingHome, /name: "Mateusz", label: "Barber 1"/);
-  assert.match(bookingHome, /name: "Kacper", label: "Barber 2"/);
+  assert.match(bookingHome, /name: "Mateusz",[\s\S]*label: "Barber 1"/);
+  assert.match(bookingHome, /name: "Kacper",[\s\S]*label: "Barber 2"/);
   assert.match(bookingHome, /Czyj panel chcesz otworzyć\?/);
   assert.match(bookingHome, /appointment\.barberId \|\| defaultBarberId/);
   assert.match(bookingHome, /barbers\/\$\{activeBarberId\}\/workSettings/);
@@ -174,7 +174,7 @@ test("keeps the scoped barber profile and centered client action", async () => {
   assert.match(styles, /\.barber-profile-view/);
   assert.match(styles, /\.add-client-button span::before/);
   assert.match(styles, /translate\(-50%, -50%\)/);
-  assert.match(styles, /repeat\(6, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /repeat\(var\(--admin-nav-items, 6\), minmax\(0, 1fr\)\)/);
 });
 
 test("keeps the mastered admin schedule and availability editor", async () => {
@@ -200,7 +200,7 @@ test("keeps settlement-driven admin analytics", async () => {
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
-  assert.match(bookingHome, /"analytics" \| "work"/);
+  assert.match(bookingHome, /\| "analytics"[\s\S]*\| "work"/);
   assert.match(bookingHome, /"cancelled" \| "completed"/);
   assert.match(bookingHome, /settlementAvailableAt\.setMinutes\([\s\S]*\+ 1\)/);
   assert.match(bookingHome, /const isPotentialNoShow/);
@@ -212,8 +212,31 @@ test("keeps settlement-driven admin analytics", async () => {
   assert.match(bookingHome, /Potencjalne nieobecności/);
   assert.match(styles, /\.analytics-kpi-grid/);
   assert.match(styles, /\.analytics-chart/);
-  assert.match(styles, /\.admin-nav-pill\.analytics/);
-  assert.match(styles, /repeat\(6, minmax\(0, 1fr\)\)/);
+  assert.match(bookingHome, /visibleAdminSections\.map\(\(section\) =>/);
+  assert.match(styles, /repeat\(var\(--admin-nav-items, 6\), minmax\(0, 1fr\)\)/);
+});
+
+test("keeps owner team management and role-aware admin avatars", async () => {
+  const [bookingHome, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /type BarberAdminSection = Exclude<AdminSection, "team">/);
+  assert.match(bookingHome, /ref\(realtimeDb, "team\/barbers"\)/);
+  assert.match(bookingHome, /const updateTeamMemberActive = async/);
+  assert.match(bookingHome, /const updateTeamMemberAccess = async/);
+  assert.match(bookingHome, /className="team-management-view"/);
+  assert.match(bookingHome, /className="client-appointment-modal team-member-dialog"/);
+  assert.match(
+    bookingHome,
+    /photoUrl=\{isBarber \? activeBarberProfile\.photoUrl : activeUser\.photoURL\}/,
+  );
+  assert.match(bookingHome, /openOwnerBarberPanel\(member\.id, "schedule"\)/);
+  assert.match(bookingHome, /openOwnerBarberPanel\(member\.id, "analytics"\)/);
+  assert.match(styles, /\.team-member-card/);
+  assert.match(styles, /\.team-access-grid/);
+  assert.match(styles, /--admin-nav-items/);
 });
 
 test("keeps barber ownership on operational records and Mateusz email routing", async () => {
