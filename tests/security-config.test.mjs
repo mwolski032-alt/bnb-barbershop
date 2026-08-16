@@ -15,3 +15,12 @@ test("Netlify production build contains a mandatory typecheck", async () => {
   const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   assert.match(packageJson.scripts["build:netlify"], /npm run typecheck/);
 });
+
+test("Firebase service account requests every required REST scope", async () => {
+  const adminSource = await readFile(
+    new URL("../netlify/functions/_firebase-admin.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(adminSource, /https:\/\/www\.googleapis\.com\/auth\/userinfo\.email/);
+  assert.match(adminSource, /https:\/\/www\.googleapis\.com\/auth\/firebase\.database/);
+});

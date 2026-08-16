@@ -36,7 +36,7 @@ export const getAccessToken = async () => {
     JSON.stringify({
       iss: clientEmail,
       scope:
-        "https://www.googleapis.com/auth/firebase.messaging https://www.googleapis.com/auth/firebase.database",
+        "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/firebase.messaging",
       aud: "https://oauth2.googleapis.com/token",
       exp: now + 3600,
       iat: now,
