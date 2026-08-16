@@ -140,14 +140,18 @@ const mutateAppointments = async (accessToken, mutation) => {
   return { error: "Terminarz zmienił się w tym samym momencie. Spróbuj ponownie." };
 };
 
-const getClientData = async (user, accessToken) => {
+const getAppointmentData = async (user, admin, accessToken) => {
   const rawAppointments = (await readDatabase("appointments", accessToken)) ?? {};
   const occupancy = [];
   const clientAppointments = [];
+  const adminAppointments = [];
   const todayKey = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Warsaw" }).format(new Date());
 
   for (const [id, raw] of Object.entries(rawAppointments)) {
     const appointment = normalizeAppointment(id, raw);
+    if (admin.isAdmin && (admin.isOwner || appointment.barberId === admin.barberId)) {
+      adminAppointments.push(appointment);
+    }
     if (
       appointment.status !== "cancelled" &&
       appointment.status !== "completed" &&
@@ -164,6 +168,26 @@ const getClientData = async (user, accessToken) => {
     if (appointment.userId === user.uid) clientAppointments.push(appointment);
   }
 
+  if (admin.isAdmin) {
+    return {
+      adminAppointments,
+      occupancy: adminAppointments
+        .filter(
+          (appointment) =>
+            appointment.status !== "cancelled" &&
+            appointment.status !== "completed" &&
+            appointment.dateKey >= todayKey,
+        )
+        .map(({ id, barberId, dateKey, startTime, durationMinutes }) => ({
+          id,
+          barberId,
+          dateKey,
+          startTime,
+          durationMinutes,
+        })),
+    };
+  }
+
   return { occupancy, clientAppointments };
 };
 
@@ -172,9 +196,10 @@ const handler = async (request) => {
     const user = await verifyRequestUser(request);
     if (!user) return jsonResponse({ ok: false, error: "Brak ważnej sesji." }, 401);
     const accessToken = await getAccessToken();
+    const admin = await getAdminContext(user, accessToken);
 
     if (request.method === "GET") {
-      return jsonResponse({ ok: true, ...(await getClientData(user, accessToken)) });
+      return jsonResponse({ ok: true, ...(await getAppointmentData(user, admin, accessToken)) });
     }
     if (request.method !== "POST") return jsonResponse({ ok: false, error: "Method not allowed." }, 405);
 
@@ -182,7 +207,6 @@ const handler = async (request) => {
     const action = cleanText(body.action, 40);
     if (!allowedActions.has(action)) return jsonResponse({ ok: false, error: "Nieznana operacja." }, 400);
 
-    const admin = await getAdminContext(user, accessToken);
     const proposed = body.appointment
       ? normalizeAppointment(body.appointment.id, body.appointment)
       : null;

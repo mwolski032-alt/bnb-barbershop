@@ -303,6 +303,26 @@ test("opens appointment notifications and lets the client confirm a changed time
   assert.match(appointmentApi, /next\.confirmedBy = action === "confirm_client" \? "client" : "admin"/);
 });
 
+test("keeps barber calendars scoped and client directory counters current", async () => {
+  const [bookingHome, appointmentClient, appointmentApi, adminHelper] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/appointments.ts", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/_firebase-admin.mjs", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(appointmentClient, /adminAppointments\?: T\[\]/);
+  assert.match(appointmentApi, /appointment\.barberId === admin\.barberId/);
+  assert.match(adminHelper, /fixedBarberUserIds/);
+  assert.match(bookingHome, /result\.adminAppointments \?\? result\.clientAppointments/);
+  assert.match(bookingHome, /if \(!isOwner\)/);
+  assert.match(bookingHome, /isBarber && unseen\.appointmentId/);
+  assert.match(
+    bookingHome,
+    /Klienci\s*<small>\{directoryAdminClientProfiles\.length\}<\/small>/,
+  );
+});
+
 test("separates active visits from the client directory", async () => {
   const [bookingHome, styles] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),

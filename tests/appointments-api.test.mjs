@@ -3,6 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 
 const databaseUrl = "https://mock-appointments.firebaseio.test";
+const mateuszUid = "XxBe4dwVYWZPtl004J4tWq6AMZ73";
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 
 process.env.FIREBASE_CLIENT_EMAIL = "service@bnb.test";
@@ -14,7 +15,7 @@ let revision = 1;
 const database = {
   team: {
     barbers: {
-      mateusz: { id: "mateusz", userId: "barber-uid", active: true },
+      mateusz: { id: "mateusz", userId: "stale-barber-uid", active: true },
     },
   },
   workSettings: {
@@ -45,7 +46,7 @@ const database = {
     },
     other: {
       id: "other",
-      barberId: "mateusz",
+      barberId: "kacper",
       userId: "other-uid",
       clientName: "Prywatne Dane",
       clientEmail: "private@example.com",
@@ -81,7 +82,7 @@ globalThis.fetch = async (input, options = {}) => {
       return Response.json({ users: [{ localId: "client-uid", email: "client@example.com" }] });
     }
     if (idToken === "valid-barber-token") {
-      return Response.json({ users: [{ localId: "barber-uid", email: "barber@example.com" }] });
+      return Response.json({ users: [{ localId: mateuszUid, email: "barber@example.com" }] });
     }
     return new Response("Unauthorized", { status: 401 });
   }
@@ -133,6 +134,15 @@ test("client data contains only own details and sanitized occupancy", async () =
 test("appointment endpoint rejects missing authentication", async () => {
   const response = await request("GET", null, "");
   assert.equal(response.status, 401);
+});
+
+test("Mateusz receives only his own barber calendar despite a stale team user id", async () => {
+  const response = await request("GET", null, "valid-barber-token");
+  const result = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(result));
+  assert.deepEqual(result.adminAppointments.map((item) => item.id), ["own"]);
+  assert.equal(result.adminAppointments.some((item) => item.clientEmail === "private@example.com"), false);
+  assert.equal("clientAppointments" in result, false);
 });
 
 test("atomic booking rejects an occupied time and accepts a free time", async () => {

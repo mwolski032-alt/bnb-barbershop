@@ -25,6 +25,7 @@ type AppointmentApiResult<T> = {
     durationMinutes: number;
   }>;
   clientAppointments?: T[];
+  adminAppointments?: T[];
 };
 
 const getAuthorizationHeaders = async () => {

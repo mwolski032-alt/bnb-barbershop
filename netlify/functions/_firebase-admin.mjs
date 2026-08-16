@@ -6,6 +6,10 @@ export const databaseUrl =
   "https://bnbbarber-9a7bd-default-rtdb.europe-west1.firebasedatabase.app";
 
 export const ownerUserIds = new Set(["xkyDu2Lb1Ma8McF7yfyv8PIAj1M2"]);
+export const fixedBarberUserIds = {
+  mateusz: "XxBe4dwVYWZPtl004J4tWq6AMZ73",
+  kacper: "TVwF6j7ePiTFhiGTWWPrq9nmRvJ3",
+};
 
 let cachedAccessToken = "";
 let cachedAccessTokenExpiresAt = 0;
@@ -200,6 +204,14 @@ export const readTeamMember = async (barberId, accessToken) =>
 
 export const getAdminContext = async (user, accessToken) => {
   if (ownerUserIds.has(user.uid)) return { isAdmin: true, isOwner: true, barberId: "" };
+  const fixedBarber = Object.entries(fixedBarberUserIds).find(([, uid]) => uid === user.uid);
+  if (fixedBarber) {
+    const member = await readDatabase(`team/barbers/${fixedBarber[0]}`, accessToken);
+    if (member && member.active !== false) {
+      return { isAdmin: true, isOwner: false, barberId: fixedBarber[0] };
+    }
+    return { isAdmin: false, isOwner: false, barberId: "" };
+  }
   const team = (await readDatabase("team/barbers", accessToken)) ?? {};
   const entry = Object.entries(team).find(([, member]) => member?.userId === user.uid);
   if (!entry || entry[1]?.active === false) {

@@ -1832,7 +1832,7 @@ export function BookingHome() {
 
   const refreshClientAppointmentData = useCallback(async () => {
     const result = await fetchClientAppointmentData<AdminAppointment>();
-    const loadedAppointments = (result.clientAppointments ?? [])
+    const loadedAppointments = (result.adminAppointments ?? result.clientAppointments ?? [])
       .map((appointment) => ({
         ...appointment,
         barberId: appointment.barberId || defaultBarberId,
@@ -1994,7 +1994,7 @@ export function BookingHome() {
       return undefined;
     }
 
-    if (!isAdmin) {
+    if (!isOwner) {
       let stopped = false;
       const loadClientAppointments = async () => {
         try {
@@ -2071,6 +2071,16 @@ export function BookingHome() {
             price: appointment.price ?? "0 zł",
             color: normalizeAppointmentColor(appointment.color),
             status: normalizeAppointmentStatus(appointment.status),
+            rescheduledAt: Number(appointment.rescheduledAt) || undefined,
+            rescheduledBy:
+              appointment.rescheduledBy === "client" || appointment.rescheduledBy === "admin"
+                ? appointment.rescheduledBy
+                : undefined,
+            confirmedAt: Number(appointment.confirmedAt) || undefined,
+            confirmedBy:
+              appointment.confirmedBy === "client" || appointment.confirmedBy === "admin"
+                ? appointment.confirmedBy
+                : undefined,
             settledAt,
             settledAmount,
             settlement:
@@ -2106,7 +2116,7 @@ export function BookingHome() {
       },
       () => setDataError("Nie udało się pobrać terminarza. Sprawdź uprawnienia Firebase."),
     );
-  }, [activeUser, isAdmin, refreshClientAppointmentData]);
+  }, [activeUser, isAdmin, isOwner, refreshClientAppointmentData]);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -2211,6 +2221,9 @@ export function BookingHome() {
 
         const unseen = loadedNotifications.find((notification) => !notification.seenAt);
         if (!unseen) return;
+        if (isBarber && unseen.appointmentId) {
+          void refreshClientAppointmentData();
+        }
         const silentAppointmentId = silentNewAppointmentToastIdRef.current;
         if (unseen.appointmentId === silentAppointmentId) {
           silentNewAppointmentToastIdRef.current = null;
@@ -2230,7 +2243,7 @@ export function BookingHome() {
       },
       () => setNotifications(readStoredNotifications(activeUser.uid)),
     );
-  }, [activeUser, isOwner]);
+  }, [activeUser, isBarber, isOwner, refreshClientAppointmentData]);
 
   useEffect(() => {
     if (!activeUser || isAdmin || !pendingNotificationAppointmentId) return;
@@ -4412,7 +4425,7 @@ export function BookingHome() {
                   >
                     <span className="client-workspace-tab-icon directory" aria-hidden="true" />
                     Klienci
-                    <small>{adminClientProfiles.length}</small>
+                    <small>{directoryAdminClientProfiles.length}</small>
                   </button>
                 </div>
 
