@@ -190,8 +190,27 @@ test("client cannot cancel another user's appointment", async () => {
   assert.equal(database.appointments.other.status, "confirmed");
 });
 
+test("client can confirm an admin-rescheduled appointment", async () => {
+  database.appointments.own.status = "rescheduled";
+  database.appointments.own.rescheduledBy = "admin";
+  const response = await request("POST", { action: "confirm_client", appointmentId: "own" });
+  assert.equal(response.status, 200, await response.text());
+  assert.equal(database.appointments.own.status, "confirmed");
+  assert.equal(database.appointments.own.confirmedBy, "client");
+  assert.equal(typeof database.appointments.own.confirmedAt, "number");
+});
+
+test("client cannot approve a reschedule they requested themselves", async () => {
+  database.appointments.own.status = "rescheduled";
+  database.appointments.own.rescheduledBy = "client";
+  const response = await request("POST", { action: "confirm_client", appointmentId: "own" });
+  assert.equal(response.status, 409);
+  assert.equal(database.appointments.own.status, "rescheduled");
+});
+
 test("active barber can confirm a rescheduled appointment in own calendar", async () => {
   database.appointments.own.status = "rescheduled";
+  database.appointments.own.rescheduledBy = "client";
   const response = await request(
     "POST",
     { action: "confirm_admin", appointmentId: "own" },

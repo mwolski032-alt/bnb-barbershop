@@ -231,12 +231,22 @@ const handler = async (request) => {
       if (!isClientAction && (!admin.isAdmin || !canAdminManageAppointment(admin, current))) {
         return { error: "Brak uprawnień do tego terminarza.", status: 403 };
       }
+      if (
+        (action === "confirm_client" || action === "confirm_admin") &&
+        (current.status !== "rescheduled" ||
+          (action === "confirm_client" && current.rescheduledBy === "client") ||
+          (action === "confirm_admin" && current.rescheduledBy === "admin"))
+      ) {
+        return { error: "Ta zmiana terminu została już potwierdzona.", status: 409 };
+      }
 
       let next = { ...current };
       if (action === "reschedule_client" || action === "reschedule_admin") {
         next.dateKey = cleanText(body.dateKey, 10);
         next.startTime = cleanText(body.startTime, 5);
         next.status = "rescheduled";
+        next.rescheduledAt = Date.now();
+        next.rescheduledBy = action === "reschedule_client" ? "client" : "admin";
         const validationError = validateAppointmentTime(next);
         if (validationError) return { error: validationError };
         if (action === "reschedule_client") await readClientBookingConfiguration(next, accessToken);
@@ -245,6 +255,8 @@ const handler = async (request) => {
         }
       } else if (action === "confirm_client" || action === "confirm_admin") {
         next.status = "confirmed";
+        next.confirmedAt = Date.now();
+        next.confirmedBy = action === "confirm_client" ? "client" : "admin";
       } else if (action === "cancel_client" || action === "cancel_admin") {
         next.status = "cancelled";
         next.cancelledAt = Date.now();

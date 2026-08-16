@@ -204,6 +204,9 @@ const sendToToken = async (accessToken, device, notification, appointment, siteU
   if (!projectId) {
     throw new Error("Missing FIREBASE_PROJECT_ID.");
   }
+  const notificationLink = new URL(siteUrl);
+  notificationLink.searchParams.set("appointment", appointment.id);
+  notificationLink.searchParams.set("event", appointment.event);
 
   const response = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
     method: "POST",
@@ -219,12 +222,12 @@ const sendToToken = async (accessToken, device, notification, appointment, siteU
           event: appointment.event,
           title: notification.title,
           body: notification.body,
-          link: siteUrl,
+          link: notificationLink.href,
           tag: `appointment-${appointment.id}-${appointment.event}`,
         },
         webpush: {
           fcm_options: {
-            link: siteUrl,
+            link: notificationLink.href,
           },
           notification: {
             ...notification,
@@ -460,6 +463,7 @@ const writeInAppNotifications = async (accessToken, event, appointment, copy, ba
         {
           id,
           appointmentId: appointment.id,
+          event,
           createdAt: Date.now(),
           title: recipient.title,
           body: recipient.body,

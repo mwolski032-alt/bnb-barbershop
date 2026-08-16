@@ -24,7 +24,7 @@ const database = {
         id: "kacper",
         name: "Kacper",
         email: "",
-        userId: "",
+        userId: kacperUid,
         active: true,
       },
     },
@@ -32,6 +32,7 @@ const database = {
   notificationTokens: {
     [ownerUid]: { ownerDevice: { token: "owner-token", isAdmin: true } },
     [kacperUid]: { barberDevice: { token: "barber-token", isAdmin: true } },
+    "client-uid": { clientDevice: { token: "client-token", isAdmin: false } },
   },
   appointments: {},
   inAppNotifications: {},
@@ -42,6 +43,12 @@ let sentPushes = [];
 const pathParts = (path) => path.split("/").filter(Boolean);
 const readPath = (path) =>
   pathParts(path).reduce((current, part) => current?.[decodeURIComponent(part)], database);
+const writePath = (path, value) => {
+  const keys = pathParts(path).map(decodeURIComponent);
+  let target = database;
+  for (const key of keys.slice(0, -1)) target = target[key] ??= {};
+  target[keys.at(-1)] = value;
+};
 
 globalThis.fetch = async (input, options = {}) => {
   const url = String(input);
@@ -50,6 +57,10 @@ globalThis.fetch = async (input, options = {}) => {
     return Response.json({ access_token: "database-access-token" });
   }
   if (url.startsWith("https://identitytoolkit.googleapis.com/v1/accounts:lookup")) {
+    const { idToken } = JSON.parse(options.body);
+    if (idToken === "valid-barber-token") {
+      return Response.json({ users: [{ localId: kacperUid, email: "kacper@example.com" }] });
+    }
     return Response.json({ users: [{ localId: "client-uid", email: "client@example.com" }] });
   }
   if (url === "https://api.resend.com/emails") {
@@ -64,6 +75,7 @@ globalThis.fetch = async (input, options = {}) => {
     const parsed = new URL(url);
     const path = parsed.pathname.replace(/^\//, "").replace(/\.json$/, "");
     if ((options.method ?? "GET") === "GET") return Response.json(readPath(path) ?? null);
+    if (options.method === "PUT") writePath(path, JSON.parse(options.body));
     return Response.json({ ok: true });
   }
 
@@ -72,7 +84,7 @@ globalThis.fetch = async (input, options = {}) => {
 
 const notificationModule = await import("../netlify/functions/send-push.mjs");
 
-const sendBookingNotification = (id, event = "new_booking") => {
+const sendBookingNotification = (id, event = "new_booking", token = "valid-client-token") => {
   database.appointments[id] = {
     id,
     barberId: "kacper",
@@ -93,7 +105,7 @@ const sendBookingNotification = (id, event = "new_booking") => {
     new Request("https://bnb.example/.netlify/functions/send-push", {
       method: "POST",
       headers: {
-        Authorization: "Bearer valid-client-token",
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -154,6 +166,28 @@ test("Kacper email receives booking, reschedule and cancellation events", async 
     kacperEmails.map((email) => email.subject),
     ["PILNE BNB: Nowa wizyta", "PILNE BNB: Klient przesunal wizyte", "PILNE BNB: Klient odwolal wizyte"],
   );
+});
+
+test("admin reschedule links the client notification to its appointment", async () => {
+  sentEmails = [];
+  sentPushes = [];
+
+  const response = await sendBookingNotification(
+    "appointment-admin-rescheduled",
+    "admin_rescheduled",
+    "valid-barber-token",
+  );
+  assert.equal(response.status, 200, await response.text());
+  assert.equal(sentPushes.length, 1);
+  assert.equal(sentPushes[0].message.token, "client-token");
+  const link = new URL(sentPushes[0].message.data.link);
+  assert.equal(link.searchParams.get("appointment"), "appointment-admin-rescheduled");
+  assert.equal(link.searchParams.get("event"), "admin_rescheduled");
+
+  const savedNotification = Object.values(database.inAppNotifications["client-uid"]).find(
+    (notification) => notification.appointmentId === "appointment-admin-rescheduled",
+  );
+  assert.equal(savedNotification.event, "admin_rescheduled");
 });
 
 test("deactivated barber loses push and email notifications", async () => {

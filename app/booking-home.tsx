@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -107,6 +108,10 @@ type AdminAppointment = Appointment & {
   price: string;
   color: AppointmentColor;
   status?: AppointmentStatus;
+  rescheduledAt?: number;
+  rescheduledBy?: "client" | "admin";
+  confirmedAt?: number;
+  confirmedBy?: "client" | "admin";
   settledAt?: number;
   settledAmount?: number;
   settlement?: {
@@ -130,9 +135,18 @@ type WorkSettings = {
 
 type AuthUser = Pick<User, "uid" | "displayName" | "email" | "photoURL">;
 
+type AppNotificationEvent =
+  | "new_booking"
+  | "client_rescheduled"
+  | "client_cancelled"
+  | "admin_rescheduled"
+  | "admin_cancelled"
+  | "test_push";
+
 type AppNotification = {
   id: string;
   appointmentId: string;
+  event?: AppNotificationEvent;
   createdAt: number;
   title: string;
   body: string;
@@ -430,6 +444,10 @@ const readStoredNotifications = (uid: string): AppNotification[] => {
           typeof item?.title === "string" &&
           typeof item?.body === "string",
       )
+      .map((item) => ({
+        ...item,
+        event: typeof item.event === "string" ? item.event as AppNotificationEvent : undefined,
+      }))
       .slice(0, maxStoredNotifications);
   } catch {
     return [];
@@ -1090,6 +1108,8 @@ export function BookingHome() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [activeNotification, setActiveNotification] = useState<AppNotification | null>(null);
+  const [openingNotificationId, setOpeningNotificationId] = useState<string | null>(null);
+  const [pendingNotificationAppointmentId, setPendingNotificationAppointmentId] = useState("");
   const [clientSearch, setClientSearch] = useState("");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
   const [clientWorkspaceTab, setClientWorkspaceTab] = useState<ClientWorkspaceTab>("appointments");
@@ -1659,6 +1679,15 @@ export function BookingHome() {
   const canShiftToPreviousMonth = visibleMonth.getTime() > currentMonthStart.getTime();
   const selectedClientAppointment =
     clientAppointments.find((appointment) => appointment.id === clientAppointmentId) ?? null;
+  const selectedClientAppointmentIsRescheduled = Boolean(
+    selectedClientAppointment &&
+      normalizeAppointmentStatus(selectedClientAppointment.status) === "rescheduled",
+  );
+  const selectedClientNeedsConfirmation = Boolean(
+    selectedClientAppointmentIsRescheduled &&
+      selectedClientAppointment &&
+      selectedClientAppointment.rescheduledBy !== "client",
+  );
   const selectedClientAppointmentBarber = selectedClientAppointment
     ? clientBarberOptions.find((barber) => barber.id === selectedClientAppointment.barberId) ?? null
     : null;
@@ -1801,6 +1830,26 @@ export function BookingHome() {
       ? ((currentTimeLineMinutes - adminScheduleStartMinutes) / 15) * 2.8
       : 0;
 
+  const refreshClientAppointmentData = useCallback(async () => {
+    const result = await fetchClientAppointmentData<AdminAppointment>();
+    const loadedAppointments = (result.clientAppointments ?? [])
+      .map((appointment) => ({
+        ...appointment,
+        barberId: appointment.barberId || defaultBarberId,
+        status: normalizeAppointmentStatus(appointment.status),
+        color: normalizeAppointmentColor(appointment.color),
+      }))
+      .sort((first, second) => {
+        if (first.dateKey !== second.dateKey) return first.dateKey.localeCompare(second.dateKey);
+        return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
+      });
+
+    setAllAdminAppointments(loadedAppointments);
+    setAppointments(result.occupancy ?? []);
+    setDataError("");
+    return loadedAppointments;
+  }, []);
+
   useEffect(() => {
     const intervalId = window.setInterval(() => setCurrentDate(new Date()), 30000);
 
@@ -1823,6 +1872,12 @@ export function BookingHome() {
     }
 
     navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const appointmentId = url.searchParams.get("appointment")?.trim();
+    if (appointmentId) setPendingNotificationAppointmentId(appointmentId);
   }, []);
 
   useEffect(() => {
@@ -1943,22 +1998,8 @@ export function BookingHome() {
       let stopped = false;
       const loadClientAppointments = async () => {
         try {
-          const result = await fetchClientAppointmentData<AdminAppointment>();
+          await refreshClientAppointmentData();
           if (stopped) return;
-          setDataError("");
-          const loadedAppointments = (result.clientAppointments ?? [])
-            .map((appointment) => ({
-              ...appointment,
-              barberId: appointment.barberId || defaultBarberId,
-              status: normalizeAppointmentStatus(appointment.status),
-              color: normalizeAppointmentColor(appointment.color),
-            }))
-            .sort((first, second) => {
-              if (first.dateKey !== second.dateKey) return first.dateKey.localeCompare(second.dateKey);
-              return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
-            });
-          setAllAdminAppointments(loadedAppointments);
-          setAppointments(result.occupancy ?? []);
         } catch {
           if (!stopped) {
             setAppointments([]);
@@ -2065,7 +2106,7 @@ export function BookingHome() {
       },
       () => setDataError("Nie udało się pobrać terminarza. Sprawdź uprawnienia Firebase."),
     );
-  }, [activeUser, isAdmin]);
+  }, [activeUser, isAdmin, refreshClientAppointmentData]);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -2149,6 +2190,7 @@ export function BookingHome() {
           .map(([id, notification]) => ({
             id: notification.id || id,
             appointmentId: notification.appointmentId || "",
+            event: notification.event,
             createdAt: Number(notification.createdAt) || Date.now(),
             title: notification.title || "Powiadomienie",
             body: notification.body || "",
@@ -2159,6 +2201,7 @@ export function BookingHome() {
         const normalizedNotifications = loadedNotifications.map((notification) => ({
           id: notification.id,
           appointmentId: notification.appointmentId,
+          event: notification.event,
           createdAt: notification.createdAt,
           title: notification.title,
           body: notification.body,
@@ -2175,6 +2218,7 @@ export function BookingHome() {
           setActiveNotification({
             id: unseen.id,
             appointmentId: unseen.appointmentId,
+            event: unseen.event,
             createdAt: unseen.createdAt,
             title: unseen.title,
             body: unseen.body,
@@ -2189,11 +2233,35 @@ export function BookingHome() {
   }, [activeUser, isOwner]);
 
   useEffect(() => {
+    if (!activeUser || isAdmin || !pendingNotificationAppointmentId) return;
+
+    const appointment = clientAppointments.find(
+      (item) => item.id === pendingNotificationAppointmentId,
+    );
+    if (!appointment) return;
+
+    setClientAppointmentId(appointment.id);
+    setPendingNotificationAppointmentId("");
+    const url = new URL(window.location.href);
+    url.searchParams.delete("appointment");
+    url.searchParams.delete("event");
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, [activeUser, clientAppointments, isAdmin, pendingNotificationAppointmentId]);
+
+  useEffect(() => {
     if (!activeNotification) return undefined;
 
     const timer = window.setTimeout(() => setActiveNotification(null), 5200);
     return () => window.clearTimeout(timer);
   }, [activeNotification]);
+
+  useEffect(() => {
+    if (selectedClientAppointment) setActiveNotification(null);
+  }, [selectedClientAppointment]);
 
   useEffect(() => {
     if (!activeUser) {
@@ -3095,7 +3163,10 @@ export function BookingHome() {
     try {
       setIsSaving(true);
       setBookingError("");
-      const result = await mutateAppointment<AdminAppointment>("confirm_admin", { appointmentId });
+      const result = await mutateAppointment<AdminAppointment>(
+        isAdmin ? "confirm_admin" : "confirm_client",
+        { appointmentId },
+      );
       if (result.appointment) {
         setAllAdminAppointments((current) =>
           current.map((item) => (item.id === appointmentId ? result.appointment! : item)),
@@ -3124,6 +3195,7 @@ export function BookingHome() {
         dateKey: selectedDayKey,
         startTime: selectedTime,
         status: "rescheduled" as const,
+        rescheduledBy: "client" as const,
       };
       setAllAdminAppointments((current) =>
         current.map((item) => (item.id === updatedAppointment.id ? updatedAppointment : item)),
@@ -3327,6 +3399,7 @@ export function BookingHome() {
         dateKey: adminEditDraft.dateKey,
         startTime: adminEditDraft.startTime,
         status: "rescheduled" as const,
+        rescheduledBy: "admin" as const,
       };
       await sendAppointmentNotification("admin_rescheduled", updatedAppointment);
       setAdminSelectedKey(adminEditDraft.dateKey);
@@ -3354,6 +3427,7 @@ export function BookingHome() {
         dateKey: adminSelectedKey,
         startTime,
         status: "rescheduled" as const,
+        rescheduledBy: "admin" as const,
       };
       await sendAppointmentNotification("admin_rescheduled", notificationAppointment);
     } finally {
@@ -3419,6 +3493,44 @@ export function BookingHome() {
       1 - 0.38 * heroScrollProgress
     })`,
   } as CSSProperties;
+  const canOpenClientNotification = (notification: AppNotification) =>
+    !isAdmin &&
+    Boolean(notification.appointmentId) &&
+    notification.event !== "admin_cancelled" &&
+    notification.event !== "client_cancelled" &&
+    notification.event !== "test_push";
+  const openClientNotification = async (notification: AppNotification) => {
+    if (!canOpenClientNotification(notification) || openingNotificationId) return;
+
+    setOpeningNotificationId(notification.id);
+    setActiveNotification(null);
+    setBookingError("");
+    try {
+      const loadedAppointments = await refreshClientAppointmentData();
+      const appointment = loadedAppointments.find((item) => item.id === notification.appointmentId);
+      const status = appointment ? normalizeAppointmentStatus(appointment.status) : "cancelled";
+      if (
+        !appointment ||
+        status === "cancelled" ||
+        status === "completed" ||
+        getAppointmentEndDateTime(appointment).getTime() <= Date.now()
+      ) {
+        throw new Error("Ta wizyta nie jest już aktywna.");
+      }
+
+      setClientAppointmentId(appointment.id);
+      setNotificationPanelOpen(false);
+    } catch (error) {
+      setNotificationPanelOpen(false);
+      setDataError(
+        error instanceof Error
+          ? error.message
+          : "Nie udało się otworzyć wizyty. Spróbuj ponownie.",
+      );
+    } finally {
+      setOpeningNotificationId(null);
+    }
+  };
   const deleteNotification = (notificationId: string) => {
     if (!activeUser) return;
 
@@ -6074,7 +6186,12 @@ export function BookingHome() {
             {notifications.length > 0 ? (
               <div className="notification-list">
                 {notifications.map((notification) => (
-                  <article className="notification-item" key={notification.id}>
+                  <article
+                    className={`notification-item ${
+                      canOpenClientNotification(notification) ? "is-actionable" : ""
+                    }`}
+                    key={notification.id}
+                  >
                     <div className="notification-item-title">
                       <strong>{notification.title}</strong>
                       <button
@@ -6085,15 +6202,43 @@ export function BookingHome() {
                         ×
                       </button>
                     </div>
-                    <span>{notification.body}</span>
-                    <small>
-                      {new Intl.DateTimeFormat("pl-PL", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      }).format(new Date(notification.createdAt))}
-                    </small>
+                    {canOpenClientNotification(notification) ? (
+                      <button
+                        className="notification-item-open"
+                        type="button"
+                        disabled={Boolean(openingNotificationId)}
+                        aria-busy={openingNotificationId === notification.id}
+                        onClick={() => void openClientNotification(notification)}
+                      >
+                        <span>{notification.body}</span>
+                        <small>
+                          {new Intl.DateTimeFormat("pl-PL", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          }).format(new Date(notification.createdAt))}
+                        </small>
+                        <b>
+                          {openingNotificationId === notification.id
+                            ? "Otwieranie..."
+                            : "Zobacz wizytę"}
+                          <i aria-hidden="true">›</i>
+                        </b>
+                      </button>
+                    ) : (
+                      <div className="notification-item-copy">
+                        <span>{notification.body}</span>
+                        <small>
+                          {new Intl.DateTimeFormat("pl-PL", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          }).format(new Date(notification.createdAt))}
+                        </small>
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>
@@ -6105,10 +6250,29 @@ export function BookingHome() {
       ) : null}
 
       {activeNotification ? (
-        <div className="notification-toast" role="status" aria-live="polite">
-          <strong>{activeNotification.title}</strong>
-          <span>{activeNotification.body}</span>
-        </div>
+        canOpenClientNotification(activeNotification) ? (
+          <button
+            className="notification-toast is-actionable"
+            type="button"
+            disabled={Boolean(openingNotificationId)}
+            aria-live="polite"
+            aria-busy={openingNotificationId === activeNotification.id}
+            onClick={() => void openClientNotification(activeNotification)}
+          >
+            <strong>{activeNotification.title}</strong>
+            <span>{activeNotification.body}</span>
+            <small>
+              {openingNotificationId === activeNotification.id
+                ? "Otwieranie..."
+                : "Dotknij, aby zobaczyć wizytę"}
+            </small>
+          </button>
+        ) : (
+          <div className="notification-toast" role="status" aria-live="polite">
+            <strong>{activeNotification.title}</strong>
+            <span>{activeNotification.body}</span>
+          </div>
+        )
       ) : null}
 
       {clientDialog &&
@@ -6465,6 +6629,10 @@ export function BookingHome() {
                 const isPast = getAppointmentEndDateTime(appointment).getTime() <= currentDate.getTime();
                 const isRescheduled =
                   normalizeAppointmentStatus(appointment.status) === "rescheduled";
+                const awaitsClientConfirmation =
+                  isRescheduled && appointment.rescheduledBy === "admin";
+                const awaitsAdminConfirmation =
+                  isRescheduled && appointment.rescheduledBy !== "admin";
                 const isCompleted =
                   normalizeAppointmentStatus(appointment.status) === "completed";
                 const isCancelled =
@@ -6486,15 +6654,19 @@ export function BookingHome() {
                         {appointment.price}
                       </span>
                       <small>
-                        {isCancelled
-                          ? "Wizyta została odwołana"
-                          : isCompleted
-                          ? "Wizyta rozliczona"
-                          : potentialNoShow
-                            ? "Minęła bez rozliczenia"
-                            : settlementAvailable
-                              ? "Możesz już rozliczyć"
-                              : "Nadchodząca wizyta"}
+                        {awaitsClientConfirmation
+                          ? "Czeka na potwierdzenie klienta"
+                          : awaitsAdminConfirmation
+                            ? "Klient czeka na Twoje potwierdzenie"
+                            : isCancelled
+                              ? "Wizyta została odwołana"
+                              : isCompleted
+                                ? "Wizyta rozliczona"
+                                : potentialNoShow
+                                  ? "Minęła bez rozliczenia"
+                                  : settlementAvailable
+                                    ? "Możesz już rozliczyć"
+                                    : "Nadchodząca wizyta"}
                       </small>
                     </div>
                     <em
@@ -6536,7 +6708,7 @@ export function BookingHome() {
                           Edytuj
                         </button>
                       ) : null}
-                      {isRescheduled ? (
+                      {awaitsAdminConfirmation ? (
                         <button
                           className="confirm"
                           type="button"
@@ -6904,7 +7076,7 @@ export function BookingHome() {
             className="client-appointment-modal client-bottom-sheet appointment-detail-sheet"
             role="dialog"
             aria-modal="true"
-            aria-label="Szczegóły Twojej wizyty"
+            aria-labelledby="client-appointment-detail-title"
           >
             <div
               className="sheet-grabber"
@@ -6935,8 +7107,12 @@ export function BookingHome() {
               ×
             </button>
             <div className="modal-title">
-              <p className="eyebrow">Twoja wizyta</p>
-              <h2>{selectedClientAppointment.serviceName}</h2>
+              <p className="eyebrow">
+                {selectedClientAppointmentIsRescheduled
+                  ? "Zmiana terminu"
+                  : "Twoja wizyta"}
+              </p>
+              <h2 id="client-appointment-detail-title">{selectedClientAppointment.serviceName}</h2>
             </div>
 
             {selectedClientAppointmentBarber ? (
@@ -6985,29 +7161,41 @@ export function BookingHome() {
             </div>
 
             <div className="modal-client-note">
-              <strong>{selectedClientAppointment.clientName}</strong>
+              <strong>
+                {selectedClientNeedsConfirmation
+                  ? "Czy nowy termin Ci odpowiada?"
+                  : selectedClientAppointmentIsRescheduled
+                    ? "Czekamy na potwierdzenie barbera"
+                    : selectedClientAppointment.confirmedBy === "client"
+                      ? "Termin potwierdzony"
+                      : selectedClientAppointment.clientName}
+              </strong>
               <span>
-                {normalizeAppointmentStatus(selectedClientAppointment.status) === "rescheduled"
-                  ? "Termin został przesunięty przez administratora. Jeśli nowa data Ci pasuje, potwierdź wizytę poniżej."
-                  : "W razie zmiany planów możesz przesunąć termin albo odwołać wizytę."}
+                {selectedClientNeedsConfirmation
+                  ? "Sprawdź datę i godzinę powyżej. Jeśli wszystko się zgadza, potwierdź nowy termin."
+                  : selectedClientAppointmentIsRescheduled
+                    ? "Twoja propozycja zmiany została zapisana. Barber może ją teraz potwierdzić."
+                    : selectedClientAppointment.confirmedBy === "client"
+                      ? "Dziękujemy. Barber widzi już Twoje potwierdzenie."
+                      : "W razie zmiany planów możesz przesunąć termin albo odwołać wizytę."}
               </span>
             </div>
 
+            {bookingError ? <p className="modal-operation-error" role="alert">{bookingError}</p> : null}
+
             <div
               className={`modal-actions ${
-                normalizeAppointmentStatus(selectedClientAppointment.status) === "rescheduled"
-                  ? "with-confirmation"
-                  : ""
+                selectedClientNeedsConfirmation ? "with-confirmation" : ""
               }`}
             >
-              {normalizeAppointmentStatus(selectedClientAppointment.status) === "rescheduled" ? (
+              {selectedClientNeedsConfirmation ? (
                 <button
                   className="confirm"
                   type="button"
                   disabled={isSaving}
                   onClick={() => confirmClientRescheduledAppointment(selectedClientAppointment.id)}
                 >
-                  Potwierdź nowy termin
+                  {isSaving ? "Potwierdzanie..." : "Potwierdzam nowy termin"}
                 </button>
               ) : null}
               <button

@@ -60,7 +60,7 @@ test("keeps the premium client booking flow and safety controls", async () => {
 
   assert.match(bookingHome, /Twoja najbliższa wizyta/);
   assert.match(bookingHome, /className="booking-progress"/);
-  assert.match(bookingHome, /Potwierdź nowy termin/);
+  assert.match(bookingHome, /Potwierdzam nowy termin/);
   assert.match(bookingHome, /Odwołaj wizytę/);
   assert.match(bookingHome, /if \(direction === -1 && !canShiftToPreviousMonth\) return/);
   assert.match(bookingHome, /event\.key !== "Escape"/);
@@ -281,6 +281,26 @@ test("keeps barber ownership and excludes the owner from appointment notificatio
   assert.match(sendPush, /writeInAppNotifications/);
   assert.match(bookingHome, /!isOwner \? notificationButton : null/);
   assert.match(sendPush, /appointmentBarberId: eventAppointment\.barberId/);
+});
+
+test("opens appointment notifications and lets the client confirm a changed time", async () => {
+  const [bookingHome, styles, sendPush, appointmentApi] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/send-push.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /const openClientNotification = async/);
+  assert.match(bookingHome, /refreshClientAppointmentData\(\)/);
+  assert.match(bookingHome, /isAdmin \? "confirm_admin" : "confirm_client"/);
+  assert.match(bookingHome, /Czy nowy termin Ci odpowiada\?/);
+  assert.match(bookingHome, /Potwierdzam nowy termin/);
+  assert.match(styles, /\.notification-item-open/);
+  assert.match(styles, /\.notification-toast\.is-actionable/);
+  assert.match(sendPush, /notificationLink\.searchParams\.set\("appointment"/);
+  assert.match(sendPush, /appointmentId: appointment\.id,[\s\S]*event,/);
+  assert.match(appointmentApi, /next\.confirmedBy = action === "confirm_client" \? "client" : "admin"/);
 });
 
 test("separates active visits from the client directory", async () => {
