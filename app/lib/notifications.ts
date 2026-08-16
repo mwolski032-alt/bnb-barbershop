@@ -186,7 +186,9 @@ export const sendTestNotification = async (user: NotificationUser) =>
     startTime: new Date().toTimeString().slice(0, 5),
   });
 
-export const listenForForegroundPushNotifications = async () => {
+export const listenForForegroundPushNotifications = async (
+  onNotification?: (payload: MessagePayload) => void,
+) => {
   if (
     typeof window === "undefined" ||
     !("Notification" in window) ||
@@ -199,6 +201,7 @@ export const listenForForegroundPushNotifications = async () => {
   const messaging = getMessaging(firebaseApp);
 
   return onMessage(messaging, (payload: MessagePayload) => {
+    onNotification?.(payload);
     const notification = payload.notification ?? {};
     const data = payload.data ?? {};
     const title = notification.title ?? data.title ?? "BNB Barbershop";

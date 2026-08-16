@@ -1,18 +1,13 @@
 import {
   databaseUrl,
   claimRateLimit,
+  fixedBarberUserIds,
   getAccessToken,
   getAdminContext,
   jsonResponse,
   readDatabase,
   verifyRequestUser,
-  writeDatabase,
 } from "./_firebase-admin.mjs";
-
-const fixedBarberUserIds = {
-  mateusz: "XxBe4dwVYWZPtl004J4tWq6AMZ73",
-  kacper: "TVwF6j7ePiTFhiGTWWPrq9nmRvJ3",
-};
 
 const getBarberFallbackEmail = (barberId) => {
   if (barberId === "mateusz") return process.env.BARBER_MATEUSZ_EMAIL || "";
@@ -138,9 +133,30 @@ const readBarberContact = async (accessToken, barberId) => {
   return {
     active,
     email: active ? String(member.email ?? "").trim().toLocaleLowerCase("pl") : "",
-    userId: active ? String(member.userId || fixedBarberUserIds[barberId] || "").trim() : "",
+    userId: active ? String(fixedBarberUserIds[barberId] || member.userId || "").trim() : "",
     name: String(member.name ?? "").trim(),
   };
+};
+
+const clientPushCopy = {
+  new_booking: {
+    title: "Wizyta potwierdzona",
+    body: (appointment) =>
+      `${appointment.serviceName}: ${appointment.dateKey}, ${appointment.startTime}.`,
+  },
+  client_rescheduled: {
+    title: "Termin wizyty zmieniony",
+    body: (appointment) =>
+      `${appointment.serviceName}: ${appointment.dateKey}, ${appointment.startTime}.`,
+  },
+  client_cancelled: {
+    title: "Wizyta odwołana",
+    body: (appointment) =>
+      `${appointment.serviceName}: ${appointment.dateKey}, ${appointment.startTime}.`,
+  },
+  admin_rescheduled: eventCopy.admin_rescheduled,
+  admin_cancelled: eventCopy.admin_cancelled,
+  test_push: eventCopy.test_push,
 };
 
 const writePushLog = async (accessToken, payload) => {
@@ -158,19 +174,19 @@ const writePushLog = async (accessToken, payload) => {
   }
 };
 
-const collectTargetTokens = (tokensByUser, target, appointment, barberUserId) => {
+const collectTargetTokens = (tokensByUser, event, appointment, barberUserId) => {
   const collected = [];
 
   for (const [uid, devices] of Object.entries(tokensByUser)) {
     for (const [deviceKey, device] of Object.entries(devices ?? {})) {
       if (!device?.token) continue;
 
-      if (target === "barber" && barberUserId && uid === barberUserId) {
-        collected.push({ uid, deviceKey, token: device.token });
+      if (eventCopy[event].target === "barber" && barberUserId && uid === barberUserId) {
+        collected.push({ uid, deviceKey, token: device.token, audience: "barber" });
       }
 
-      if (target === "client" && appointment.userId && uid === appointment.userId) {
-        collected.push({ uid, deviceKey, token: device.token });
+      if (appointment.userId && uid === appointment.userId) {
+        collected.push({ uid, deviceKey, token: device.token, audience: "client" });
       }
     }
   }
@@ -226,14 +242,12 @@ const sendToToken = async (accessToken, device, notification, appointment, siteU
           tag: `appointment-${appointment.id}-${appointment.event}`,
         },
         webpush: {
+          headers: {
+            Urgency: "high",
+            TTL: "86400",
+          },
           fcm_options: {
             link: notificationLink.href,
-          },
-          notification: {
-            ...notification,
-            icon: "/icons/icon-192.png",
-            badge: "/icons/icon-192.png",
-            tag: `appointment-${appointment.id}-${appointment.event}`,
           },
         },
       },
@@ -372,7 +386,7 @@ const sendClientEmail = async (event, appointment) => {
   });
 };
 
-const sendPushNotifications = async (copy, appointment, notification, siteUrl) => {
+const sendPushNotifications = async (event, copy, appointment, notification, siteUrl) => {
   try {
     const accessToken = await getAccessToken();
     const [tokensByUser, barberContact] = await Promise.all([
@@ -383,13 +397,28 @@ const sendPushNotifications = async (copy, appointment, notification, siteUrl) =
     ]);
     const tokens = collectTargetTokens(
       tokensByUser,
-      copy.target,
+      event,
       appointment,
       barberContact.userId,
     );
     const eventAppointment = { ...appointment, event: appointment.event };
     const results = await Promise.all(
-      tokens.map((device) => sendToToken(accessToken, device, notification, eventAppointment, siteUrl)),
+      tokens.map((device) => {
+        const audienceCopy = device.audience === "client" ? clientPushCopy[event] : null;
+        const audienceNotification = audienceCopy
+          ? {
+              title: audienceCopy.title,
+              body: audienceCopy.body(eventAppointment),
+            }
+          : notification;
+        return sendToToken(
+          accessToken,
+          device,
+          audienceNotification,
+          eventAppointment,
+          siteUrl,
+        );
+      }),
     );
     const failed = results.filter((result) => !result.ok);
 
@@ -428,51 +457,6 @@ const validateNotificationAccess = (event, appointment, user, admin) => {
     return appointment.userId === user.uid || isAdminAllowedForAppointment(admin, appointment);
   }
   return false;
-};
-
-const notificationKey = (event, appointment) =>
-  `${event}-${appointment.id}-${appointment.dateKey}-${appointment.startTime}`.replace(/[.#$\[\]/]/g, "_");
-
-const writeInAppNotifications = async (accessToken, event, appointment, copy, barberContact) => {
-  const recipients = [];
-  const serviceLine = `${appointment.serviceName}, ${appointment.dateKey}, ${appointment.startTime}`;
-
-  if (["new_booking", "client_rescheduled", "client_cancelled"].includes(event)) {
-    if (barberContact.active && barberContact.userId) {
-      recipients.push({ uid: barberContact.userId, title: copy.title, body: copy.body(appointment) });
-    }
-    if (appointment.userId) {
-      const clientTitle = event === "new_booking"
-        ? "Wizyta potwierdzona"
-        : event === "client_rescheduled"
-          ? "Termin wizyty zmieniony"
-          : "Wizyta odwołana";
-      recipients.push({ uid: appointment.userId, title: clientTitle, body: serviceLine });
-    }
-  } else if (["admin_rescheduled", "admin_cancelled", "test_push"].includes(event)) {
-    if (appointment.userId) {
-      recipients.push({ uid: appointment.userId, title: copy.title, body: copy.body(appointment) });
-    }
-  }
-
-  const id = notificationKey(event, appointment);
-  await Promise.all(
-    recipients.map((recipient) =>
-      writeDatabase(
-        `inAppNotifications/${recipient.uid}/${id}`,
-        {
-          id,
-          appointmentId: appointment.id,
-          event,
-          createdAt: Date.now(),
-          title: recipient.title,
-          body: recipient.body,
-          seenAt: 0,
-        },
-        accessToken,
-      ),
-    ),
-  );
 };
 
 const handler = async (request) => {
@@ -527,12 +511,10 @@ const handler = async (request) => {
       title: copy.title,
       body: copy.body(eventAppointment),
     };
-    const barberContact = await readBarberContact(accessToken, eventAppointment.barberId);
     const [email, clientEmail, push] = await Promise.all([
       sendBarberEmail(copy, eventAppointment),
       sendClientEmail(event, eventAppointment),
-      sendPushNotifications(copy, eventAppointment, notification, siteUrl),
-      writeInAppNotifications(accessToken, event, eventAppointment, copy, barberContact),
+      sendPushNotifications(event, copy, eventAppointment, notification, siteUrl),
     ]);
     const sms = { enabled: false, sent: 0, failed: 0, error: "Owner SMS notifications are disabled." };
     const whatsapp = {

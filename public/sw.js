@@ -1,4 +1,4 @@
-const CACHE_NAME = "bnb-barbershop-v3";
+const CACHE_NAME = "bnb-barbershop-v4";
 const STATIC_ASSET_TYPES = new Set(["font", "image", "manifest", "script", "style"]);
 let firebaseMessagingReady = false;
 const FIREBASE_CONFIG = {
@@ -113,9 +113,9 @@ self.addEventListener("notificationclick", (event) => {
         const existingClient = clientList.find((client) => client.url.startsWith(self.location.origin));
 
         if (existingClient) {
-          existingClient.focus();
-          existingClient.navigate(targetUrl);
-          return;
+          return existingClient
+            .navigate(targetUrl)
+            .then((navigatedClient) => navigatedClient?.focus());
         }
 
         return self.clients.openWindow(targetUrl);

@@ -18,11 +18,13 @@ import {
   signOut,
   type User,
 } from "firebase/auth";
-import { onValue, ref, remove, serverTimestamp, set, update } from "firebase/database";
+import { onValue, ref, serverTimestamp, set, update } from "firebase/database";
 
 import { firebaseApp, realtimeDb } from "./lib/firebase";
 import { fetchClientAppointmentData, mutateAppointment } from "./lib/appointments";
 import {
+  listenForForegroundPushNotifications,
+  registerPushNotifications,
   sendAppointmentNotification,
 } from "./lib/notifications";
 
@@ -134,23 +136,6 @@ type WorkSettings = {
 };
 
 type AuthUser = Pick<User, "uid" | "displayName" | "email" | "photoURL">;
-
-type AppNotificationEvent =
-  | "new_booking"
-  | "client_rescheduled"
-  | "client_cancelled"
-  | "admin_rescheduled"
-  | "admin_cancelled"
-  | "test_push";
-
-type AppNotification = {
-  id: string;
-  appointmentId: string;
-  event?: AppNotificationEvent;
-  createdAt: number;
-  title: string;
-  body: string;
-};
 
 type SmsTemplate = "confirmation" | "reschedule" | "reminder" | "custom";
 type ClientFilter = "all" | "upcoming" | "rescheduled" | "missing-phone";
@@ -295,7 +280,6 @@ const defaultBarbers: BarberProfile[] = [
   },
 ];
 const shouldRunDataMigration = import.meta.env.PROD;
-const maxStoredNotifications = 40;
 const emptyBarberDetails: BarberDetails = {
   displayName: "",
   phone: "",
@@ -426,42 +410,6 @@ const getAppointmentDistanceLabel = (dateKeyValue: string, today: Date) => {
   return selectedDayFormatter.format(appointmentDay);
 };
 
-const getNotificationStorageKey = (uid: string) => `bnb-notifications-${uid}`;
-
-const readStoredNotifications = (uid: string): AppNotification[] => {
-  if (typeof window === "undefined") return [];
-
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(getNotificationStorageKey(uid)) ?? "[]");
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .filter(
-        (item): item is AppNotification =>
-          typeof item?.id === "string" &&
-          typeof item?.appointmentId === "string" &&
-          typeof item?.createdAt === "number" &&
-          typeof item?.title === "string" &&
-          typeof item?.body === "string",
-      )
-      .map((item) => ({
-        ...item,
-        event: typeof item.event === "string" ? item.event as AppNotificationEvent : undefined,
-      }))
-      .slice(0, maxStoredNotifications);
-  } catch {
-    return [];
-  }
-};
-
-const writeStoredNotifications = (uid: string, notifications: AppNotification[]) => {
-  if (typeof window === "undefined") return;
-
-  window.localStorage.setItem(
-    getNotificationStorageKey(uid),
-    JSON.stringify(notifications.slice(0, maxStoredNotifications)),
-  );
-};
 const appointmentColorPalette: AppointmentColor[] = [
   "blue",
   "mint",
@@ -1105,10 +1053,6 @@ export function BookingHome() {
   const [successReady, setSuccessReady] = useState(false);
   const [draggedAppointmentId, setDraggedAppointmentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
-  const [activeNotification, setActiveNotification] = useState<AppNotification | null>(null);
-  const [openingNotificationId, setOpeningNotificationId] = useState<string | null>(null);
   const [pendingNotificationAppointmentId, setPendingNotificationAppointmentId] = useState("");
   const [clientSearch, setClientSearch] = useState("");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
@@ -1145,7 +1089,6 @@ export function BookingHome() {
   const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isProfilePhotoProcessing, setIsProfilePhotoProcessing] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
-  const silentNewAppointmentToastIdRef = useRef<string | null>(null);
   const bookingServiceRef = useRef<HTMLDivElement | null>(null);
   const bookingBarberRef = useRef<HTMLDivElement | null>(null);
   const bookingCalendarRef = useRef<HTMLDivElement | null>(null);
@@ -1850,6 +1793,19 @@ export function BookingHome() {
     return loadedAppointments;
   }, []);
 
+  const registerCurrentPushDevice = useCallback(async () => {
+    if (!activeUser || isOwner) return;
+
+    await registerPushNotifications(
+      {
+        uid: activeUser.uid,
+        displayName: activeUser.displayName ?? null,
+        email: activeUser.email ?? null,
+      },
+      isAdmin,
+    ).catch(() => undefined);
+  }, [activeUser, isAdmin, isOwner]);
+
   useEffect(() => {
     const intervalId = window.setInterval(() => setCurrentDate(new Date()), 30000);
 
@@ -1873,6 +1829,66 @@ export function BookingHome() {
 
     navigator.serviceWorker.register("/sw.js").catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (
+      !activeUser ||
+      isOwner ||
+      typeof Notification === "undefined" ||
+      Notification.permission !== "granted"
+    ) {
+      return;
+    }
+
+    void registerCurrentPushDevice();
+  }, [activeUser, isOwner, registerCurrentPushDevice]);
+
+  useEffect(() => {
+    if (
+      !activeUser ||
+      isOwner ||
+      typeof Notification === "undefined" ||
+      Notification.permission !== "default"
+    ) {
+      return undefined;
+    }
+
+    const registerAfterInteraction = () => {
+      void registerCurrentPushDevice();
+      window.removeEventListener("pointerdown", registerAfterInteraction, true);
+      window.removeEventListener("keydown", registerAfterInteraction, true);
+    };
+    window.addEventListener("pointerdown", registerAfterInteraction, true);
+    window.addEventListener("keydown", registerAfterInteraction, true);
+
+    return () => {
+      window.removeEventListener("pointerdown", registerAfterInteraction, true);
+      window.removeEventListener("keydown", registerAfterInteraction, true);
+    };
+  }, [activeUser, isOwner, registerCurrentPushDevice]);
+
+  useEffect(() => {
+    if (!activeUser || isOwner) return undefined;
+
+    let stopped = false;
+    let unsubscribe: (() => void) | undefined;
+    void listenForForegroundPushNotifications(() => {
+      if (isBarber) void refreshClientAppointmentData();
+    })
+      .then((listener) => {
+        if (stopped) {
+          listener();
+          return;
+        }
+        unsubscribe = listener;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      stopped = true;
+      unsubscribe?.();
+    };
+  }, [activeUser, isBarber, isOwner, refreshClientAppointmentData]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -1919,10 +1935,10 @@ export function BookingHome() {
 
   useEffect(() => {
     setSelectedBarberId(null);
-    setNotificationPanelOpen(false);
-    setActiveNotification(null);
-    setNotifications(activeUser && !isOwner ? readStoredNotifications(activeUser.uid) : []);
-  }, [activeUser, isOwner]);
+    if (activeUser) {
+      window.localStorage.removeItem(`bnb-notifications-${activeUser.uid}`);
+    }
+  }, [activeUser]);
 
   useEffect(() => {
     if (!activeUser) {
@@ -2187,65 +2203,6 @@ export function BookingHome() {
   }, [activeBarberId, activeBarberProfile, teamMembers]);
 
   useEffect(() => {
-    if (!activeUser || isOwner) return undefined;
-
-    const notificationsRef = ref(realtimeDb, `inAppNotifications/${activeUser.uid}`);
-    return onValue(
-      notificationsRef,
-      (snapshot) => {
-        const value = snapshot.val() as
-          | Record<string, AppNotification & { seenAt?: number }>
-          | null;
-        const loadedNotifications = Object.entries(value ?? {})
-          .map(([id, notification]) => ({
-            id: notification.id || id,
-            appointmentId: notification.appointmentId || "",
-            event: notification.event,
-            createdAt: Number(notification.createdAt) || Date.now(),
-            title: notification.title || "Powiadomienie",
-            body: notification.body || "",
-            seenAt: Number(notification.seenAt) || 0,
-          }))
-          .sort((first, second) => second.createdAt - first.createdAt)
-          .slice(0, maxStoredNotifications);
-        const normalizedNotifications = loadedNotifications.map((notification) => ({
-          id: notification.id,
-          appointmentId: notification.appointmentId,
-          event: notification.event,
-          createdAt: notification.createdAt,
-          title: notification.title,
-          body: notification.body,
-        }));
-        setNotifications(normalizedNotifications);
-        writeStoredNotifications(activeUser.uid, normalizedNotifications);
-
-        const unseen = loadedNotifications.find((notification) => !notification.seenAt);
-        if (!unseen) return;
-        if (isBarber && unseen.appointmentId) {
-          void refreshClientAppointmentData();
-        }
-        const silentAppointmentId = silentNewAppointmentToastIdRef.current;
-        if (unseen.appointmentId === silentAppointmentId) {
-          silentNewAppointmentToastIdRef.current = null;
-        } else {
-          setActiveNotification({
-            id: unseen.id,
-            appointmentId: unseen.appointmentId,
-            event: unseen.event,
-            createdAt: unseen.createdAt,
-            title: unseen.title,
-            body: unseen.body,
-          });
-        }
-        void update(ref(realtimeDb, `inAppNotifications/${activeUser.uid}/${unseen.id}`), {
-          seenAt: Date.now(),
-        });
-      },
-      () => setNotifications(readStoredNotifications(activeUser.uid)),
-    );
-  }, [activeUser, isBarber, isOwner, refreshClientAppointmentData]);
-
-  useEffect(() => {
     if (!activeUser || isAdmin || !pendingNotificationAppointmentId) return;
 
     const appointment = clientAppointments.find(
@@ -2264,17 +2221,6 @@ export function BookingHome() {
       `${url.pathname}${url.search}${url.hash}`,
     );
   }, [activeUser, clientAppointments, isAdmin, pendingNotificationAppointmentId]);
-
-  useEffect(() => {
-    if (!activeNotification) return undefined;
-
-    const timer = window.setTimeout(() => setActiveNotification(null), 5200);
-    return () => window.clearTimeout(timer);
-  }, [activeNotification]);
-
-  useEffect(() => {
-    if (selectedClientAppointment) setActiveNotification(null);
-  }, [selectedClientAppointment]);
 
   useEffect(() => {
     if (!activeUser) {
@@ -2462,8 +2408,7 @@ export function BookingHome() {
         selectedAdminClient ||
         pendingClientRemovalId ||
         clientDialog ||
-        smsComposer ||
-        notificationPanelOpen,
+        smsComposer,
     );
     if (!clientModalOpen) return undefined;
 
@@ -2506,9 +2451,7 @@ export function BookingHome() {
       }
       if (event.key !== "Escape") return;
 
-      if (notificationPanelOpen) {
-        setNotificationPanelOpen(false);
-      } else if (pendingClientRemovalId) {
+      if (pendingClientRemovalId) {
         setPendingClientRemovalId(null);
       } else if (pendingClientCancellation) {
         setPendingClientCancellationId(null);
@@ -2537,7 +2480,6 @@ export function BookingHome() {
   }, [
     clientAppointmentsListOpen,
     clientDialog,
-    notificationPanelOpen,
     pendingClientCancellation,
     pendingClientRemovalId,
     selectedAdminClient,
@@ -3304,7 +3246,6 @@ export function BookingHome() {
       fullName: form.fullName.trim(),
       phone: form.phone,
     });
-    silentNewAppointmentToastIdRef.current = appointmentId;
     try {
       setIsSaving(true);
       setBookingError("");
@@ -3333,9 +3274,6 @@ export function BookingHome() {
       setForm({ fullName: "", phone: "" });
       setStep("success");
     } catch (error) {
-      if (silentNewAppointmentToastIdRef.current === appointmentId) {
-        silentNewAppointmentToastIdRef.current = null;
-      }
       setBookingError(error instanceof Error ? error.message : "Nie udało się zapisać wizyty.");
     } finally {
       setIsSaving(false);
@@ -3506,55 +3444,6 @@ export function BookingHome() {
       1 - 0.38 * heroScrollProgress
     })`,
   } as CSSProperties;
-  const canOpenClientNotification = (notification: AppNotification) =>
-    !isAdmin &&
-    Boolean(notification.appointmentId) &&
-    notification.event !== "admin_cancelled" &&
-    notification.event !== "client_cancelled" &&
-    notification.event !== "test_push";
-  const openClientNotification = async (notification: AppNotification) => {
-    if (!canOpenClientNotification(notification) || openingNotificationId) return;
-
-    setOpeningNotificationId(notification.id);
-    setActiveNotification(null);
-    setBookingError("");
-    try {
-      const loadedAppointments = await refreshClientAppointmentData();
-      const appointment = loadedAppointments.find((item) => item.id === notification.appointmentId);
-      const status = appointment ? normalizeAppointmentStatus(appointment.status) : "cancelled";
-      if (
-        !appointment ||
-        status === "cancelled" ||
-        status === "completed" ||
-        getAppointmentEndDateTime(appointment).getTime() <= Date.now()
-      ) {
-        throw new Error("Ta wizyta nie jest już aktywna.");
-      }
-
-      setClientAppointmentId(appointment.id);
-      setNotificationPanelOpen(false);
-    } catch (error) {
-      setNotificationPanelOpen(false);
-      setDataError(
-        error instanceof Error
-          ? error.message
-          : "Nie udało się otworzyć wizyty. Spróbuj ponownie.",
-      );
-    } finally {
-      setOpeningNotificationId(null);
-    }
-  };
-  const deleteNotification = (notificationId: string) => {
-    if (!activeUser) return;
-
-    void remove(ref(realtimeDb, `inAppNotifications/${activeUser.uid}/${notificationId}`));
-    setNotifications((current) => {
-      const updatedNotifications = current.filter((notification) => notification.id !== notificationId);
-      writeStoredNotifications(activeUser.uid, updatedNotifications);
-      return updatedNotifications;
-    });
-    setActiveNotification((current) => (current?.id === notificationId ? null : current));
-  };
   const openSmsComposer = (client: AdminClientProfile, appointment: AdminAppointment) => {
     if (getPhoneDigits(client.phone).length !== 9) return;
 
@@ -3814,22 +3703,6 @@ export function BookingHome() {
         : current,
     );
   };
-  const notificationButton = (
-    <button
-      className={`notification-bell ${notifications.length > 0 ? "has-items" : ""}`}
-      type="button"
-      onClick={() => {
-        setActiveNotification(null);
-        setNotificationPanelOpen((isOpen) => !isOpen);
-      }}
-      aria-label="Otwórz listę powiadomień"
-      aria-expanded={notificationPanelOpen}
-    >
-      <span className="notification-bell-icon" aria-hidden="true" />
-      {notifications.length > 0 ? <b>{Math.min(notifications.length, 9)}</b> : null}
-    </button>
-  );
-
   if (!authReady) {
     return (
       <main className="auth-shell" aria-label="Ładowanie logowania">
@@ -3921,7 +3794,7 @@ export function BookingHome() {
               <p className="eyebrow">{isOwner ? "Właściciel" : "Barber"}</p>
               <h1>{selectedBarber ? adminSectionLabels[adminSection] : "Wybierz barbera"}</h1>
             </div>
-            {selectedBarber && !isOwner ? notificationButton : <span className="owner-topbar-spacer" />}
+            <span className="owner-topbar-spacer" />
           </div>
 
           {isOwner && !selectedBarber ? (
@@ -5542,7 +5415,6 @@ export function BookingHome() {
                   photoUrl={activeUser.photoURL}
                 />
                 <strong>{activeUser.displayName ?? activeUser.email ?? "Klient"}</strong>
-                {!isOwner ? notificationButton : null}
                 <button
                   type="button"
                   onClick={() => {
@@ -6161,131 +6033,6 @@ export function BookingHome() {
             </form>
           </section>
         </div>
-      ) : null}
-
-      {notificationPanelOpen ? (
-        <div
-          className="notification-panel-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setNotificationPanelOpen(false);
-          }}
-        >
-          <aside
-            className="notification-panel client-bottom-sheet"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Lista powiadomień"
-          >
-            <div
-              className="sheet-grabber"
-              aria-hidden="true"
-              onPointerDown={beginSheetGesture}
-              onPointerUp={(event) => endSheetGesture(event, () => setNotificationPanelOpen(false))}
-              onPointerCancel={() => {
-                sheetGestureRef.current = null;
-              }}
-            />
-            <div className="notification-panel-header">
-              <strong>Powiadomienia</strong>
-              <button
-                type="button"
-                onClick={() => setNotificationPanelOpen(false)}
-                aria-label="Zamknij"
-              >
-                ×
-              </button>
-            </div>
-            {notifications.length > 0 ? (
-              <div className="notification-list">
-                {notifications.map((notification) => (
-                  <article
-                    className={`notification-item ${
-                      canOpenClientNotification(notification) ? "is-actionable" : ""
-                    }`}
-                    key={notification.id}
-                  >
-                    <div className="notification-item-title">
-                      <strong>{notification.title}</strong>
-                      <button
-                        type="button"
-                        onClick={() => deleteNotification(notification.id)}
-                        aria-label="Usuń powiadomienie"
-                      >
-                        ×
-                      </button>
-                    </div>
-                    {canOpenClientNotification(notification) ? (
-                      <button
-                        className="notification-item-open"
-                        type="button"
-                        disabled={Boolean(openingNotificationId)}
-                        aria-busy={openingNotificationId === notification.id}
-                        onClick={() => void openClientNotification(notification)}
-                      >
-                        <span>{notification.body}</span>
-                        <small>
-                          {new Intl.DateTimeFormat("pl-PL", {
-                            day: "2-digit",
-                            month: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          }).format(new Date(notification.createdAt))}
-                        </small>
-                        <b>
-                          {openingNotificationId === notification.id
-                            ? "Otwieranie..."
-                            : "Zobacz wizytę"}
-                          <i aria-hidden="true">›</i>
-                        </b>
-                      </button>
-                    ) : (
-                      <div className="notification-item-copy">
-                        <span>{notification.body}</span>
-                        <small>
-                          {new Intl.DateTimeFormat("pl-PL", {
-                            day: "2-digit",
-                            month: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          }).format(new Date(notification.createdAt))}
-                        </small>
-                      </div>
-                    )}
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="notification-empty">Brak powiadomień.</p>
-            )}
-          </aside>
-        </div>
-      ) : null}
-
-      {activeNotification ? (
-        canOpenClientNotification(activeNotification) ? (
-          <button
-            className="notification-toast is-actionable"
-            type="button"
-            disabled={Boolean(openingNotificationId)}
-            aria-live="polite"
-            aria-busy={openingNotificationId === activeNotification.id}
-            onClick={() => void openClientNotification(activeNotification)}
-          >
-            <strong>{activeNotification.title}</strong>
-            <span>{activeNotification.body}</span>
-            <small>
-              {openingNotificationId === activeNotification.id
-                ? "Otwieranie..."
-                : "Dotknij, aby zobaczyć wizytę"}
-            </small>
-          </button>
-        ) : (
-          <div className="notification-toast" role="status" aria-live="polite">
-            <strong>{activeNotification.title}</strong>
-            <span>{activeNotification.body}</span>
-          </div>
-        )
       ) : null}
 
       {clientDialog &&

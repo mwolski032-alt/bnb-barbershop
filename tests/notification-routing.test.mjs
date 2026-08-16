@@ -3,6 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 
 const ownerUid = "xkyDu2Lb1Ma8McF7yfyv8PIAj1M2";
+const mateuszUid = "XxBe4dwVYWZPtl004J4tWq6AMZ73";
 const kacperUid = "TVwF6j7ePiTFhiGTWWPrq9nmRvJ3";
 const databaseUrl = "https://mock-bnb.firebaseio.test";
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -20,6 +21,13 @@ process.env.URL = "https://bnb.example";
 const database = {
   team: {
     barbers: {
+      mateusz: {
+        id: "mateusz",
+        name: "Mateusz",
+        email: "mateusz@example.com",
+        userId: "stale-mateusz-uid",
+        active: true,
+      },
       kacper: {
         id: "kacper",
         name: "Kacper",
@@ -31,11 +39,15 @@ const database = {
   },
   notificationTokens: {
     [ownerUid]: { ownerDevice: { token: "owner-token", isAdmin: true } },
+    [mateuszUid]: { mateuszDevice: { token: "mateusz-token", isAdmin: true } },
+    "stale-mateusz-uid": { staleDevice: { token: "stale-token", isAdmin: true } },
     [kacperUid]: { barberDevice: { token: "barber-token", isAdmin: true } },
-    "client-uid": { clientDevice: { token: "client-token", isAdmin: false } },
+    "client-uid": {
+      clientPhone: { token: "client-phone-token", isAdmin: false },
+      clientTablet: { token: "client-tablet-token", isAdmin: false },
+    },
   },
   appointments: {},
-  inAppNotifications: {},
 };
 let sentEmails = [];
 let sentPushes = [];
@@ -142,13 +154,58 @@ test("appointment notifications go only to the assigned active barber", async ()
   const result = await response.json();
 
   assert.equal(response.status, 200, JSON.stringify(result));
-  assert.deepEqual(sentPushes.map((payload) => payload.message.token), ["barber-token"]);
+  assert.deepEqual(
+    sentPushes.map((payload) => payload.message.token),
+    ["barber-token", "client-phone-token", "client-tablet-token"],
+  );
+  assert.deepEqual(
+    sentPushes.slice(1).map((payload) => payload.message.data.title),
+    ["Wizyta potwierdzona", "Wizyta potwierdzona"],
+  );
+  assert.equal(sentPushes.every((payload) => payload.message.webpush.headers.Urgency === "high"), true);
+  assert.equal(sentPushes.every((payload) => payload.message.webpush.notification === undefined), true);
   assert.deepEqual(
     sentEmails.map((email) => email.to).sort(),
     ["client@example.com", "kacper-env@example.com"],
   );
   assert.equal(sentEmails.some((email) => email.to === "owner@example.com"), false);
   assert.equal(sentPushes.some((payload) => payload.message.token === "owner-token"), false);
+});
+
+test("Mateusz notifications use his fixed account instead of a stale team user id", async () => {
+  sentEmails = [];
+  sentPushes = [];
+  const id = "appointment-mateusz-fixed-id";
+  database.appointments[id] = {
+    id,
+    barberId: "mateusz",
+    userId: "client-uid",
+    clientName: "Olaw Testowy",
+    clientEmail: "client@example.com",
+    phone: "500600700",
+    serviceName: "Strzyzenie",
+    dateKey: "2026-08-21",
+    startTime: "11:00",
+    status: "confirmed",
+  };
+
+  const response = await notificationModule.default(
+    new Request("https://bnb.example/.netlify/functions/send-push", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer valid-client-token",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ event: "new_booking", appointment: { id } }),
+    }),
+  );
+
+  assert.equal(response.status, 200, await response.text());
+  assert.deepEqual(
+    sentPushes.map((payload) => payload.message.token),
+    ["mateusz-token", "client-phone-token", "client-tablet-token"],
+  );
+  assert.equal(sentPushes.some((payload) => payload.message.token === "stale-token"), false);
 });
 
 test("Kacper email receives booking, reschedule and cancellation events", async () => {
@@ -178,19 +235,17 @@ test("admin reschedule links the client notification to its appointment", async 
     "valid-barber-token",
   );
   assert.equal(response.status, 200, await response.text());
-  assert.equal(sentPushes.length, 1);
-  assert.equal(sentPushes[0].message.token, "client-token");
+  assert.equal(sentPushes.length, 2);
+  assert.deepEqual(
+    sentPushes.map((payload) => payload.message.token),
+    ["client-phone-token", "client-tablet-token"],
+  );
   const link = new URL(sentPushes[0].message.data.link);
   assert.equal(link.searchParams.get("appointment"), "appointment-admin-rescheduled");
   assert.equal(link.searchParams.get("event"), "admin_rescheduled");
-
-  const savedNotification = Object.values(database.inAppNotifications["client-uid"]).find(
-    (notification) => notification.appointmentId === "appointment-admin-rescheduled",
-  );
-  assert.equal(savedNotification.event, "admin_rescheduled");
 });
 
-test("deactivated barber loses push and email notifications", async () => {
+test("deactivated barber loses own notifications while the client keeps device confirmation", async () => {
   database.team.barbers.kacper.active = false;
   sentEmails = [];
   sentPushes = [];
@@ -199,7 +254,10 @@ test("deactivated barber loses push and email notifications", async () => {
   const result = await response.json();
 
   assert.equal(response.status, 200, JSON.stringify(result));
-  assert.deepEqual(sentPushes, []);
+  assert.deepEqual(
+    sentPushes.map((payload) => payload.message.token),
+    ["client-phone-token", "client-tablet-token"],
+  );
   assert.deepEqual(sentEmails.map((email) => email.to), ["client@example.com"]);
   assert.equal(result.email.sent, 0);
   assert.match(result.email.error, /inactive/i);
