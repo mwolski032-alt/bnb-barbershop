@@ -1964,6 +1964,30 @@ h2 {
   box-shadow: 0 26px 70px rgba(0, 0, 0, 0.52);
 }
 
+.booking-error,
+.booking-operation-error {
+  margin: 0;
+  color: #ffb4b4;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.booking-operation-error {
+  position: fixed;
+  z-index: 84;
+  right: 16px;
+  bottom: calc(92px + env(safe-area-inset-bottom));
+  left: 16px;
+  max-width: 520px;
+  margin-inline: auto;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 103, 103, 0.38);
+  border-radius: 8px;
+  background: rgba(42, 12, 16, 0.96);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.35);
+}
+
 .sheet-grabber {
   display: none;
 }

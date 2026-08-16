@@ -1,4 +1,5 @@
 import { ref, set } from "firebase/database";
+import { getAuth } from "firebase/auth";
 import {
   getMessaging,
   getToken,
@@ -137,9 +138,16 @@ export const sendAppointmentNotification = async (
   },
 ): Promise<SendPushResult> => {
   try {
+    const user = getAuth(firebaseApp).currentUser;
+    if (!user) {
+      return { ok: false, sent: 0, targets: 0, failed: 0, error: "Authentication required." };
+    }
     const response = await fetch("/.netlify/functions/send-push", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${await user.getIdToken()}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ event, appointment }),
     });
     const result = (await response.json().catch(() => null)) as Partial<SendPushResult> | null;

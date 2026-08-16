@@ -1,8 +1,13 @@
-import crypto from "node:crypto";
-
-const databaseUrl =
-  process.env.FIREBASE_DATABASE_URL ??
-  "https://bnbbarber-9a7bd-default-rtdb.europe-west1.firebasedatabase.app";
+import {
+  databaseUrl,
+  claimRateLimit,
+  getAccessToken,
+  getAdminContext,
+  jsonResponse,
+  readDatabase,
+  verifyRequestUser,
+  writeDatabase,
+} from "./_firebase-admin.mjs";
 
 const fixedBarberUserIds = {
   mateusz: "XxBe4dwVYWZPtl004J4tWq6AMZ73",
@@ -84,18 +89,6 @@ const clientEmailCopy = {
   },
 };
 
-const base64Url = (value) =>
-  Buffer.from(value)
-    .toString("base64")
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replaceAll("=", "");
-
-const normalizePrivateKey = () => {
-  const key = process.env.FIREBASE_PRIVATE_KEY;
-  return key?.replace(/\\n/g, "\n");
-};
-
 const escapeHtml = (value) =>
   String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -116,46 +109,6 @@ const renderAppointmentEmail = (copy, appointment, intro) => `
     </table>
   </div>
 `;
-
-const getAccessToken = async () => {
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = normalizePrivateKey();
-
-  if (!clientEmail || !privateKey) {
-    throw new Error("Missing Firebase service account variables.");
-  }
-
-  const now = Math.floor(Date.now() / 1000);
-  const header = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claimSet = base64Url(
-    JSON.stringify({
-      iss: clientEmail,
-      scope: "https://www.googleapis.com/auth/firebase.messaging https://www.googleapis.com/auth/firebase.database",
-      aud: "https://oauth2.googleapis.com/token",
-      exp: now + 3600,
-      iat: now,
-    }),
-  );
-  const unsignedJwt = `${header}.${claimSet}`;
-  const signature = crypto.createSign("RSA-SHA256").update(unsignedJwt).sign(privateKey, "base64");
-  const jwt = `${unsignedJwt}.${signature.replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "")}`;
-
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`OAuth token request failed: ${response.status}`);
-  }
-
-  const value = await response.json();
-  return value.access_token;
-};
 
 const readNotificationTokens = async (accessToken) => {
   const response = await fetch(`${databaseUrl}/notificationTokens.json`, {
@@ -391,7 +344,7 @@ const sendBarberEmail = async (copy, appointment) => {
     subject: `PILNE BNB: ${copy.title}`,
     text: copy.sms?.(barberAppointment) ?? copy.body(barberAppointment),
     html: renderAppointmentEmail(copy, barberAppointment),
-    idempotencyKey: `${appointment.id}-${appointment.event ?? "event"}-${appointment.barberId}-email`,
+    idempotencyKey: `${appointment.id}-${appointment.event ?? "event"}-${appointment.dateKey}-${appointment.startTime}-${appointment.barberId}-email`,
   });
 };
 
@@ -412,7 +365,7 @@ const sendClientEmail = async (event, appointment) => {
     subject: `BNB Barbershop: ${copy.title}`,
     text: copy.body(appointment),
     html: renderAppointmentEmail(copy, appointment),
-    idempotencyKey: `${appointment.id}-${event}-client-email`,
+    idempotencyKey: `${appointment.id}-${event}-${appointment.dateKey}-${appointment.startTime}-client-email`,
   });
 };
 
@@ -461,17 +414,103 @@ const sendPushNotifications = async (copy, appointment, notification, siteUrl) =
   }
 };
 
+const isAdminAllowedForAppointment = (admin, appointment) =>
+  admin.isOwner || (admin.isAdmin && admin.barberId === appointment.barberId);
+
+const validateNotificationAccess = (event, appointment, user, admin) => {
+  if (event === "test_push") return appointment.userId === user.uid;
+  if (event.startsWith("client_")) return appointment.userId === user.uid;
+  if (event.startsWith("admin_")) return isAdminAllowedForAppointment(admin, appointment);
+  if (event === "new_booking") {
+    return appointment.userId === user.uid || isAdminAllowedForAppointment(admin, appointment);
+  }
+  return false;
+};
+
+const notificationKey = (event, appointment) =>
+  `${event}-${appointment.id}-${appointment.dateKey}-${appointment.startTime}`.replace(/[.#$\[\]/]/g, "_");
+
+const writeInAppNotifications = async (accessToken, event, appointment, copy, barberContact) => {
+  const recipients = [];
+  const serviceLine = `${appointment.serviceName}, ${appointment.dateKey}, ${appointment.startTime}`;
+
+  if (["new_booking", "client_rescheduled", "client_cancelled"].includes(event)) {
+    if (barberContact.active && barberContact.userId) {
+      recipients.push({ uid: barberContact.userId, title: copy.title, body: copy.body(appointment) });
+    }
+    if (appointment.userId) {
+      const clientTitle = event === "new_booking"
+        ? "Wizyta potwierdzona"
+        : event === "client_rescheduled"
+          ? "Termin wizyty zmieniony"
+          : "Wizyta odwołana";
+      recipients.push({ uid: appointment.userId, title: clientTitle, body: serviceLine });
+    }
+  } else if (["admin_rescheduled", "admin_cancelled", "test_push"].includes(event)) {
+    if (appointment.userId) {
+      recipients.push({ uid: appointment.userId, title: copy.title, body: copy.body(appointment) });
+    }
+  }
+
+  const id = notificationKey(event, appointment);
+  await Promise.all(
+    recipients.map((recipient) =>
+      writeDatabase(
+        `inAppNotifications/${recipient.uid}/${id}`,
+        {
+          id,
+          appointmentId: appointment.id,
+          createdAt: Date.now(),
+          title: recipient.title,
+          body: recipient.body,
+          seenAt: 0,
+        },
+        accessToken,
+      ),
+    ),
+  );
+};
+
 const handler = async (request) => {
   if (request.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+    return jsonResponse({ ok: false, error: "Method not allowed." }, 405);
   }
 
   try {
-    const { event, appointment } = await request.json();
+    const user = await verifyRequestUser(request);
+    if (!user) return jsonResponse({ ok: false, error: "Brak ważnej sesji." }, 401);
+    const accessToken = await getAccessToken();
+    const admin = await getAdminContext(user, accessToken);
+    const { event, appointment: requestedAppointment } = await request.json();
     const copy = eventCopy[event];
 
-    if (!copy || !appointment?.id) {
-      return Response.json({ ok: false, error: "Invalid notification payload." }, { status: 400 });
+    if (!copy || !requestedAppointment?.id) {
+      return jsonResponse({ ok: false, error: "Invalid notification payload." }, 400);
+    }
+    const rateLimitGranted = await claimRateLimit(
+      user.uid,
+      `notification-${event}-${requestedAppointment.id}`,
+      2000,
+      accessToken,
+    );
+    if (!rateLimitGranted) {
+      return jsonResponse({ ok: false, error: "Powiadomienie zostało już wysłane." }, 429);
+    }
+
+    const appointment = event === "test_push"
+      ? { ...requestedAppointment, userId: user.uid }
+      : await readDatabase(`appointments/${encodeURIComponent(requestedAppointment.id)}`, accessToken);
+    if (!appointment) return jsonResponse({ ok: false, error: "Wizyta nie istnieje." }, 404);
+    appointment.id ||= requestedAppointment.id;
+    appointment.barberId ||= "mateusz";
+    if (!validateNotificationAccess(event, appointment, user, admin)) {
+      return jsonResponse({ ok: false, error: "Brak dostępu do powiadomienia." }, 403);
+    }
+    if (
+      ((event === "client_cancelled" || event === "admin_cancelled") && appointment.status !== "cancelled") ||
+      ((event === "client_rescheduled" || event === "admin_rescheduled") && appointment.status !== "rescheduled")
+    ) {
+      return jsonResponse({ ok: false, error: "Stan wizyty nie pasuje do zdarzenia." }, 409);
     }
 
     const siteUrl = getSiteUrl(request);
@@ -484,10 +523,12 @@ const handler = async (request) => {
       title: copy.title,
       body: copy.body(eventAppointment),
     };
+    const barberContact = await readBarberContact(accessToken, eventAppointment.barberId);
     const [email, clientEmail, push] = await Promise.all([
       sendBarberEmail(copy, eventAppointment),
       sendClientEmail(event, eventAppointment),
       sendPushNotifications(copy, eventAppointment, notification, siteUrl),
+      writeInAppNotifications(accessToken, event, eventAppointment, copy, barberContact),
     ]);
     const sms = { enabled: false, sent: 0, failed: 0, error: "Owner SMS notifications are disabled." };
     const whatsapp = {
@@ -520,15 +561,15 @@ const handler = async (request) => {
       await writePushLog(push.accessToken, resultPayload);
     }
 
-    return Response.json(resultPayload);
+    return jsonResponse(resultPayload);
   } catch (error) {
-    return Response.json(
+    return jsonResponse(
       {
         ok: false,
         error: error instanceof Error ? error.message : "Unknown notification error.",
         createdAt: new Date().toISOString(),
       },
-      { status: 500 },
+      500,
     );
   }
 };

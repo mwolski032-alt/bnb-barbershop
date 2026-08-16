@@ -20,6 +20,7 @@ import {
 import { onValue, ref, remove, serverTimestamp, set, update } from "firebase/database";
 
 import { firebaseApp, realtimeDb } from "./lib/firebase";
+import { fetchClientAppointmentData, mutateAppointment } from "./lib/appointments";
 import {
   sendAppointmentNotification,
 } from "./lib/notifications";
@@ -96,6 +97,7 @@ type BookingSummary = {
 
 type AdminAppointment = Appointment & {
   clientId?: string;
+  serviceId?: string;
   clientName: string;
   clientEmail?: string;
   clientPhotoUrl?: string;
@@ -663,14 +665,16 @@ const getAppointmentEndDateTime = (
 };
 
 const canSettleAppointment = (appointment: AdminAppointment, now: Date) => {
-  if (normalizeAppointmentStatus(appointment.status) === "completed") return false;
+  if (["completed", "cancelled"].includes(normalizeAppointmentStatus(appointment.status))) {
+    return false;
+  }
   const settlementAvailableAt = getAppointmentDateTime(appointment);
   settlementAvailableAt.setMinutes(settlementAvailableAt.getMinutes() + 1);
   return now.getTime() >= settlementAvailableAt.getTime();
 };
 
 const isPotentialNoShow = (appointment: AdminAppointment, now: Date) =>
-  normalizeAppointmentStatus(appointment.status) !== "completed" &&
+  !["completed", "cancelled"].includes(normalizeAppointmentStatus(appointment.status)) &&
   now.getTime() > getAppointmentEndDateTime(appointment).getTime();
 
 const smsTemplates: SmsTemplate[] = ["confirmation", "reschedule", "reminder", "custom"];
@@ -1031,11 +1035,13 @@ const availabilityLabel: Record<Availability, string> = {
 };
 
 export function BookingHome() {
-  const today = useMemo(() => new Date(), []);
   const [currentDate, setCurrentDate] = useState(() => new Date());
+  const today = currentDate;
   const [authReady, setAuthReady] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [authError, setAuthError] = useState("");
+  const [bookingError, setBookingError] = useState("");
+  const [dataError, setDataError] = useState("");
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [step, setStep] = useState<Step>("booking");
   const [adminSection, setAdminSection] = useState<AdminSection>("schedule");
@@ -1119,7 +1125,6 @@ export function BookingHome() {
   const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isProfilePhotoProcessing, setIsProfilePhotoProcessing] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
-  const previousAppointmentsRef = useRef<Map<string, AdminAppointment> | null>(null);
   const silentNewAppointmentToastIdRef = useRef<string | null>(null);
   const bookingServiceRef = useRef<HTMLDivElement | null>(null);
   const bookingBarberRef = useRef<HTMLDivElement | null>(null);
@@ -1197,22 +1202,29 @@ export function BookingHome() {
   const workSettings =
     barberWorkSettings ??
     (activeBarberId === defaultBarberId ? legacyWorkSettings : defaultWorkSettings);
-  const adminAppointments = useMemo(
+  const barberAllAppointments = useMemo(
     () =>
-      isAdmin
-        ? allAdminAppointments.filter(
-            (appointment) => (appointment.barberId || defaultBarberId) === activeBarberId,
-          )
-        : allAdminAppointments,
+      allAdminAppointments.filter(
+        (appointment) =>
+          !isAdmin || (appointment.barberId || defaultBarberId) === activeBarberId,
+      ),
     [activeBarberId, allAdminAppointments, isAdmin],
   );
-  const notificationAppointments = isBarber ? adminAppointments : allAdminAppointments;
+  const adminAppointments = useMemo(
+    () =>
+      barberAllAppointments.filter(
+        (appointment) => normalizeAppointmentStatus(appointment.status) !== "cancelled",
+      ),
+    [barberAllAppointments],
+  );
   const ownerBarberSummaries = useMemo(
     () =>
       teamMembers.map((barber) => {
         const profile = barberProfiles[barber.id] ?? emptyBarberDetails;
         const barberAppointments = allAdminAppointments.filter(
-          (appointment) => (appointment.barberId || defaultBarberId) === barber.id,
+          (appointment) =>
+            (appointment.barberId || defaultBarberId) === barber.id &&
+            normalizeAppointmentStatus(appointment.status) !== "cancelled",
         );
         const upcomingAppointments = barberAppointments
           .filter(
@@ -1294,11 +1306,11 @@ export function BookingHome() {
   );
   const adminClientAppointments = useMemo(
     () =>
-      [...adminAppointments].sort((first, second) => {
+      [...barberAllAppointments].sort((first, second) => {
         if (first.dateKey !== second.dateKey) return first.dateKey.localeCompare(second.dateKey);
         return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
       }),
-    [adminAppointments],
+    [barberAllAppointments],
   );
   const adminScheduleDays = useMemo(() => {
     const todayKey = dayKey(today);
@@ -1353,6 +1365,7 @@ export function BookingHome() {
           sortedAppointments.find(
             (appointment) =>
               normalizeAppointmentStatus(appointment.status) !== "completed" &&
+              normalizeAppointmentStatus(appointment.status) !== "cancelled" &&
               getAppointmentEndDateTime(appointment).getTime() > currentDate.getTime(),
           ) ?? null;
         const lastAppointment =
@@ -1624,6 +1637,7 @@ export function BookingHome() {
               (appointment) =>
                 appointment.userId === activeUser.uid &&
                 normalizeAppointmentStatus(appointment.status) !== "completed" &&
+                normalizeAppointmentStatus(appointment.status) !== "cancelled" &&
                 getAppointmentEndDateTime(appointment).getTime() > currentDate.getTime(),
             )
             .sort((first, second) => {
@@ -1849,12 +1863,11 @@ export function BookingHome() {
   }, []);
 
   useEffect(() => {
-    previousAppointmentsRef.current = null;
     setSelectedBarberId(null);
     setNotificationPanelOpen(false);
     setActiveNotification(null);
     setNotifications(activeUser && !isOwner ? readStoredNotifications(activeUser.uid) : []);
-  }, [activeUser, isOwner, today]);
+  }, [activeUser, isOwner]);
 
   useEffect(() => {
     if (!activeUser) {
@@ -1926,12 +1939,57 @@ export function BookingHome() {
       return undefined;
     }
 
+    if (!isAdmin) {
+      let stopped = false;
+      const loadClientAppointments = async () => {
+        try {
+          const result = await fetchClientAppointmentData<AdminAppointment>();
+          if (stopped) return;
+          setDataError("");
+          const loadedAppointments = (result.clientAppointments ?? [])
+            .map((appointment) => ({
+              ...appointment,
+              barberId: appointment.barberId || defaultBarberId,
+              status: normalizeAppointmentStatus(appointment.status),
+              color: normalizeAppointmentColor(appointment.color),
+            }))
+            .sort((first, second) => {
+              if (first.dateKey !== second.dateKey) return first.dateKey.localeCompare(second.dateKey);
+              return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
+            });
+          setAllAdminAppointments(loadedAppointments);
+          setAppointments(result.occupancy ?? []);
+        } catch {
+          if (!stopped) {
+            setAppointments([]);
+            setAllAdminAppointments([]);
+            setDataError("Nie udało się odświeżyć terminarza. Sprawdź połączenie i spróbuj ponownie.");
+          }
+        }
+      };
+
+      void loadClientAppointments();
+      const intervalId = window.setInterval(loadClientAppointments, 15000);
+      const refreshWhenVisible = () => {
+        if (document.visibilityState === "visible") void loadClientAppointments();
+      };
+      document.addEventListener("visibilitychange", refreshWhenVisible);
+      return () => {
+        stopped = true;
+        window.clearInterval(intervalId);
+        document.removeEventListener("visibilitychange", refreshWhenVisible);
+      };
+    }
+
     const appointmentsRef = ref(realtimeDb, "appointments");
 
-    return onValue(appointmentsRef, (snapshot) => {
-      const value = snapshot.val() as Record<string, Partial<AdminAppointment>> | null;
-      const migrationUpdates: Record<string, unknown> = {};
-      const loadedAppointments = Object.entries(value ?? {})
+    return onValue(
+      appointmentsRef,
+      (snapshot) => {
+        setDataError("");
+        const value = snapshot.val() as Record<string, Partial<AdminAppointment>> | null;
+        const migrationUpdates: Record<string, unknown> = {};
+        const loadedAppointments = Object.entries(value ?? {})
         .map(([id, appointment]) => {
           const barberId = appointment.barberId || defaultBarberId;
           const settledAt =
@@ -1959,7 +2017,7 @@ export function BookingHome() {
           return {
             id: appointment.id ?? id,
             barberId,
-            dateKey: appointment.dateKey ?? dayKey(today),
+            dateKey: appointment.dateKey ?? dayKey(new Date()),
             startTime: appointment.startTime ?? "00:00",
             durationMinutes: Number(appointment.durationMinutes) || 30,
             clientId: appointment.clientId ?? "",
@@ -1984,27 +2042,30 @@ export function BookingHome() {
                 : undefined,
           };
         })
-        .filter((appointment) => appointment.status !== "cancelled")
         .sort((first, second) => {
           if (first.dateKey !== second.dateKey) return first.dateKey.localeCompare(second.dateKey);
           return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
         });
 
-      setAllAdminAppointments(loadedAppointments);
-      setAppointments(
-        loadedAppointments.map(({ id, barberId, dateKey, startTime, durationMinutes }) => ({
-          id,
-          barberId,
-          dateKey,
-          startTime,
-          durationMinutes,
-        })),
-      );
-      if (shouldRunDataMigration && isAdmin && Object.keys(migrationUpdates).length > 0) {
-        void update(ref(realtimeDb), migrationUpdates);
-      }
-    });
-  }, [activeUser, isAdmin, today]);
+        setAllAdminAppointments(loadedAppointments);
+        setAppointments(
+          loadedAppointments
+            .filter((appointment) => appointment.status !== "cancelled")
+            .map(({ id, barberId, dateKey, startTime, durationMinutes }) => ({
+              id,
+              barberId,
+              dateKey,
+              startTime,
+              durationMinutes,
+            })),
+        );
+        if (shouldRunDataMigration && isAdmin && Object.keys(migrationUpdates).length > 0) {
+          void update(ref(realtimeDb), migrationUpdates);
+        }
+      },
+      () => setDataError("Nie udało się pobrać terminarza. Sprawdź uprawnienia Firebase."),
+    );
+  }, [activeUser, isAdmin]);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -2075,123 +2136,57 @@ export function BookingHome() {
   }, [activeBarberId, activeBarberProfile, teamMembers]);
 
   useEffect(() => {
-    if (!activeUser) return;
+    if (!activeUser || isOwner) return undefined;
 
-    const previousAppointments = previousAppointmentsRef.current;
-    const currentAppointments = new Map(
-      notificationAppointments.map((appointment) => [appointment.id, appointment]),
-    );
+    const notificationsRef = ref(realtimeDb, `inAppNotifications/${activeUser.uid}`);
+    return onValue(
+      notificationsRef,
+      (snapshot) => {
+        const value = snapshot.val() as
+          | Record<string, AppNotification & { seenAt?: number }>
+          | null;
+        const loadedNotifications = Object.entries(value ?? {})
+          .map(([id, notification]) => ({
+            id: notification.id || id,
+            appointmentId: notification.appointmentId || "",
+            createdAt: Number(notification.createdAt) || Date.now(),
+            title: notification.title || "Powiadomienie",
+            body: notification.body || "",
+            seenAt: Number(notification.seenAt) || 0,
+          }))
+          .sort((first, second) => second.createdAt - first.createdAt)
+          .slice(0, maxStoredNotifications);
+        const normalizedNotifications = loadedNotifications.map((notification) => ({
+          id: notification.id,
+          appointmentId: notification.appointmentId,
+          createdAt: notification.createdAt,
+          title: notification.title,
+          body: notification.body,
+        }));
+        setNotifications(normalizedNotifications);
+        writeStoredNotifications(activeUser.uid, normalizedNotifications);
 
-    if (isOwner) {
-      previousAppointmentsRef.current = currentAppointments;
-      return;
-    }
-
-    if (!previousAppointments) {
-      previousAppointmentsRef.current = currentAppointments;
-      return;
-    }
-
-    const nextNotifications: AppNotification[] = [];
-    const createNotification = (
-      appointment: AdminAppointment,
-      event: "new" | "rescheduled" | "cancelled",
-    ): AppNotification | null => {
-      const isClientAppointment = appointment.userId === activeUser.uid;
-
-      if (!isAdmin && !isClientAppointment) return null;
-
-      const audience = isAdmin ? "admin" : "client";
-      const eventId = `${audience}-${event}-${appointment.id}-${appointment.dateKey}-${appointment.startTime}`;
-      const serviceLine = `${appointment.serviceName}, ${appointment.dateKey}, ${appointment.startTime}`;
-
-      if (event === "new") {
-        return {
-          id: eventId,
-          appointmentId: appointment.id,
-          createdAt: Date.now(),
-          title: isAdmin ? "Nowa wizyta" : "Wizyta potwierdzona",
-          body: isAdmin ? `${appointment.clientName}: ${serviceLine}` : serviceLine,
-        };
-      }
-
-      if (event === "rescheduled") {
-        return {
-          id: eventId,
-          appointmentId: appointment.id,
-          createdAt: Date.now(),
-          title: "Wizyta przesunieta",
-          body: isAdmin ? `${appointment.clientName}: ${serviceLine}` : `Nowy termin: ${serviceLine}`,
-        };
-      }
-
-      return {
-        id: eventId,
-        appointmentId: appointment.id,
-        createdAt: Date.now(),
-        title: "Wizyta odwolana",
-        body: isAdmin ? `${appointment.clientName}: ${serviceLine}` : serviceLine,
-      };
-    };
-
-    for (const appointment of currentAppointments.values()) {
-      const previousAppointment = previousAppointments.get(appointment.id);
-      const currentStatus = normalizeAppointmentStatus(appointment.status);
-      const previousStatus = previousAppointment
-        ? normalizeAppointmentStatus(previousAppointment.status)
-        : null;
-
-      if (!previousAppointment) {
-        const notification = createNotification(appointment, "new");
-        if (notification) nextNotifications.push(notification);
-        continue;
-      }
-
-      if (
-        currentStatus === "rescheduled" &&
-        (previousStatus !== "rescheduled" ||
-          previousAppointment.dateKey !== appointment.dateKey ||
-          previousAppointment.startTime !== appointment.startTime)
-      ) {
-        const notification = createNotification(appointment, "rescheduled");
-        if (notification) nextNotifications.push(notification);
-      }
-    }
-
-    for (const previousAppointment of previousAppointments.values()) {
-      if (!currentAppointments.has(previousAppointment.id)) {
-        const notification = createNotification(previousAppointment, "cancelled");
-        if (notification) nextNotifications.push(notification);
-      }
-    }
-
-    if (nextNotifications.length > 0) {
-      const existingIds = new Set(notifications.map((notification) => notification.id));
-      const uniqueNotifications = nextNotifications.filter(
-        (notification) => !existingIds.has(notification.id),
-      );
-
-      if (uniqueNotifications.length > 0) {
-        const updatedNotifications = [...uniqueNotifications, ...notifications].slice(
-          0,
-          maxStoredNotifications,
-        );
-
-        writeStoredNotifications(activeUser.uid, updatedNotifications);
-        setNotifications(updatedNotifications);
+        const unseen = loadedNotifications.find((notification) => !notification.seenAt);
+        if (!unseen) return;
         const silentAppointmentId = silentNewAppointmentToastIdRef.current;
-        const toastNotification = uniqueNotifications.find(
-          (notification) => notification.appointmentId !== silentAppointmentId,
-        );
-        if (uniqueNotifications.some((notification) => notification.appointmentId === silentAppointmentId)) {
+        if (unseen.appointmentId === silentAppointmentId) {
           silentNewAppointmentToastIdRef.current = null;
+        } else {
+          setActiveNotification({
+            id: unseen.id,
+            appointmentId: unseen.appointmentId,
+            createdAt: unseen.createdAt,
+            title: unseen.title,
+            body: unseen.body,
+          });
         }
-        if (toastNotification) setActiveNotification(toastNotification);
-      }
-    }
-
-    previousAppointmentsRef.current = currentAppointments;
-  }, [activeUser, isAdmin, isOwner, notificationAppointments, notifications]);
+        void update(ref(realtimeDb, `inAppNotifications/${activeUser.uid}/${unseen.id}`), {
+          seenAt: Date.now(),
+        });
+      },
+      () => setNotifications(readStoredNotifications(activeUser.uid)),
+    );
+  }, [activeUser, isOwner]);
 
   useEffect(() => {
     if (!activeNotification) return undefined;
@@ -2392,8 +2387,42 @@ export function BookingHome() {
     if (!clientModalOpen) return undefined;
 
     const previousOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.style.overflow = "hidden";
+    const focusableSelector =
+      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const focusTopOverlay = () => {
+      const overlays = Array.from(
+        document.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"]'),
+      );
+      const overlay = overlays.at(-1);
+      overlay?.querySelector<HTMLElement>(focusableSelector)?.focus();
+    };
+    const focusFrame = window.requestAnimationFrame(focusTopOverlay);
     const closeTopOverlay = (event: KeyboardEvent) => {
+      if (event.key === "Tab") {
+        const overlays = Array.from(
+          document.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"]'),
+        );
+        const overlay = overlays.at(-1);
+        const focusable = overlay
+          ? Array.from(overlay.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+              (element) => element.offsetParent !== null,
+            )
+          : [];
+        if (focusable.length > 0) {
+          const first = focusable[0];
+          const last = focusable.at(-1)!;
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+        return;
+      }
       if (event.key !== "Escape") return;
 
       if (notificationPanelOpen) {
@@ -2419,8 +2448,10 @@ export function BookingHome() {
 
     window.addEventListener("keydown", closeTopOverlay);
     return () => {
+      window.cancelAnimationFrame(focusFrame);
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeTopOverlay);
+      previouslyFocused?.focus();
     };
   }, [
     clientAppointmentsListOpen,
@@ -3029,7 +3060,7 @@ export function BookingHome() {
     window.requestAnimationFrame(() => scrollToBookingSection(bookingCalendarRef.current));
   };
 
-  const cancelClientAppointment = (appointmentId: string) => {
+  const cancelClientAppointment = async (appointmentId: string) => {
     const appointment = adminAppointments.find((item) => item.id === appointmentId);
 
     setPendingClientCancellationId(null);
@@ -3040,23 +3071,38 @@ export function BookingHome() {
       setSelectedTime("");
     }
 
-    void remove(ref(realtimeDb, `appointments/${appointmentId}`)).then(() => {
-      if (appointment) {
-        void sendAppointmentNotification("client_cancelled", appointment);
-      }
-    });
+    if (!appointment) return;
+    try {
+      setIsSaving(true);
+      setBookingError("");
+      const result = await mutateAppointment<AdminAppointment>("cancel_client", { appointmentId });
+      const cancelledAppointment = result.appointment ?? { ...appointment, status: "cancelled" as const };
+      setAllAdminAppointments((current) =>
+        current.map((item) => (item.id === appointmentId ? cancelledAppointment : item)),
+      );
+      setAppointments((current) => current.filter((item) => item.id !== appointmentId));
+      await sendAppointmentNotification("client_cancelled", cancelledAppointment);
+    } catch (error) {
+      setBookingError(error instanceof Error ? error.message : "Nie udało się odwołać wizyty.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const confirmClientRescheduledAppointment = async (appointmentId: string) => {
     if (isSaving) return;
-    const appointment = allAdminAppointments.find((item) => item.id === appointmentId);
 
     try {
       setIsSaving(true);
-      await update(ref(realtimeDb, `appointments/${appointmentId}`), {
-        barberId: appointment?.barberId ?? defaultBarberId,
-        status: "confirmed",
-      });
+      setBookingError("");
+      const result = await mutateAppointment<AdminAppointment>("confirm_admin", { appointmentId });
+      if (result.appointment) {
+        setAllAdminAppointments((current) =>
+          current.map((item) => (item.id === appointmentId ? result.appointment! : item)),
+        );
+      }
+    } catch (error) {
+      setBookingError(error instanceof Error ? error.message : "Nie udało się potwierdzić wizyty.");
     } finally {
       setIsSaving(false);
     }
@@ -3067,19 +3113,39 @@ export function BookingHome() {
 
     try {
       setIsSaving(true);
-      await update(ref(realtimeDb, `appointments/${reschedulingAppointment.id}`), {
-        barberId: reschedulingAppointment.barberId,
+      setBookingError("");
+      const result = await mutateAppointment<AdminAppointment>("reschedule_client", {
+        appointmentId: reschedulingAppointment.id,
         dateKey: selectedDayKey,
         startTime: selectedTime,
-        status: "rescheduled",
       });
-      await sendAppointmentNotification("client_rescheduled", {
+      const updatedAppointment = result.appointment ?? {
         ...reschedulingAppointment,
         dateKey: selectedDayKey,
         startTime: selectedTime,
-      });
+        status: "rescheduled" as const,
+      };
+      setAllAdminAppointments((current) =>
+        current.map((item) => (item.id === updatedAppointment.id ? updatedAppointment : item)),
+      );
+      setAppointments((current) =>
+        current.map((item) =>
+          item.id === updatedAppointment.id
+            ? {
+                id: updatedAppointment.id,
+                barberId: updatedAppointment.barberId,
+                dateKey: updatedAppointment.dateKey,
+                startTime: updatedAppointment.startTime,
+                durationMinutes: updatedAppointment.durationMinutes,
+              }
+            : item,
+        ),
+      );
+      await sendAppointmentNotification("client_rescheduled", updatedAppointment);
       setReschedulingAppointmentId(null);
       setSelectedTime("");
+    } catch (error) {
+      setBookingError(error instanceof Error ? error.message : "Nie udało się przesunąć wizyty.");
     } finally {
       setIsSaving(false);
     }
@@ -3126,6 +3192,7 @@ export function BookingHome() {
       id: appointmentId,
       barberId: activeBarberId,
       clientId,
+      serviceId: selectedService.id,
       userId: activeUser.uid,
       dateKey: selectedDayKey,
       startTime: selectedTime,
@@ -3155,29 +3222,36 @@ export function BookingHome() {
     silentNewAppointmentToastIdRef.current = appointmentId;
     try {
       setIsSaving(true);
+      setBookingError("");
       const name = splitClientName(form.fullName);
-      const now = Date.now();
-      await update(ref(realtimeDb), {
-        [`appointments/${appointmentId}`]: adminAppointment,
-        [`clients/${clientId}/id`]: clientId,
-        [`clients/${clientId}/firstName`]: name.firstName,
-        [`clients/${clientId}/lastName`]: name.lastName,
-        [`clients/${clientId}/email`]: activeUser.email ?? "",
-        [`clients/${clientId}/phone`]: form.phone,
-        [`clients/${clientId}/photoUrl`]: activeUser.photoURL ?? "",
-        [`clients/${clientId}/userId`]: activeUser.uid,
-        [`clients/${clientId}/barberIds/${activeBarberId}`]: true,
-        [`clients/${clientId}/hiddenFor/${activeBarberId}`]: null,
-        [`clients/${clientId}/updatedAt`]: now,
+      const result = await mutateAppointment<AdminAppointment>("create_client", {
+        appointment: adminAppointment,
+        client: {
+          firstName: name.firstName,
+          lastName: name.lastName,
+          phone: form.phone,
+        },
       });
-      await sendAppointmentNotification("new_booking", adminAppointment);
+      const savedAppointment = result.appointment ?? adminAppointment;
+      setAllAdminAppointments((current) => [...current, savedAppointment]);
+      setAppointments((current) => [
+        ...current,
+        {
+          id: savedAppointment.id,
+          barberId: savedAppointment.barberId,
+          dateKey: savedAppointment.dateKey,
+          startTime: savedAppointment.startTime,
+          durationMinutes: savedAppointment.durationMinutes,
+        },
+      ]);
+      await sendAppointmentNotification("new_booking", savedAppointment);
       setForm({ fullName: "", phone: "" });
       setStep("success");
     } catch (error) {
       if (silentNewAppointmentToastIdRef.current === appointmentId) {
         silentNewAppointmentToastIdRef.current = null;
       }
-      throw error;
+      setBookingError(error instanceof Error ? error.message : "Nie udało się zapisać wizyty.");
     } finally {
       setIsSaving(false);
     }
@@ -3243,17 +3317,18 @@ export function BookingHome() {
 
     try {
       setIsSaving(true);
-      await update(ref(realtimeDb, `appointments/${selectedAdminEditAppointment.id}`), {
-        barberId: selectedAdminEditAppointment.barberId,
+      const result = await mutateAppointment<AdminAppointment>("reschedule_admin", {
+        appointmentId: selectedAdminEditAppointment.id,
         dateKey: adminEditDraft.dateKey,
         startTime: adminEditDraft.startTime,
-        status: "rescheduled",
       });
-      await sendAppointmentNotification("admin_rescheduled", {
+      const updatedAppointment = result.appointment ?? {
         ...selectedAdminEditAppointment,
         dateKey: adminEditDraft.dateKey,
         startTime: adminEditDraft.startTime,
-      });
+        status: "rescheduled" as const,
+      };
+      await sendAppointmentNotification("admin_rescheduled", updatedAppointment);
       setAdminSelectedKey(adminEditDraft.dateKey);
       setAdminEditAppointmentId(null);
     } finally {
@@ -3261,47 +3336,52 @@ export function BookingHome() {
     }
   };
 
-  const moveAdminAppointment = (appointmentId: string, startTime: string) => {
+  const moveAdminAppointment = async (appointmentId: string, startTime: string) => {
     const appointment = adminAppointments.find((item) => item.id === appointmentId);
     if (!appointment || !canMoveAdminAppointment(appointment, startTime)) {
       setDraggedAppointmentId(null);
       return;
     }
 
-    void update(ref(realtimeDb, `appointments/${appointmentId}`), {
-      barberId: appointment.barberId,
-      dateKey: adminSelectedKey,
-      startTime,
-      status: "rescheduled",
-    }).then(() => {
-      void sendAppointmentNotification("admin_rescheduled", {
-        ...appointment,
+    try {
+      const result = await mutateAppointment<AdminAppointment>("reschedule_admin", {
+        appointmentId,
         dateKey: adminSelectedKey,
         startTime,
       });
-    });
-    setDraggedAppointmentId(null);
+      const notificationAppointment: AdminAppointment = result.appointment ?? {
+        ...appointment,
+        dateKey: adminSelectedKey,
+        startTime,
+        status: "rescheduled" as const,
+      };
+      await sendAppointmentNotification("admin_rescheduled", notificationAppointment);
+    } finally {
+      setDraggedAppointmentId(null);
+    }
   };
 
   const shiftAdminAppointment = (appointmentId: string, minutes: -15 | 15) => {
     const appointment = adminAppointments.find((item) => item.id === appointmentId);
     if (!appointment) return;
 
-    moveAdminAppointment(
+    void moveAdminAppointment(
       appointmentId,
       minutesToTime(timeToMinutes(appointment.startTime) + minutes),
     );
   };
 
-  const declineAdminAppointment = (appointmentId: string) => {
+  const declineAdminAppointment = async (appointmentId: string) => {
     const appointment = adminAppointments.find((item) => item.id === appointmentId);
     if (!window.confirm(`Odmówić wizytę ${appointment?.clientName ?? "klienta"}?`)) return;
 
-    void remove(ref(realtimeDb, `appointments/${appointmentId}`)).then(() => {
-      if (appointment) {
-        void sendAppointmentNotification("admin_cancelled", appointment);
-      }
-    });
+    if (!appointment) return;
+    const result = await mutateAppointment<AdminAppointment>("cancel_admin", { appointmentId });
+    const cancelledAppointment: AdminAppointment = result.appointment ?? {
+      ...appointment,
+      status: "cancelled" as const,
+    };
+    await sendAppointmentNotification("admin_cancelled", cancelledAppointment);
   };
 
   const footerLabel =
@@ -3342,6 +3422,7 @@ export function BookingHome() {
   const deleteNotification = (notificationId: string) => {
     if (!activeUser) return;
 
+    void remove(ref(realtimeDb, `inAppNotifications/${activeUser.uid}/${notificationId}`));
     setNotifications((current) => {
       const updatedNotifications = current.filter((notification) => notification.id !== notificationId);
       writeStoredNotifications(activeUser.uid, updatedNotifications);
@@ -3491,6 +3572,7 @@ export function BookingHome() {
         id: appointmentId,
         barberId: activeBarberId,
         clientId,
+        serviceId: manualBookingService.id,
         ...(linkedUserId ? { userId: linkedUserId } : {}),
         dateKey: manualBookingDraft.dateKey,
         startTime: manualBookingDraft.startTime,
@@ -3504,15 +3586,18 @@ export function BookingHome() {
         color: getNextAppointmentColor(manualBookingDraft.dateKey, adminAppointments),
         status: "confirmed",
       };
-      updates[`appointments/${appointmentId}`] = manualAppointment;
     }
 
     try {
       setIsClientSaving(true);
       await update(ref(realtimeDb), updates);
       if (manualAppointment) {
-        await sendAppointmentNotification("new_booking", manualAppointment);
-        setAdminSelectedKey(manualAppointment.dateKey);
+        const result = await mutateAppointment<AdminAppointment>("create_admin", {
+          appointment: manualAppointment,
+        });
+        const savedAppointment = result.appointment ?? manualAppointment;
+        await sendAppointmentNotification("new_booking", savedAppointment);
+        setAdminSelectedKey(savedAppointment.dateKey);
       }
       setClientDialog(null);
       setClientFeedback({
@@ -3565,18 +3650,10 @@ export function BookingHome() {
 
     try {
       setSettlingAppointmentId(appointment.id);
-      const settledAt = Date.now();
       const settledAmount = getServicePriceValue(appointment.price);
-      await update(ref(realtimeDb, `appointments/${appointment.id}`), {
-        barberId: appointment.barberId,
-        status: "completed",
-        settledAt,
-        settledAmount,
-        settlement: {
-          barberId: appointment.barberId,
-          settledAt,
-          amount: settledAmount,
-        },
+      await mutateAppointment<AdminAppointment>("settle_admin", {
+        appointmentId: appointment.id,
+        amount: settledAmount,
       });
     } finally {
       setSettlingAppointmentId(null);
@@ -3785,7 +3862,7 @@ export function BookingHome() {
               {adminSection !== "team" ? (
                 <div className="selected-barber-context" aria-label="Wybrany barber">
                 <ProfileAvatar
-                  className={`selected-barber-avatar ${selectedBarber.accent}`}
+                  className={`selected-barber-avatar ${activeClientBarber.accent}`}
                   name={activeBarberName}
                   photoUrl={activeBarberProfile.photoUrl}
                 />
@@ -5140,14 +5217,14 @@ export function BookingHome() {
               <div className="barber-profile-view">
                 <section className="barber-profile-preview">
                   <ProfileAvatar
-                    className={`barber-profile-photo ${selectedBarber.accent}`}
+                    className={`barber-profile-photo ${activeClientBarber.accent}`}
                     name={activeBarberName}
                     photoUrl={profileDraft.photoUrl}
                     alt={`Profil ${activeBarberName}`}
                   />
                   <div className="barber-profile-preview-copy">
-                    <p className="eyebrow">{selectedBarber.label}</p>
-                    <h3>{profileDraft.displayName || selectedBarber.name}</h3>
+                    <p className="eyebrow">{activeClientBarber.label}</p>
+                    <h3>{profileDraft.displayName || activeClientBarber.name}</h3>
                     {profileDraft.instagram ? <span>@{profileDraft.instagram}</span> : null}
                   </div>
                   <div className="barber-photo-actions">
@@ -5200,7 +5277,7 @@ export function BookingHome() {
                             displayName: event.target.value,
                           }))
                         }
-                        placeholder={selectedBarber.name}
+                        placeholder={activeClientBarber.name}
                       />
                     </label>
                     <label>
@@ -5805,6 +5882,11 @@ export function BookingHome() {
                 aria-invalid={form.phone.length > 0 && getPhoneDigits(form.phone).length !== 9}
               />
             </label>
+            {bookingError ? (
+              <p className="booking-error" role="alert">
+                {bookingError}
+              </p>
+            ) : null}
           </form>
         </section>
       ) : (
@@ -6385,6 +6467,8 @@ export function BookingHome() {
                   normalizeAppointmentStatus(appointment.status) === "rescheduled";
                 const isCompleted =
                   normalizeAppointmentStatus(appointment.status) === "completed";
+                const isCancelled =
+                  normalizeAppointmentStatus(appointment.status) === "cancelled";
                 const settlementAvailable = canSettleAppointment(appointment, currentDate);
                 const potentialNoShow = isPotentialNoShow(appointment, currentDate);
 
@@ -6402,7 +6486,9 @@ export function BookingHome() {
                         {appointment.price}
                       </span>
                       <small>
-                        {isCompleted
+                        {isCancelled
+                          ? "Wizyta została odwołana"
+                          : isCompleted
                           ? "Wizyta rozliczona"
                           : potentialNoShow
                             ? "Minęła bez rozliczenia"
@@ -6439,7 +6525,7 @@ export function BookingHome() {
                           SMS
                         </button>
                       ) : null}
-                      {!isPast ? (
+                      {!isPast && normalizeAppointmentStatus(appointment.status) !== "cancelled" ? (
                         <button
                           type="button"
                           onClick={() => {
@@ -7001,6 +7087,12 @@ export function BookingHome() {
               </button>
             </div>
           </section>
+        </div>
+      ) : null}
+
+      {(bookingError || dataError) && visibleStep !== "confirm" ? (
+        <div className="booking-operation-error" role="alert">
+          {bookingError || dataError}
         </div>
       ) : null}
 

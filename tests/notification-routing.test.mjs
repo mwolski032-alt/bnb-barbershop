@@ -11,6 +11,7 @@ process.env.FIREBASE_CLIENT_EMAIL = "service@bnb.test";
 process.env.FIREBASE_PRIVATE_KEY = privateKey.export({ type: "pkcs8", format: "pem" });
 process.env.FIREBASE_DATABASE_URL = databaseUrl;
 process.env.FIREBASE_PROJECT_ID = "bnb-test";
+process.env.NEXT_PUBLIC_FIREBASE_API_KEY = "firebase-test-key";
 process.env.RESEND_API_KEY = "re_test";
 process.env.RESEND_FROM_EMAIL = "BNB <notifications@bnb.test>";
 process.env.BARBER_KACPER_EMAIL = "kacper-env@example.com";
@@ -32,6 +33,8 @@ const database = {
     [ownerUid]: { ownerDevice: { token: "owner-token", isAdmin: true } },
     [kacperUid]: { barberDevice: { token: "barber-token", isAdmin: true } },
   },
+  appointments: {},
+  inAppNotifications: {},
 };
 let sentEmails = [];
 let sentPushes = [];
@@ -45,6 +48,9 @@ globalThis.fetch = async (input, options = {}) => {
 
   if (url === "https://oauth2.googleapis.com/token") {
     return Response.json({ access_token: "database-access-token" });
+  }
+  if (url.startsWith("https://identitytoolkit.googleapis.com/v1/accounts:lookup")) {
+    return Response.json({ users: [{ localId: "client-uid", email: "client@example.com" }] });
   }
   if (url === "https://api.resend.com/emails") {
     sentEmails.push(JSON.parse(options.body));
@@ -66,11 +72,30 @@ globalThis.fetch = async (input, options = {}) => {
 
 const notificationModule = await import("../netlify/functions/send-push.mjs");
 
-const sendBookingNotification = (id, event = "new_booking") =>
-  notificationModule.default(
+const sendBookingNotification = (id, event = "new_booking") => {
+  database.appointments[id] = {
+    id,
+    barberId: "kacper",
+    userId: "client-uid",
+    clientName: "Jan Kowalski",
+    clientEmail: "client@example.com",
+    phone: "500600700",
+    serviceName: "Strzyzenie",
+    dateKey: "2026-08-20",
+    startTime: "10:00",
+    status: event.endsWith("cancelled")
+      ? "cancelled"
+      : event.endsWith("rescheduled")
+        ? "rescheduled"
+        : "confirmed",
+  };
+  return notificationModule.default(
     new Request("https://bnb.example/.netlify/functions/send-push", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        Authorization: "Bearer valid-client-token",
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         event,
         appointment: {
@@ -87,6 +112,18 @@ const sendBookingNotification = (id, event = "new_booking") =>
       }),
     }),
   );
+};
+
+test("notification endpoint rejects unauthenticated requests", async () => {
+  const response = await notificationModule.default(
+    new Request("https://bnb.example/.netlify/functions/send-push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: "new_booking", appointment: { id: "missing-auth" } }),
+    }),
+  );
+  assert.equal(response.status, 401);
+});
 
 test("appointment notifications go only to the assigned active barber", async () => {
   const response = await sendBookingNotification("appointment-active");

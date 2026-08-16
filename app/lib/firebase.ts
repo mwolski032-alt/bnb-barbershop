@@ -1,7 +1,5 @@
-import { getAnalytics, isSupported } from "firebase/analytics";
 import { getApps, initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
-import { getFirestore } from "firebase/firestore";
 
 const readEnv = (key: string, fallback: string) => {
   const processValue =
@@ -27,13 +25,4 @@ const firebaseConfig = {
 
 export const firebaseApp = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 
-export const db = getFirestore(firebaseApp);
 export const realtimeDb = getDatabase(firebaseApp);
-
-export const getFirebaseAnalytics = async () => {
-  if (typeof window === "undefined" || !(await isSupported())) {
-    return null;
-  }
-
-  return getAnalytics(firebaseApp);
-};

@@ -65,7 +65,7 @@ test("keeps the premium client booking flow and safety controls", async () => {
   assert.match(bookingHome, /if \(direction === -1 && !canShiftToPreviousMonth\) return/);
   assert.match(bookingHome, /event\.key !== "Escape"/);
   assert.match(bookingHome, /silentNewAppointmentToastIdRef/);
-  assert.match(bookingHome, /notification\.appointmentId !== silentAppointmentId/);
+  assert.match(bookingHome, /unseen\.appointmentId === silentAppointmentId/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(styles, /\.client-service-picker \.service-list/);
 });
@@ -137,7 +137,7 @@ test("keeps the persistent client base and manual admin booking workflow", async
   assert.match(bookingHome, /hiddenFor\/\$\{activeBarberId\}/);
   assert.match(bookingHome, /Historia wizyt,\s*terminarz i analiza pozostaną bez zmian/);
   assert.match(bookingHome, /Ten termin nakłada się na inną wizytę/);
-  assert.match(bookingHome, /\[`appointments\/\$\{appointmentId\}`\] = manualAppointment/);
+  assert.match(bookingHome, /mutateAppointment<AdminAppointment>\("create_admin"/);
   assert.match(styles, /\.client-creator-modal/);
   assert.match(styles, /\.manual-booking-grid/);
   assert.match(styles, /\.book-client-button/);
@@ -146,9 +146,10 @@ test("keeps the persistent client base and manual admin booking workflow", async
 });
 
 test("keeps the owner-only multi-barber workspace", async () => {
-  const [bookingHome, styles] = await Promise.all([
+  const [bookingHome, styles, appointmentApi] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
   ]);
 
   assert.match(bookingHome, /ownerUserIds = new Set\(\["xkyDu2Lb1Ma8McF7yfyv8PIAj1M2"\]\)/);
@@ -160,7 +161,7 @@ test("keeps the owner-only multi-barber workspace", async () => {
   assert.match(bookingHome, /appointment\.barberId \|\| defaultBarberId/);
   assert.match(bookingHome, /barbers\/\$\{activeBarberId\}\/workSettings/);
   assert.match(bookingHome, /barbers\/\$\{activeBarberId\}\/services/);
-  assert.match(bookingHome, /barberIds\/\$\{activeBarberId\}/);
+  assert.match(appointmentApi, /barberIds\/\$\{proposed\.barberId\}/);
   assert.match(styles, /\.owner-barber-grid/);
   assert.match(styles, /\.selected-barber-context/);
 });
@@ -200,9 +201,10 @@ test("keeps the mastered admin schedule and availability editor", async () => {
 });
 
 test("keeps settlement-driven admin analytics", async () => {
-  const [bookingHome, styles] = await Promise.all([
+  const [bookingHome, styles, appointmentApi] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
   ]);
 
   assert.match(bookingHome, /\| "analytics"[\s\S]*\| "work"/);
@@ -210,9 +212,9 @@ test("keeps settlement-driven admin analytics", async () => {
   assert.match(bookingHome, /settlementAvailableAt\.setMinutes\([\s\S]*\+ 1\)/);
   assert.match(bookingHome, /const isPotentialNoShow/);
   assert.match(bookingHome, /const settleAdminAppointment = async/);
-  assert.match(bookingHome, /status: "completed"/);
+  assert.match(appointmentApi, /next\.status = "completed"/);
   assert.match(bookingHome, /const settledAmount = getServicePriceValue/);
-  assert.match(bookingHome, /settlement: \{[\s\S]*barberId: appointment\.barberId/);
+  assert.match(appointmentApi, /next\.settlement = \{ barberId: next\.barberId/);
   assert.match(bookingHome, /aria-label="Analiza działalności"/);
   assert.match(bookingHome, /Potencjalne nieobecności/);
   assert.match(styles, /\.analytics-kpi-grid/);
@@ -251,10 +253,11 @@ test("keeps the fixed owner-managed team and role-aware admin avatars", async ()
 });
 
 test("keeps barber ownership and excludes the owner from appointment notifications", async () => {
-  const [bookingHome, notifications, sendPush] = await Promise.all([
+  const [bookingHome, notifications, sendPush, appointmentApi] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/notifications.ts", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/send-push.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
   ]);
 
   assert.match(bookingHome, /type Service = \{[\s\S]*barberId: string/);
@@ -263,7 +266,7 @@ test("keeps barber ownership and excludes the owner from appointment notificatio
   assert.match(bookingHome, /servicesToRecord = \(items: Service\[\], barberId/);
   assert.match(bookingHome, /migrationUpdates\[`appointments\/\$\{id\}\/barberId`\]/);
   assert.match(bookingHome, /shouldRunDataMigration && isAdmin/);
-  assert.match(bookingHome, /settlement: \{[\s\S]*amount: settledAmount/);
+  assert.match(appointmentApi, /next\.settlement = \{[\s\S]*amount/);
   assert.match(notifications, /barberId: string/);
   assert.match(sendPush, /process\.env\.BARBER_MATEUSZ_EMAIL/);
   assert.match(sendPush, /process\.env\.BARBER_KACPER_EMAIL/);
@@ -274,7 +277,8 @@ test("keeps barber ownership and excludes the owner from appointment notificatio
   assert.match(sendPush, /uid === barberUserId/);
   assert.match(sendPush, /Owner SMS notifications are disabled/);
   assert.match(sendPush, /Owner WhatsApp notifications are disabled/);
-  assert.match(bookingHome, /if \(isOwner\) \{[\s\S]*previousAppointmentsRef\.current = currentAppointments/);
+  assert.match(bookingHome, /inAppNotifications\/\$\{activeUser\.uid\}/);
+  assert.match(sendPush, /writeInAppNotifications/);
   assert.match(bookingHome, /!isOwner \? notificationButton : null/);
   assert.match(sendPush, /appointmentBarberId: eventAppointment\.barberId/);
 });
@@ -295,9 +299,10 @@ test("separates active visits from the client directory", async () => {
 });
 
 test("keeps the client barber selection and resilient profile photos", async () => {
-  const [bookingHome, styles] = await Promise.all([
+  const [bookingHome, styles, appointmentApi] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
   ]);
 
   assert.match(bookingHome, /function ProfileAvatar/);
@@ -309,7 +314,7 @@ test("keeps the client barber selection and resilient profile photos", async () 
   assert.match(bookingHome, /const selectBookingBarber = \(barberId: string/);
   assert.match(bookingHome, /appointments\.filter\(\(appointment\) => appointment\.barberId === activeBarberId\)/);
   assert.match(bookingHome, /barberId: activeBarberId/);
-  assert.match(bookingHome, /barberIds\/\$\{activeBarberId\}/);
+  assert.match(appointmentApi, /barberIds\/\$\{proposed\.barberId\}/);
   assert.match(bookingHome, /client-selected-barber-summary/);
   assert.match(bookingHome, /appointment-barber-row/);
   assert.match(styles, /\.profile-avatar\s*\{/);
