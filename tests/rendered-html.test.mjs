@@ -172,7 +172,8 @@ test("keeps the scoped barber profile and centered client action", async () => {
   ]);
 
   assert.match(bookingHome, /const isAdmin = isOwner \|\| isBarber/);
-  assert.match(bookingHome, /signedInBarberId \?\? selectedBarberId \?\? teamMembers\.find/);
+  assert.match(bookingHome, /resolveActiveBarberId/);
+  assert.match(bookingHome, /step === "admin"/);
   assert.match(bookingHome, /barbers\/\$\{activeBarberId\}\/profile/);
   assert.match(bookingHome, /adminSection === "profile"/);
   assert.match(bookingHome, /resizeProfilePhoto/);
@@ -293,7 +294,7 @@ test("opens system push links and lets the client confirm a changed time", async
 
   assert.match(bookingHome, /url\.searchParams\.get\("appointment"\)/);
   assert.match(bookingHome, /setClientAppointmentId\(appointment\.id\)/);
-  assert.match(bookingHome, /isAdmin \? "confirm_admin" : "confirm_client"/);
+  assert.match(bookingHome, /confirmsAsAdmin \? "confirm_admin" : "confirm_client"/);
   assert.match(bookingHome, /Czy nowy termin Ci odpowiada\?/);
   assert.match(bookingHome, /Potwierdzam nowy termin/);
   assert.doesNotMatch(styles, /\.notification-bell/);

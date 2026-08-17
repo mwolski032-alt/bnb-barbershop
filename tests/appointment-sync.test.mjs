@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { shouldApplyAppointmentSnapshot } from "../shared/appointment-sync.mjs";
+import {
+  resolveActiveBarberId,
+  shouldApplyAppointmentSnapshot,
+} from "../shared/appointment-sync.mjs";
 import {
   createClientAppointment,
   installAppointmentsFixture,
+  kacperUid,
   makeAppointmentRequest,
+  mateuszUid,
   tokens,
 } from "./helpers/appointments-fixture.mjs";
 
@@ -148,8 +153,61 @@ test("client, Mateusz and owner receive the same committed version while Kacper 
   );
 });
 
+test("Mateusz and Kacper can book with each other without crossing admin calendars", async () => {
+  fixture.reset();
+  fixture.database.appointments["mateusz-visits-kacper"] = {
+    ...fixture.database.appointments["kacper-upcoming"],
+    id: "mateusz-visits-kacper",
+    userId: mateuszUid,
+    clientId: mateuszUid,
+    startTime: "12:00",
+  };
+  fixture.database.appointments["kacper-visits-mateusz"] = {
+    ...fixture.database.appointments["mateusz-upcoming"],
+    id: "kacper-visits-mateusz",
+    userId: kacperUid,
+    clientId: kacperUid,
+    startTime: "13:00",
+  };
+
+  const [mateuszResponse, kacperResponse] = await Promise.all([
+    request(tokens.mateusz, "GET"),
+    request(tokens.kacper, "GET"),
+  ]);
+  const [mateusz, kacper] = await Promise.all([
+    mateuszResponse.json(),
+    kacperResponse.json(),
+  ]);
+
+  assert.equal(mateuszResponse.status, 200);
+  assert.equal(kacperResponse.status, 200);
+  assert.equal(mateusz.adminAppointments.every(({ barberId }) => barberId === "mateusz"), true);
+  assert.equal(kacper.adminAppointments.every(({ barberId }) => barberId === "kacper"), true);
+  assert.deepEqual(
+    mateusz.clientAppointments.map(({ id }) => id),
+    ["mateusz-visits-kacper"],
+  );
+  assert.deepEqual(
+    kacper.clientAppointments.map(({ id }) => id),
+    ["kacper-visits-mateusz"],
+  );
+  assert.equal(new Set(mateusz.occupancy.map(({ barberId }) => barberId)).size, 2);
+  assert.equal(new Set(kacper.occupancy.map(({ barberId }) => barberId)).size, 2);
+});
+
 test("stale frontend responses are rejected by the shared revision guard", () => {
   assert.equal(shouldApplyAppointmentSnapshot(8, 7), false);
   assert.equal(shouldApplyAppointmentSnapshot(8, 8), true);
   assert.equal(shouldApplyAppointmentSnapshot(8, 9), true);
+});
+
+test("barbers can select each other only in the client booking context", () => {
+  const activeBarberIds = ["mateusz", "kacper"];
+  const resolve = (step, signedInBarberId, selectedBarberId) =>
+    resolveActiveBarberId({ step, signedInBarberId, selectedBarberId, activeBarberIds });
+
+  assert.equal(resolve("booking", "mateusz", "kacper"), "kacper");
+  assert.equal(resolve("booking", "kacper", "mateusz"), "mateusz");
+  assert.equal(resolve("admin", "mateusz", "kacper"), "mateusz");
+  assert.equal(resolve("admin", "kacper", "mateusz"), "kacper");
 });

@@ -33,7 +33,10 @@ import {
   listenForForegroundPushNotifications,
   registerPushNotifications,
 } from "./lib/notifications";
-import { shouldApplyAppointmentSnapshot } from "../shared/appointment-sync.mjs";
+import {
+  resolveActiveBarberId,
+  shouldApplyAppointmentSnapshot,
+} from "../shared/appointment-sync.mjs";
 
 type Availability = "high" | "medium" | "low" | "none";
 type Step = "booking" | "confirm" | "success" | "admin";
@@ -1008,6 +1011,7 @@ export function BookingHome() {
   const [selectedTime, setSelectedTime] = useState("");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [allAdminAppointments, setAllAdminAppointments] = useState<AdminAppointment[]>([]);
+  const [ownClientAppointments, setOwnClientAppointments] = useState<AdminAppointment[]>([]);
   const [clientRecords, setClientRecords] = useState<ClientRecord[]>([]);
   const [barberWorkSettings, setBarberWorkSettings] = useState<WorkSettings>(defaultWorkSettings);
   const [form, setForm] = useState<FormState>({ fullName: "", phone: "" });
@@ -1112,9 +1116,17 @@ export function BookingHome() {
     ...(isOwner ? (["team"] as AdminSection[]) : []),
   ];
   const activeAdminNavIndex = Math.max(0, visibleAdminSections.indexOf(adminSection));
-  const activeBarberId =
-    signedInBarberId ?? selectedBarberId ?? teamMembers.find((barber) => barber.active)?.id ?? "";
-  const visibleBarberId = isOwner ? selectedBarberId : signedInBarberId ?? selectedBarberId;
+  const activeBarberId = resolveActiveBarberId({
+    step,
+    signedInBarberId,
+    selectedBarberId,
+    activeBarberIds: teamMembers.filter((barber) => barber.active).map((barber) => barber.id),
+  });
+  const visibleBarberId = isOwner
+    ? selectedBarberId
+    : step === "admin"
+      ? signedInBarberId
+      : selectedBarberId;
   const selectedBarber =
     teamMembers.find((barber) => barber.id === visibleBarberId) ?? null;
   const activeBarberProfile = barberProfiles[activeBarberId] ?? emptyBarberDetails;
@@ -1187,7 +1199,7 @@ export function BookingHome() {
     [allAdminAppointments, barberProfiles, currentDate, teamMembers, today],
   );
   const reschedulingAppointment =
-    adminAppointments.find((appointment) => appointment.id === reschedulingAppointmentId) ?? null;
+    ownClientAppointments.find((appointment) => appointment.id === reschedulingAppointmentId) ?? null;
   const activeBarberAppointments = useMemo(
     () => appointments.filter((appointment) => appointment.barberId === activeBarberId),
     [activeBarberId, appointments],
@@ -1569,7 +1581,7 @@ export function BookingHome() {
   const clientAppointments = useMemo(
     () =>
       activeUser
-        ? adminAppointments
+        ? ownClientAppointments
             .filter(
               (appointment) =>
                 appointment.userId === activeUser.uid &&
@@ -1582,7 +1594,7 @@ export function BookingHome() {
               return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
             })
         : [],
-    [activeUser, adminAppointments, currentDate],
+    [activeUser, currentDate, ownClientAppointments],
   );
   const nearestClientAppointment = clientAppointments[0] ?? null;
   const nearestClientAppointmentBarber = nearestClientAppointment
@@ -1596,7 +1608,7 @@ export function BookingHome() {
   const canShiftToPreviousMonth = visibleMonth.getTime() > currentMonthStart.getTime();
   const selectedClientAppointment =
     clientAppointments.find((appointment) => appointment.id === clientAppointmentId) ??
-    allAdminAppointments.find(
+    ownClientAppointments.find(
       (appointment) =>
         appointment.id === clientAppointmentId && appointment.userId === activeUser?.uid,
     ) ??
@@ -1776,7 +1788,8 @@ export function BookingHome() {
         return false;
       }
       latestSyncRevisionRef.current = incomingRevision;
-      const loadedAppointments = (result.adminAppointments ?? result.clientAppointments ?? [])
+      const normalizeLoadedAppointments = (items: AdminAppointment[] = []) =>
+        items
         .map((appointment) => ({
           ...appointment,
           version: Math.max(1, Number(appointment.version) || 1),
@@ -1789,7 +1802,13 @@ export function BookingHome() {
           return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
         });
 
-      setAllAdminAppointments(loadedAppointments);
+      const loadedAdminAppointments = normalizeLoadedAppointments(
+        result.adminAppointments ?? result.clientAppointments ?? [],
+      );
+      const loadedClientAppointments = normalizeLoadedAppointments(result.clientAppointments ?? []);
+
+      setAllAdminAppointments(loadedAdminAppointments);
+      setOwnClientAppointments(loadedClientAppointments);
       setAppointments(result.occupancy ?? []);
       setClientRecords((result.adminClients ?? []) as ClientRecord[]);
       if (result.teamMembers) {
@@ -2083,6 +2102,7 @@ export function BookingHome() {
     if (!activeUser) {
       setAppointments([]);
       setAllAdminAppointments([]);
+      setOwnClientAppointments([]);
       setClientRecords([]);
       latestSyncRevisionRef.current = -1;
       return undefined;
@@ -2166,7 +2186,7 @@ export function BookingHome() {
     }
 
     setBarberProfiles({});
-    const visibleProfiles = isBarber
+    const visibleProfiles = isBarber && step === "admin"
       ? teamMembers.filter((barber) => barber.id === signedInBarberId)
       : teamMembers;
     const unsubscribeProfiles = visibleProfiles.map((barber) =>
@@ -2181,7 +2201,7 @@ export function BookingHome() {
     );
 
     return () => unsubscribeProfiles.forEach((unsubscribe) => unsubscribe());
-  }, [activeUser, isBarber, signedInBarberId, teamMembers]);
+  }, [activeUser, isBarber, signedInBarberId, step, teamMembers]);
 
   useEffect(() => {
     const defaultProfile = teamMembers.find((barber) => barber.id === activeBarberId);
@@ -2196,14 +2216,17 @@ export function BookingHome() {
   useEffect(() => {
     if (!activeUser || !pendingNotificationAppointmentId) return;
 
-    const appointment = allAdminAppointments.find(
-      (item) =>
-        item.id === pendingNotificationAppointmentId &&
-        (isAdmin || item.userId === activeUser.uid),
+    const adminAppointment = allAdminAppointments.find(
+      (item) => item.id === pendingNotificationAppointmentId,
     );
+    const clientAppointment = ownClientAppointments.find(
+      (item) =>
+        item.id === pendingNotificationAppointmentId && item.userId === activeUser.uid,
+    );
+    const appointment = adminAppointment ?? clientAppointment;
     if (!appointment) return;
 
-    if (isAdmin) {
+    if (isAdmin && adminAppointment) {
       setSelectedBarberId(appointment.barberId);
       setAdminSection("schedule");
       setAdminSelectedKey(appointment.dateKey);
@@ -2222,7 +2245,7 @@ export function BookingHome() {
       "",
       `${url.pathname}${url.search}${url.hash}`,
     );
-  }, [activeUser, allAdminAppointments, clientAppointments, isAdmin, pendingNotificationAppointmentId]);
+  }, [activeUser, allAdminAppointments, isAdmin, ownClientAppointments, pendingNotificationAppointmentId]);
 
   useEffect(() => {
     if (!activeUser || !activeBarberId) {
@@ -3011,7 +3034,7 @@ export function BookingHome() {
   };
 
   const cancelClientAppointment = async (appointmentId: string) => {
-    const appointment = adminAppointments.find((item) => item.id === appointmentId);
+    const appointment = ownClientAppointments.find((item) => item.id === appointmentId);
 
     setPendingClientCancellationId(null);
     setClientAppointmentId(null);
@@ -3040,16 +3063,21 @@ export function BookingHome() {
   const confirmClientRescheduledAppointment = async (appointmentId: string) => {
     if (isSaving) return;
 
+    const confirmsAsAdmin = step === "admin";
+    const appointment = confirmsAsAdmin
+      ? adminAppointments.find((item) => item.id === appointmentId)
+      : ownClientAppointments.find((item) => item.id === appointmentId);
+    if (!appointment) return;
+
     try {
       setIsSaving(true);
       setBookingError("");
       await runAppointmentOperation(
-        isAdmin ? "confirm_admin" : "confirm_client",
+        confirmsAsAdmin ? "confirm_admin" : "confirm_client",
         { appointmentId },
         {
-          key: `${isAdmin ? "confirm_admin" : "confirm_client"}:${appointmentId}`,
-          expectedVersion:
-            adminAppointments.find((appointment) => appointment.id === appointmentId)?.version ?? 1,
+          key: `${confirmsAsAdmin ? "confirm_admin" : "confirm_client"}:${appointmentId}`,
+          expectedVersion: appointment.version ?? 1,
         },
       );
     } catch (error) {

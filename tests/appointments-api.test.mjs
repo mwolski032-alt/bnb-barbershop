@@ -216,7 +216,8 @@ test("Mateusz receives only his own calendar from the canonical team assignment"
   assert.equal(response.status, 200, JSON.stringify(result));
   assert.deepEqual(result.adminAppointments.map((item) => item.id), ["own"]);
   assert.equal(result.adminAppointments.some((item) => item.clientEmail === "private@example.com"), false);
-  assert.equal("clientAppointments" in result, false);
+  assert.deepEqual(result.clientAppointments, []);
+  assert.equal(result.occupancy.length, 2);
 });
 
 test("a stale team assignment revokes Mateusz admin context", async () => {

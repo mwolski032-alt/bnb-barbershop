@@ -409,22 +409,10 @@ const getAppointmentData = async (user, admin, accessToken) => {
       context: admin,
       teamMembers,
       adminAppointments,
+      clientAppointments,
       adminClients,
       syncRevision: Number(database.appointmentSync?.revision) || 0,
-      occupancy: adminAppointments
-        .filter(
-          (appointment) =>
-            appointment.status !== "cancelled" &&
-            appointment.status !== "completed" &&
-            appointment.dateKey >= todayKey,
-        )
-        .map(({ id, barberId, dateKey, startTime, durationMinutes }) => ({
-          id,
-          barberId,
-          dateKey,
-          startTime,
-          durationMinutes,
-        })),
+      occupancy,
     };
   }
 
