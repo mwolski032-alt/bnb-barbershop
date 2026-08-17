@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  isServiceCatalogReady,
   resolveActiveBarberId,
   shouldApplyAppointmentSnapshot,
 } from "../shared/appointment-sync.mjs";
@@ -210,4 +211,31 @@ test("barbers can select each other only in the client booking context", () => {
   assert.equal(resolve("booking", "kacper", "mateusz"), "mateusz");
   assert.equal(resolve("admin", "mateusz", "kacper"), "mateusz");
   assert.equal(resolve("admin", "kacper", "mateusz"), "kacper");
+});
+
+test("manual booking never reuses a stale service catalog from another barber", () => {
+  assert.equal(
+    isServiceCatalogReady({ activeBarberId: "mateusz", loadedBarberId: "kacper" }),
+    false,
+  );
+  assert.equal(
+    isServiceCatalogReady({
+      activeBarberId: "mateusz",
+      loadedBarberId: "mateusz",
+      isLoading: true,
+    }),
+    false,
+  );
+  assert.equal(
+    isServiceCatalogReady({
+      activeBarberId: "mateusz",
+      loadedBarberId: "mateusz",
+      error: "permission_denied",
+    }),
+    false,
+  );
+  assert.equal(
+    isServiceCatalogReady({ activeBarberId: "mateusz", loadedBarberId: "mateusz" }),
+    true,
+  );
 });

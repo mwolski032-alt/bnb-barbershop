@@ -21,3 +21,22 @@ export const resolveActiveBarberId = ({
   if (step === "admin" && signedInBarberId) return signedInBarberId;
   return selectedBarberId || signedInBarberId || activeBarberIds[0] || "";
 };
+
+/**
+ * @param {{
+ *   activeBarberId: string,
+ *   loadedBarberId: string,
+ *   isLoading?: boolean,
+ *   error?: string,
+ * }} context
+ */
+export const isServiceCatalogReady = ({
+  activeBarberId,
+  loadedBarberId,
+  isLoading = false,
+  error = "",
+}) =>
+  Boolean(activeBarberId) &&
+  loadedBarberId === activeBarberId &&
+  !isLoading &&
+  !error;

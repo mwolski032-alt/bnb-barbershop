@@ -34,6 +34,7 @@ import {
   registerPushNotifications,
 } from "./lib/notifications";
 import {
+  isServiceCatalogReady,
   resolveActiveBarberId,
   shouldApplyAppointmentSnapshot,
 } from "../shared/appointment-sync.mjs";
@@ -1007,6 +1008,9 @@ export function BookingHome() {
   const [teamFeedback, setTeamFeedback] = useState<WorkFeedback | null>(null);
   const [isTeamSaving, setIsTeamSaving] = useState(false);
   const [barberServices, setBarberServices] = useState<Service[]>([]);
+  const [loadedServicesBarberId, setLoadedServicesBarberId] = useState("");
+  const [areBarberServicesLoading, setAreBarberServicesLoading] = useState(false);
+  const [barberServicesError, setBarberServicesError] = useState("");
   const [selectedServiceId, setSelectedServiceId] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -1149,7 +1153,16 @@ export function BookingHome() {
     clientBarberOptions.find((barber) => barber.id === activeBarberId) ??
     selectedBarber ??
     teamMembers[0];
-  const services = barberServices;
+  const serviceCatalogReady = isServiceCatalogReady({
+    activeBarberId,
+    loadedBarberId: loadedServicesBarberId,
+    isLoading: areBarberServicesLoading,
+    error: barberServicesError,
+  });
+  const services = useMemo(
+    () => (serviceCatalogReady ? barberServices : []),
+    [barberServices, serviceCatalogReady],
+  );
   const workSettings = barberWorkSettings;
   const barberAllAppointments = useMemo(
     () =>
@@ -1669,6 +1682,25 @@ export function BookingHome() {
           ),
       ),
   );
+  const manualBookingStatus = !serviceCatalogReady
+    ? {
+        kind: barberServicesError ? "unavailable" : "loading",
+        message: barberServicesError || "Pobieram usługi wybranego barbera...",
+      }
+    : services.length === 0
+      ? {
+          kind: "unavailable",
+          message: "Ten barber nie ma jeszcze aktywnych usług.",
+        }
+      : manualBookingHasConflict
+        ? {
+            kind: "conflict",
+            message: "Termin koliduje z inną wizytą",
+          }
+        : {
+            kind: "free",
+            message: "Termin jest wolny i może zostać zapisany",
+          };
   const clientDraftIsValid = Boolean(
     clientDraft.firstName.trim() &&
       clientDraft.lastName.trim() &&
@@ -2263,14 +2295,33 @@ export function BookingHome() {
   useEffect(() => {
     if (!activeUser || !activeBarberId) {
       setBarberServices([]);
+      setLoadedServicesBarberId("");
+      setAreBarberServicesLoading(false);
+      setBarberServicesError("");
       return undefined;
     }
 
+    setBarberServices([]);
+    setLoadedServicesBarberId("");
+    setAreBarberServicesLoading(true);
+    setBarberServicesError("");
     const barberServicesRef = ref(realtimeDb, `barbers/${activeBarberId}/services`);
-    return onValue(barberServicesRef, (snapshot) => {
-      const value = snapshot.val() as Record<string, Partial<Service>> | null;
-      setBarberServices(normalizeServices(value, activeBarberId));
-    });
+    return onValue(
+      barberServicesRef,
+      (snapshot) => {
+        const value = snapshot.val() as Record<string, Partial<Service>> | null;
+        setBarberServices(normalizeServices(value, activeBarberId));
+        setLoadedServicesBarberId(activeBarberId);
+        setAreBarberServicesLoading(false);
+        setBarberServicesError("");
+      },
+      () => {
+        setBarberServices([]);
+        setLoadedServicesBarberId(activeBarberId);
+        setAreBarberServicesLoading(false);
+        setBarberServicesError("Nie udało się pobrać usług. Spróbuj ponownie.");
+      },
+    );
   }, [activeBarberId, activeUser]);
 
   useEffect(() => {
@@ -2855,8 +2906,6 @@ export function BookingHome() {
     barberId: string,
     section: AdminSection = "schedule",
   ) => {
-    setBarberServices([]);
-    setBarberWorkSettings(defaultWorkSettings);
     setSelectedBarberId(barberId);
     setAdminSection(section);
     setAdminSelectedKey(dayKey(today));
@@ -3006,8 +3055,6 @@ export function BookingHome() {
   const selectBookingBarber = (barberId: string, scrollToServices = true) => {
     if (barberId === activeBarberId && selectedBarberId === barberId) return;
 
-    setBarberServices([]);
-    setBarberWorkSettings(defaultWorkSettings);
     setSelectedBarberId(barberId);
     setSelectedServiceId("");
     setSelectedTime("");
@@ -3378,7 +3425,7 @@ export function BookingHome() {
   const resetManualBookingDraft = () => {
     const todayKey = dayKey(today);
     setManualBookingDraft({
-      serviceId: services[0]?.id ?? "",
+      serviceId: serviceCatalogReady ? services[0]?.id ?? "" : "",
       dateKey: adminSelectedKey >= todayKey ? adminSelectedKey : todayKey,
       startTime: "18:00",
     });
@@ -3420,6 +3467,20 @@ export function BookingHome() {
     }
     if (!isValidEmail(email)) {
       setClientFeedback({ kind: "error", message: "Sprawdź poprawność adresu e-mail." });
+      return;
+    }
+    if (shouldBook && !serviceCatalogReady) {
+      setClientFeedback({
+        kind: "error",
+        message: barberServicesError || "Poczekaj na pobranie usług wybranego barbera.",
+      });
+      return;
+    }
+    if (shouldBook && services.length === 0) {
+      setClientFeedback({
+        kind: "error",
+        message: "Najpierw dodaj aktywną usługę w sekcji Usługi.",
+      });
       return;
     }
     if (shouldBook && (!manualBookingService || !manualBookingDraft.dateKey || !manualBookingDraft.startTime)) {
@@ -6113,6 +6174,7 @@ export function BookingHome() {
                     <span>Usługa</span>
                     <select
                       value={manualBookingDraft.serviceId}
+                      disabled={!serviceCatalogReady || services.length === 0}
                       onChange={(event) =>
                         setManualBookingDraft((current) => ({
                           ...current,
@@ -6120,11 +6182,21 @@ export function BookingHome() {
                         }))
                       }
                     >
-                      {services.map((service) => (
-                        <option key={service.id} value={service.id}>
-                          {service.name} · {service.price} · {service.durationMinutes} min
+                      {!serviceCatalogReady || services.length === 0 ? (
+                        <option value="">
+                          {areBarberServicesLoading || loadedServicesBarberId !== activeBarberId
+                            ? "Ładowanie usług..."
+                            : barberServicesError
+                              ? "Nie udało się pobrać usług"
+                              : "Brak aktywnych usług"}
                         </option>
-                      ))}
+                      ) : (
+                        services.map((service) => (
+                          <option key={service.id} value={service.id}>
+                            {service.name} · {service.price} · {service.durationMinutes} min
+                          </option>
+                        ))
+                      )}
                     </select>
                   </label>
                   <label>
@@ -6156,11 +6228,9 @@ export function BookingHome() {
                     />
                   </label>
                 </div>
-                <div className={`manual-booking-status ${manualBookingHasConflict ? "conflict" : "free"}`}>
+                <div className={`manual-booking-status ${manualBookingStatus.kind}`}>
                   <span aria-hidden="true" />
-                  {manualBookingHasConflict
-                    ? "Termin koliduje z inną wizytą"
-                    : "Termin jest wolny i może zostać zapisany"}
+                  {manualBookingStatus.message}
                 </div>
               </div>
             ) : null}
@@ -6189,7 +6259,7 @@ export function BookingHome() {
                   isClientSaving ||
                   (clientDialog.mode === "create" && !clientDraftIsValid) ||
                   ((clientDialog.mode === "book" || clientSaveMode === "booking") &&
-                    manualBookingHasConflict)
+                    (!serviceCatalogReady || !manualBookingService || manualBookingHasConflict))
                 }
                 onClick={() => void handleSaveClientFromDialog()}
               >

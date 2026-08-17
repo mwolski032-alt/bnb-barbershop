@@ -4435,6 +4435,25 @@ h2 {
   box-shadow: 0 0 0 4px rgba(255, 69, 58, 0.1);
 }
 
+.manual-booking-status.loading {
+  color: #b7bdc9;
+}
+
+.manual-booking-status.loading > span {
+  background: #8e96a6;
+  box-shadow: 0 0 0 4px rgba(142, 150, 166, 0.12);
+  animation: status-pulse 1.2s ease-in-out infinite;
+}
+
+.manual-booking-status.unavailable {
+  color: #ffd08a;
+}
+
+.manual-booking-status.unavailable > span {
+  background: #ff9f0a;
+  box-shadow: 0 0 0 4px rgba(255, 159, 10, 0.12);
+}
+
 .client-dialog-feedback {
   margin-top: 0.8rem;
 }
@@ -7125,6 +7144,12 @@ h2 {
 @keyframes spin-ring {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes status-pulse {
+  50% {
+    opacity: 0.45;
   }
 }
 

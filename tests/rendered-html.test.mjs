@@ -377,3 +377,26 @@ test("keeps the client barber selection and resilient profile photos", async () 
   assert.match(styles, /\.client-barber-avatar\s*\{/);
   assert.match(styles, /grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/);
 });
+
+test("keeps manual booking services bound to the selected barber", async () => {
+  const [bookingHome, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /isServiceCatalogReady\(\{/);
+  assert.match(bookingHome, /setLoadedServicesBarberId\(activeBarberId\)/);
+  assert.match(bookingHome, /disabled=\{!serviceCatalogReady \|\| services\.length === 0\}/);
+  assert.match(bookingHome, /Ładowanie usług\.\.\./);
+  assert.match(bookingHome, /Brak aktywnych usług/);
+  assert.match(
+    bookingHome,
+    /!serviceCatalogReady \|\| !manualBookingService \|\| manualBookingHasConflict/,
+  );
+  assert.doesNotMatch(
+    bookingHome,
+    /const openOwnerBarberPanel[\s\S]*?\) => \{\s*setBarberServices\(\[\]\)/,
+  );
+  assert.match(styles, /\.manual-booking-status\.loading/);
+  assert.match(styles, /\.manual-booking-status\.unavailable/);
+});
