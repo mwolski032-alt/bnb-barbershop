@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  clientAUid,
+  clientBUid,
   createClientAppointment,
   installAppointmentsFixture,
   makeAppointmentRequest,
@@ -100,6 +102,26 @@ test("FIXED IN STAGE 4: a signed-in client is merged with a manual card sharing 
     (client) => client.email === "client-a@example.com",
   );
   assert.equal(matchingRecords.length, 1);
+});
+
+test("FIXED: authenticated family members sharing a phone can book independently", async () => {
+  fixture.reset();
+  fixture.database.clients[clientBUid].phone = "500600700";
+  const appointment = createClientAppointment({
+    id: "shared-family-phone-booking",
+    startTime: "12:00",
+  });
+
+  const response = await request(tokens.clientA, "POST", {
+    action: "create_client",
+    appointment,
+    client: { firstName: "Klient", lastName: "A", phone: "500600700" },
+  });
+
+  assert.equal(response.status, 200, await response.text());
+  assert.equal(fixture.database.appointments[appointment.id].userId, clientAUid);
+  assert.equal(fixture.database.clients[clientAUid].userId, clientAUid);
+  assert.equal(fixture.database.clients[clientBUid].userId, clientBUid);
 });
 
 test("FIXED IN STAGE 4: successful appointment mutation creates a durable notification job", async () => {

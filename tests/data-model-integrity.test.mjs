@@ -285,6 +285,37 @@ test("runtime client upsert merges a manual card into the authenticated client i
   assert.deepEqual(result.aliases, { manual: "client-uid", "client-uid": "client-uid" });
 });
 
+test("runtime client upsert keeps authenticated family members sharing a phone separate", () => {
+  const result = upsertCanonicalClient(
+    {
+      "client-a": {
+        id: "client-a",
+        firstName: "Jan",
+        lastName: "Kowalski",
+        email: "jan@example.com",
+        phone: "500600700",
+        userId: "client-a",
+        barberIds: { mateusz: true },
+      },
+    },
+    "client-b",
+    {
+      firstName: "Anna",
+      lastName: "Kowalska",
+      email: "anna@example.com",
+      phone: "500600700",
+      userId: "client-b",
+      barberIds: { mateusz: true },
+    },
+  );
+
+  assert.equal(result.error, undefined);
+  assert.deepEqual(Object.keys(result.clients).sort(), ["client-a", "client-b"]);
+  assert.equal(result.canonicalId, "client-b");
+  assert.equal(result.clients["client-a"].email, "jan@example.com");
+  assert.equal(result.clients["client-b"].email, "anna@example.com");
+});
+
 test("integrity validation rejects duplicated account assignments and invalid availability ranges", () => {
   const database = canonicalBase();
   database.team.barbers.kacper.userId = database.team.barbers.mateusz.userId;

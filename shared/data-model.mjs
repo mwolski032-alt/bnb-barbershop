@@ -206,13 +206,37 @@ const findDuplicateClientGroups = (clients) => {
     if (firstRoot !== secondRoot) parent[secondRoot] = firstRoot;
   };
   const identityOwner = new Map();
+  const phoneMembers = new Map();
 
   for (const [id, client] of Object.entries(clients)) {
-    for (const identity of getClientIdentityKeys(client)) {
+    const strongIdentities = [
+      client.userId ? `uid:${client.userId}` : "",
+      client.email ? `email:${normalizeEmail(client.email)}` : "",
+    ].filter(Boolean);
+    for (const identity of strongIdentities) {
       const existing = identityOwner.get(identity);
       if (existing) union(existing, id);
       else identityOwner.set(identity, id);
     }
+
+    const phone = normalizePhone(client.phone);
+    if (phone.length === 9) {
+      phoneMembers.set(phone, [...(phoneMembers.get(phone) ?? []), id]);
+    }
+  }
+
+  for (const phoneIds of phoneMembers.values()) {
+    if (phoneIds.length < 2) continue;
+    const phoneRecords = phoneIds.map((id) => clients[id]);
+    const userIds = [...new Set(phoneRecords.map((client) => client.userId).filter(Boolean))];
+    const emails = [
+      ...new Set(phoneRecords.map((client) => normalizeEmail(client.email)).filter(Boolean)),
+    ];
+
+    // A phone number can be shared by family members. Treat it as a merge key
+    // only when it does not connect separate authenticated accounts or emails.
+    if (userIds.length > 1 || emails.length > 1) continue;
+    for (const id of phoneIds.slice(1)) union(phoneIds[0], id);
   }
 
   const groups = new Map();
