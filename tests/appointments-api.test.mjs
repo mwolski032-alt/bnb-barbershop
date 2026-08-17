@@ -13,19 +13,47 @@ process.env.NEXT_PUBLIC_FIREBASE_API_KEY = "firebase-test-key";
 
 let revision = 1;
 const database = {
+  appointmentSync: { revision: 1 },
   team: {
+    owner: { userId: "owner-test-uid", active: true },
     barbers: {
-      mateusz: { id: "mateusz", userId: "stale-barber-uid", active: true },
+      mateusz: {
+        id: "mateusz",
+        userId: mateuszUid,
+        active: true,
+        access: {
+          schedule: true,
+          clients: true,
+          analytics: true,
+          work: true,
+          services: true,
+          profile: true,
+        },
+      },
+      kacper: { id: "kacper", userId: "kacper-uid", active: true },
     },
   },
-  workSettings: {
-    availability: {
-      "2026-08-20": {
-        id: "2026-08-20",
-        barberId: "mateusz",
-        dateKey: "2026-08-20",
-        startTime: "08:00",
-        endTime: "16:00",
+  barbers: {
+    mateusz: {
+      services: {
+        "mens-haircut": {
+          id: "mens-haircut",
+          barberId: "mateusz",
+          name: "Strzyżenie męskie",
+          price: "30 zł",
+          durationMinutes: 60,
+        },
+      },
+      workSettings: {
+        availability: {
+          "2026-08-20": {
+            id: "2026-08-20",
+            barberId: "mateusz",
+            dateKey: "2026-08-20",
+            startTime: "08:00",
+            endTime: "16:00",
+          },
+        },
       },
     },
   },
@@ -34,6 +62,8 @@ const database = {
       id: "own",
       barberId: "mateusz",
       userId: "client-uid",
+      clientId: "client-uid",
+      serviceId: "mens-haircut",
       clientName: "Własny Klient",
       clientEmail: "client@example.com",
       phone: "500600700",
@@ -43,11 +73,14 @@ const database = {
       startTime: "10:00",
       durationMinutes: 60,
       status: "confirmed",
+      version: 1,
     },
     other: {
       id: "other",
       barberId: "kacper",
       userId: "other-uid",
+      clientId: "other-uid",
+      serviceId: "beard-trim",
       clientName: "Prywatne Dane",
       clientEmail: "private@example.com",
       phone: "999999999",
@@ -57,9 +90,25 @@ const database = {
       startTime: "11:00",
       durationMinutes: 60,
       status: "confirmed",
+      version: 1,
     },
   },
-  clients: {},
+  clients: {
+    "client-uid": {
+      id: "client-uid",
+      email: "client@example.com",
+      phone: "500600700",
+      userId: "client-uid",
+      barberIds: { mateusz: true },
+    },
+    "other-uid": {
+      id: "other-uid",
+      email: "private@example.com",
+      phone: "999999999",
+      userId: "other-uid",
+      barberIds: { kacper: true },
+    },
+  },
 };
 
 const parts = (path) => path.split("/").filter(Boolean).map(decodeURIComponent);
@@ -92,14 +141,20 @@ globalThis.fetch = async (input, options = {}) => {
     const method = options.method ?? "GET";
     if (method === "GET") {
       return new Response(JSON.stringify(readPath(path) ?? null), {
-        headers: path === "appointments" ? { ETag: `"${revision}"` } : {},
+        headers: path === "appointments" || path === "" ? { ETag: `"${revision}"` } : {},
       });
     }
     if (method === "PUT") {
-      if (path === "appointments" && options.headers?.["If-Match"] !== `"${revision}"`) {
+      if (["appointments", ""].includes(path) && options.headers?.["If-Match"] !== `"${revision}"`) {
         return new Response("Precondition failed", { status: 412 });
       }
-      writePath(path, JSON.parse(options.body));
+      if (path === "") {
+        const next = JSON.parse(options.body);
+        for (const key of Object.keys(database)) delete database[key];
+        Object.assign(database, next);
+      } else {
+        writePath(path, JSON.parse(options.body));
+      }
       revision += 1;
       return Response.json(readPath(path));
     }
@@ -109,6 +164,7 @@ globalThis.fetch = async (input, options = {}) => {
 };
 
 const appointmentModule = await import("../netlify/functions/appointments.mjs");
+let operationSequence = 0;
 const request = (method, body, token = "valid-client-token") =>
   appointmentModule.default(
     new Request("https://bnb.example/.netlify/functions/appointments", {
@@ -117,7 +173,25 @@ const request = (method, body, token = "valid-client-token") =>
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         "Content-Type": "application/json",
       },
-      ...(body ? { body: JSON.stringify(body) } : {}),
+      ...(body
+        ? {
+            body: JSON.stringify(
+              method === "POST"
+                ? {
+                    operationId: body.operationId ?? `api-operation-${++operationSequence}`,
+                    expectedVersion:
+                      body.expectedVersion ??
+                      (["create_client", "create_admin", "upsert_admin_client", "hide_admin_client"].includes(
+                        body.action,
+                      )
+                        ? 0
+                        : 1),
+                    ...body,
+                  }
+                : body,
+            ),
+          }
+        : {}),
     }),
   );
 
@@ -136,13 +210,23 @@ test("appointment endpoint rejects missing authentication", async () => {
   assert.equal(response.status, 401);
 });
 
-test("Mateusz receives only his own barber calendar despite a stale team user id", async () => {
+test("Mateusz receives only his own calendar from the canonical team assignment", async () => {
   const response = await request("GET", null, "valid-barber-token");
   const result = await response.json();
   assert.equal(response.status, 200, JSON.stringify(result));
   assert.deepEqual(result.adminAppointments.map((item) => item.id), ["own"]);
   assert.equal(result.adminAppointments.some((item) => item.clientEmail === "private@example.com"), false);
   assert.equal("clientAppointments" in result, false);
+});
+
+test("a stale team assignment revokes Mateusz admin context", async () => {
+  database.team.barbers.mateusz.userId = "stale-barber-uid";
+  const response = await request("GET", null, "valid-barber-token");
+  const result = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(result));
+  assert.equal("adminAppointments" in result, false);
+  assert.equal(result.context.role, "client");
+  database.team.barbers.mateusz.userId = mateuszUid;
 });
 
 test("atomic booking rejects an occupied time and accepts a free time", async () => {
@@ -203,6 +287,7 @@ test("client cannot cancel another user's appointment", async () => {
 test("client can confirm an admin-rescheduled appointment", async () => {
   database.appointments.own.status = "rescheduled";
   database.appointments.own.rescheduledBy = "admin";
+  database.appointments.own.version = 1;
   const response = await request("POST", { action: "confirm_client", appointmentId: "own" });
   assert.equal(response.status, 200, await response.text());
   assert.equal(database.appointments.own.status, "confirmed");
@@ -213,6 +298,7 @@ test("client can confirm an admin-rescheduled appointment", async () => {
 test("client cannot approve a reschedule they requested themselves", async () => {
   database.appointments.own.status = "rescheduled";
   database.appointments.own.rescheduledBy = "client";
+  database.appointments.own.version = 1;
   const response = await request("POST", { action: "confirm_client", appointmentId: "own" });
   assert.equal(response.status, 409);
   assert.equal(database.appointments.own.status, "rescheduled");
@@ -221,6 +307,7 @@ test("client cannot approve a reschedule they requested themselves", async () =>
 test("active barber can confirm a rescheduled appointment in own calendar", async () => {
   database.appointments.own.status = "rescheduled";
   database.appointments.own.rescheduledBy = "client";
+  database.appointments.own.version = 1;
   const response = await request(
     "POST",
     { action: "confirm_admin", appointmentId: "own" },

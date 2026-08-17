@@ -2,7 +2,7 @@ import { getAuth } from "firebase/auth";
 
 import { firebaseApp } from "./firebase";
 
-type AppointmentMutationAction =
+export type AppointmentMutationAction =
   | "create_client"
   | "reschedule_client"
   | "confirm_client"
@@ -11,12 +11,20 @@ type AppointmentMutationAction =
   | "create_admin"
   | "reschedule_admin"
   | "cancel_admin"
-  | "settle_admin";
+  | "settle_admin"
+  | "upsert_admin_client"
+  | "hide_admin_client";
 
-type AppointmentApiResult<T> = {
+export type AppointmentApiResult<T> = {
   ok: boolean;
   error?: string;
+  code?: "stale_version" | "operation_conflict";
+  operationId?: string;
+  idempotent?: boolean;
+  syncRevision?: number;
   appointment?: T;
+  currentAppointment?: T;
+  client?: unknown;
   occupancy?: Array<{
     id: string;
     barberId: string;
@@ -26,7 +34,36 @@ type AppointmentApiResult<T> = {
   }>;
   clientAppointments?: T[];
   adminAppointments?: T[];
+  adminClients?: unknown[];
+  teamMembers?: unknown[];
+  context?: {
+    role: "owner" | "barber" | "client";
+    assignedRole?: "barber";
+    active: boolean;
+    isAdmin: boolean;
+    isOwner: boolean;
+    barberId: string;
+    access: Record<string, boolean>;
+    roleError?: "conflicting_barber_assignment";
+  };
 };
+
+export class AppointmentApiError<T> extends Error {
+  result: AppointmentApiResult<T> | null;
+  status: number;
+
+  constructor(message: string, result: AppointmentApiResult<T> | null, status: number) {
+    super(message);
+    this.name = "AppointmentApiError";
+    this.result = result;
+    this.status = status;
+  }
+}
+
+export const createAppointmentOperationId = () =>
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `operation-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 
 const getAuthorizationHeaders = async () => {
   const user = getAuth(firebaseApp).currentUser;
@@ -40,7 +77,11 @@ const getAuthorizationHeaders = async () => {
 const readResult = async <T>(response: Response) => {
   const result = (await response.json().catch(() => null)) as AppointmentApiResult<T> | null;
   if (!response.ok || !result?.ok) {
-    throw new Error(result?.error || "Nie udało się zapisać zmian. Spróbuj ponownie.");
+    throw new AppointmentApiError(
+      result?.error || "Nie udało się zapisać zmian. Spróbuj ponownie.",
+      result,
+      response.status,
+    );
   }
   return result;
 };
@@ -48,11 +89,17 @@ const readResult = async <T>(response: Response) => {
 export const mutateAppointment = async <T>(
   action: AppointmentMutationAction,
   payload: Record<string, unknown>,
+  options: { operationId: string; expectedVersion: number },
 ) => {
   const response = await fetch("/.netlify/functions/appointments", {
     method: "POST",
     headers: await getAuthorizationHeaders(),
-    body: JSON.stringify({ action, ...payload }),
+    body: JSON.stringify({
+      action,
+      operationId: options.operationId,
+      expectedVersion: options.expectedVersion,
+      ...payload,
+    }),
   });
   return readResult<T>(response);
 };

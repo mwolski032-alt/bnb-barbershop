@@ -6,8 +6,14 @@ test("Firebase rules deny root access and keep client records admin-only", async
   const rules = JSON.parse(await readFile(new URL("../database.rules.json", import.meta.url), "utf8"));
   assert.equal(rules.rules[".read"], false);
   assert.equal(rules.rules[".write"], false);
-  assert.match(rules.rules.appointments[".read"], /xkyDu2Lb1Ma8McF7yfyv8PIAj1M2/);
-  assert.match(rules.rules.clients[".read"], /team\/barbers\/mateusz/);
+  assert.match(rules.rules.appointments[".read"], /team\/owner\/userId/);
+  assert.equal(rules.rules.clients[".read"], false);
+  assert.equal(rules.rules.appointmentSync.revision[".read"], "auth != null");
+  assert.equal(rules.rules.appointmentSync.revision[".write"], false);
+  assert.equal(rules.rules.notificationTokens.$uid[".read"], "auth != null && auth.uid === $uid");
+  assert.equal(rules.rules.notificationTokens.$uid[".write"], "auth != null && auth.uid === $uid");
+  assert.equal(rules.rules.notificationOutbox, undefined);
+  assert.equal(rules.rules.appointmentOperations, undefined);
   assert.equal(rules.rules.inAppNotifications, undefined);
 });
 

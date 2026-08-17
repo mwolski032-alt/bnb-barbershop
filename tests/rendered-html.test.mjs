@@ -126,17 +126,18 @@ test("keeps the persistent client base and manual admin booking workflow", async
   ]);
 
   assert.match(bookingHome, /type ClientRecord/);
-  assert.match(bookingHome, /ref\(realtimeDb, "clients"\)/);
+  assert.match(bookingHome, /result\.adminClients/);
   assert.match(bookingHome, /Baza klientów/);
   assert.match(bookingHome, /Dodaj klienta/);
   assert.match(bookingHome, /Zapisz i umów/);
   assert.match(bookingHome, /Poza grafikiem/);
   assert.match(bookingHome, /const handleSaveClientFromDialog = async/);
   assert.match(bookingHome, /const removeClientFromDirectory = async/);
-  assert.match(bookingHome, /hiddenFor\/\$\{activeBarberId\}/);
+  assert.match(bookingHome, /"hide_admin_client"/);
+  assert.match(bookingHome, /"upsert_admin_client"/);
   assert.match(bookingHome, /Historia wizyt,\s*terminarz i analiza pozostaną bez zmian/);
   assert.match(bookingHome, /Ten termin nakłada się na inną wizytę/);
-  assert.match(bookingHome, /mutateAppointment<AdminAppointment>\("create_admin"/);
+  assert.match(bookingHome, /runAppointmentOperation\([\s\S]*"upsert_admin_client"[\s\S]*appointment:/);
   assert.match(styles, /\.client-creator-modal/);
   assert.match(styles, /\.manual-booking-grid/);
   assert.match(styles, /\.book-client-button/);
@@ -151,16 +152,15 @@ test("keeps the owner-only multi-barber workspace", async () => {
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
   ]);
 
-  assert.match(bookingHome, /ownerUserIds = new Set\(\["xkyDu2Lb1Ma8McF7yfyv8PIAj1M2"\]\)/);
-  assert.match(bookingHome, /mateusz: "XxBe4dwVYWZPtl004J4tWq6AMZ73"/);
-  assert.match(bookingHome, /kacper: "TVwF6j7ePiTFhiGTWWPrq9nmRvJ3"/);
-  assert.match(bookingHome, /name: "Mateusz",[\s\S]*label: "Barber 1"/);
-  assert.match(bookingHome, /name: "Kacper",[\s\S]*label: "Barber 2"/);
+  assert.match(bookingHome, /type SessionContext/);
+  assert.match(bookingHome, /sessionContext\?\.role === "owner"/);
+  assert.match(bookingHome, /sessionContext\?\.role === "barber"/);
+  assert.match(bookingHome, /const \[teamMembers, setTeamMembers\] = useState<BarberProfile\[]>\(\[]\)/);
   assert.match(bookingHome, /Czyj panel chcesz otworzyć\?/);
-  assert.match(bookingHome, /appointment\.barberId \|\| defaultBarberId/);
+  assert.doesNotMatch(bookingHome, /appointment\.barberId \|\|/);
   assert.match(bookingHome, /barbers\/\$\{activeBarberId\}\/workSettings/);
   assert.match(bookingHome, /barbers\/\$\{activeBarberId\}\/services/);
-  assert.match(appointmentApi, /barberIds\/\$\{proposed\.barberId\}/);
+  assert.match(appointmentApi, /upsertClientIntoDatabase/);
   assert.match(styles, /\.owner-barber-grid/);
   assert.match(styles, /\.selected-barber-context/);
 });
@@ -172,7 +172,7 @@ test("keeps the scoped barber profile and centered client action", async () => {
   ]);
 
   assert.match(bookingHome, /const isAdmin = isOwner \|\| isBarber/);
-  assert.match(bookingHome, /signedInBarberId \?\? selectedBarberId \?\? defaultBarberId/);
+  assert.match(bookingHome, /signedInBarberId \?\? selectedBarberId \?\? teamMembers\.find/);
   assert.match(bookingHome, /barbers\/\$\{activeBarberId\}\/profile/);
   assert.match(bookingHome, /adminSection === "profile"/);
   assert.match(bookingHome, /resizeProfilePhoto/);
@@ -229,7 +229,7 @@ test("keeps the fixed owner-managed team and role-aware admin avatars", async ()
   ]);
 
   assert.match(bookingHome, /type BarberAdminSection = Exclude<AdminSection, "team">/);
-  assert.match(bookingHome, /ref\(realtimeDb, "team\/barbers"\)/);
+  assert.match(bookingHome, /const teamPath = isOwner \? "team\/barbers"/);
   assert.match(bookingHome, /const updateTeamMemberActive = async/);
   assert.match(bookingHome, /const updateTeamMemberAccess = async/);
   assert.match(bookingHome, /className="team-management-view"/);
@@ -240,9 +240,9 @@ test("keeps the fixed owner-managed team and role-aware admin avatars", async ()
   );
   assert.match(bookingHome, /openOwnerBarberPanel\(member\.id, "schedule"\)/);
   assert.match(bookingHome, /openOwnerBarberPanel\(member\.id, "analytics"\)/);
-  assert.match(bookingHome, /activeUser && teamReady/);
-  assert.match(bookingHome, /configuredSignedInBarber\?\.active/);
-  assert.match(bookingHome, /fixedBarberUserIds\[id\]/);
+  assert.match(bookingHome, /setSessionContext\(result\.context as SessionContext\)/);
+  assert.match(bookingHome, /sessionContext\?\.role === "barber"/);
+  assert.doesNotMatch(bookingHome, /fixedBarberUserIds|ownerUserIds/);
   assert.doesNotMatch(bookingHome, /Dodaj barbera/);
   assert.doesNotMatch(bookingHome, /createTeamInvitation/);
   assert.doesNotMatch(bookingHome, /Identyfikator użytkownika Firebase/);
@@ -252,10 +252,10 @@ test("keeps the fixed owner-managed team and role-aware admin avatars", async ()
 });
 
 test("keeps barber ownership and excludes the owner from appointment notifications", async () => {
-  const [bookingHome, notifications, sendPush, appointmentApi, adminHelper] = await Promise.all([
+  const [bookingHome, notifications, notificationService, appointmentApi, adminHelper] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/notifications.ts", import.meta.url), "utf8"),
-    readFile(new URL("../netlify/functions/send-push.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/_notification-service.mjs", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/_firebase-admin.mjs", import.meta.url), "utf8"),
   ]);
@@ -264,31 +264,29 @@ test("keeps barber ownership and excludes the owner from appointment notificatio
   assert.match(bookingHome, /type Appointment = \{[\s\S]*barberId: string/);
   assert.match(bookingHome, /type AvailabilityWindow = \{[\s\S]*barberId: string/);
   assert.match(bookingHome, /servicesToRecord = \(items: Service\[\], barberId/);
-  assert.match(bookingHome, /migrationUpdates\[`appointments\/\$\{id\}\/barberId`\]/);
-  assert.match(bookingHome, /shouldRunDataMigration && isAdmin/);
+  assert.doesNotMatch(bookingHome, /migrationUpdates/);
+  assert.doesNotMatch(bookingHome, /shouldRunDataMigration/);
   assert.match(appointmentApi, /next\.settlement = \{[\s\S]*amount/);
   assert.match(notifications, /barberId: string/);
-  assert.match(sendPush, /process\.env\.BARBER_MATEUSZ_EMAIL/);
-  assert.match(sendPush, /process\.env\.BARBER_KACPER_EMAIL/);
-  assert.doesNotMatch(sendPush, /process\.env\.ADMIN_EMAIL/);
-  assert.match(sendPush, /fixedBarberUserIds\[barberId\] \|\| member\.userId/);
-  assert.match(adminHelper, /kacper: "TVwF6j7ePiTFhiGTWWPrq9nmRvJ3"/);
-  assert.match(sendPush, /if \(!barberContact\.active\)/);
-  assert.match(sendPush, /target: "barber"/);
-  assert.match(sendPush, /uid === barberUserId/);
-  assert.match(sendPush, /Owner SMS notifications are disabled/);
-  assert.match(sendPush, /Owner WhatsApp notifications are disabled/);
+  assert.match(notificationService, /process\.env\.BARBER_MATEUSZ_EMAIL/);
+  assert.match(notificationService, /process\.env\.BARBER_KACPER_EMAIL/);
+  assert.doesNotMatch(notificationService, /process\.env\.ADMIN_EMAIL/);
+  assert.match(notificationService, /String\(member\?\.userId \|\| ""\)/);
+  assert.match(adminHelper, /readDatabase\("team", accessToken\)/);
+  assert.match(notificationService, /if \(copy\.target === "barber" && barber\.active/);
+  assert.match(notificationService, /target: "barber"/);
+  assert.match(notificationService, /audiences\.delete\(ownerUid\)/);
   assert.doesNotMatch(bookingHome, /inAppNotifications/);
-  assert.doesNotMatch(sendPush, /writeInAppNotifications/);
+  assert.doesNotMatch(notificationService, /writeInAppNotifications/);
   assert.doesNotMatch(bookingHome, /notificationButton/);
-  assert.match(sendPush, /appointmentBarberId: eventAppointment\.barberId/);
+  assert.match(appointmentApi, /processNotificationJob\(result\.operationId/);
 });
 
 test("opens system push links and lets the client confirm a changed time", async () => {
-  const [bookingHome, styles, sendPush, appointmentApi, serviceWorker] = await Promise.all([
+  const [bookingHome, styles, notificationService, appointmentApi, serviceWorker] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
-    readFile(new URL("../netlify/functions/send-push.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/_notification-service.mjs", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
   ]);
@@ -300,8 +298,9 @@ test("opens system push links and lets the client confirm a changed time", async
   assert.match(bookingHome, /Potwierdzam nowy termin/);
   assert.doesNotMatch(styles, /\.notification-bell/);
   assert.doesNotMatch(styles, /\.notification-toast/);
-  assert.match(sendPush, /notificationLink\.searchParams\.set\("appointment"/);
-  assert.match(sendPush, /appointmentId: appointment\.id,[\s\S]*event,/);
+  assert.match(bookingHome, /setAdminEditAppointmentId\(appointment\.id\)/);
+  assert.match(notificationService, /link\.searchParams\.set\("appointment"/);
+  assert.match(notificationService, /appointmentId: appointment\.id,[\s\S]*event,/);
   assert.match(serviceWorker, /navigate\(targetUrl\)[\s\S]*navigatedClient\?\.focus\(\)/);
   assert.match(appointmentApi, /next\.confirmedBy = action === "confirm_client" \? "client" : "admin"/);
 });
@@ -327,10 +326,11 @@ test("keeps barber calendars scoped and client directory counters current", asyn
 
   assert.match(appointmentClient, /adminAppointments\?: T\[\]/);
   assert.match(appointmentApi, /appointment\.barberId === admin\.barberId/);
-  assert.match(adminHelper, /fixedBarberUserIds/);
+  assert.match(adminHelper, /owner\.userId === user\.uid/);
   assert.match(bookingHome, /result\.adminAppointments \?\? result\.clientAppointments/);
-  assert.match(bookingHome, /if \(!isOwner\)/);
-  assert.match(bookingHome, /if \(isBarber\) void refreshClientAppointmentData\(\)/);
+  assert.match(bookingHome, /!isOwner && sessionContext\.role !== "barber"/);
+  assert.match(bookingHome, /listenForForegroundPushNotifications\(\(\) => \{[\s\S]*refreshClientAppointmentData\(\)/);
+  assert.match(bookingHome, /new BroadcastChannel\("bnb-appointment-sync"\)/);
   assert.match(
     bookingHome,
     /Klienci\s*<small>\{directoryAdminClientProfiles\.length\}<\/small>/,
@@ -368,7 +368,7 @@ test("keeps the client barber selection and resilient profile photos", async () 
   assert.match(bookingHome, /const selectBookingBarber = \(barberId: string/);
   assert.match(bookingHome, /appointments\.filter\(\(appointment\) => appointment\.barberId === activeBarberId\)/);
   assert.match(bookingHome, /barberId: activeBarberId/);
-  assert.match(appointmentApi, /barberIds\/\$\{proposed\.barberId\}/);
+  assert.match(appointmentApi, /upsertClientIntoDatabase/);
   assert.match(bookingHome, /client-selected-barber-summary/);
   assert.match(bookingHome, /appointment-barber-row/);
   assert.match(styles, /\.profile-avatar\s*\{/);

@@ -1,0 +1,322 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  clientAUid,
+  clientBUid,
+  createClientAppointment,
+  installAppointmentsFixture,
+  makeAppointmentRequest,
+  tokens,
+} from "./helpers/appointments-fixture.mjs";
+
+const fixture = installAppointmentsFixture();
+const { default: appointmentsHandler } = await import("../netlify/functions/appointments.mjs");
+const request = (token, method, body) =>
+  makeAppointmentRequest(appointmentsHandler, token, method, body);
+
+test("E2E roles: client, Mateusz, Kacper and owner see only their API calendars", async () => {
+  fixture.reset();
+
+  const [clientResponse, mateuszResponse, kacperResponse, ownerResponse] = await Promise.all([
+    request(tokens.clientA, "GET"),
+    request(tokens.mateusz, "GET"),
+    request(tokens.kacper, "GET"),
+    request(tokens.owner, "GET"),
+  ]);
+  const [client, mateusz, kacper, owner] = await Promise.all([
+    clientResponse.json(),
+    mateuszResponse.json(),
+    kacperResponse.json(),
+    ownerResponse.json(),
+  ]);
+
+  assert.deepEqual(client.clientAppointments.map(({ id }) => id), ["mateusz-upcoming"]);
+  assert.deepEqual(mateusz.adminAppointments.map(({ id }) => id), ["mateusz-upcoming"]);
+  assert.deepEqual(
+    kacper.adminAppointments.map(({ id }) => id).sort(),
+    ["kacper-past", "kacper-upcoming"],
+  );
+  assert.deepEqual(
+    owner.adminAppointments.map(({ id }) => id).sort(),
+    ["kacper-past", "kacper-upcoming", "mateusz-upcoming"],
+  );
+  assert.deepEqual(
+    [client.context.role, mateusz.context.role, kacper.context.role, owner.context.role],
+    ["client", "barber", "barber", "owner"],
+  );
+  assert.equal(mateusz.context.barberId, "mateusz");
+  assert.equal(kacper.context.barberId, "kacper");
+  assert.equal(client.teamMembers.some((member) => "userId" in member || "access" in member), false);
+  assert.equal(owner.teamMembers.every((member) => "userId" in member && "access" in member), true);
+  assert.equal("clientName" in client.occupancy[0], false);
+  assert.equal(JSON.stringify(client.occupancy).includes("client-b@example.com"), false);
+});
+
+test("E2E client directory: each barber receives only assigned clients while owner sees both", async () => {
+  fixture.reset();
+
+  const [mateuszResponse, kacperResponse, ownerResponse] = await Promise.all([
+    request(tokens.mateusz, "GET"),
+    request(tokens.kacper, "GET"),
+    request(tokens.owner, "GET"),
+  ]);
+  const [mateusz, kacper, owner] = await Promise.all([
+    mateuszResponse.json(),
+    kacperResponse.json(),
+    ownerResponse.json(),
+  ]);
+
+  assert.deepEqual(mateusz.adminClients.map(({ id }) => id), [clientAUid]);
+  assert.deepEqual(kacper.adminClients.map(({ id }) => id), [clientBUid]);
+  assert.deepEqual(owner.adminClients.map(({ id }) => id).sort(), [clientAUid, clientBUid]);
+});
+
+test("E2E client flow: booking, client reschedule, barber confirmation and cancellation", async () => {
+  fixture.reset();
+  const appointment = createClientAppointment({ id: "client-lifecycle" });
+
+  const createResponse = await request(tokens.clientA, "POST", {
+    action: "create_client",
+    appointment,
+    client: { firstName: "Klient", lastName: "A", phone: "500600700" },
+  });
+  assert.equal(createResponse.status, 200, await createResponse.text());
+
+  const rescheduleResponse = await request(tokens.clientA, "POST", {
+    action: "reschedule_client",
+    appointmentId: appointment.id,
+    dateKey: "2099-01-10",
+    startTime: "13:30",
+  });
+  assert.equal(rescheduleResponse.status, 200, await rescheduleResponse.text());
+  assert.equal(fixture.database.appointments[appointment.id].rescheduledBy, "client");
+
+  const confirmResponse = await request(tokens.mateusz, "POST", {
+    action: "confirm_admin",
+    appointmentId: appointment.id,
+    expectedVersion: 2,
+  });
+  assert.equal(confirmResponse.status, 200, await confirmResponse.text());
+  assert.equal(fixture.database.appointments[appointment.id].confirmedBy, "admin");
+
+  const cancelResponse = await request(tokens.clientA, "POST", {
+    action: "cancel_client",
+    appointmentId: appointment.id,
+    expectedVersion: 3,
+  });
+  assert.equal(cancelResponse.status, 200, await cancelResponse.text());
+  assert.equal(fixture.database.appointments[appointment.id].status, "cancelled");
+});
+
+test("E2E barber flow: admin reschedule, client confirmation, cancellation and settlement", async () => {
+  fixture.reset();
+
+  const rescheduleResponse = await request(tokens.kacper, "POST", {
+    action: "reschedule_admin",
+    appointmentId: "kacper-upcoming",
+    dateKey: "2099-01-10",
+    startTime: "11:30",
+  });
+  assert.equal(rescheduleResponse.status, 200, await rescheduleResponse.text());
+  assert.equal(fixture.database.appointments["kacper-upcoming"].rescheduledBy, "admin");
+
+  const confirmResponse = await request(tokens.clientB, "POST", {
+    action: "confirm_client",
+    appointmentId: "kacper-upcoming",
+    expectedVersion: 2,
+  });
+  assert.equal(confirmResponse.status, 200, await confirmResponse.text());
+  assert.equal(fixture.database.appointments["kacper-upcoming"].confirmedBy, "client");
+
+  const cancelResponse = await request(tokens.kacper, "POST", {
+    action: "cancel_admin",
+    appointmentId: "kacper-upcoming",
+    expectedVersion: 3,
+  });
+  assert.equal(cancelResponse.status, 200, await cancelResponse.text());
+  assert.equal(fixture.database.appointments["kacper-upcoming"].status, "cancelled");
+
+  const settleResponse = await request(tokens.kacper, "POST", {
+    action: "settle_admin",
+    appointmentId: "kacper-past",
+    amount: 50,
+  });
+  assert.equal(settleResponse.status, 200, await settleResponse.text());
+  assert.deepEqual(
+    {
+      status: fixture.database.appointments["kacper-past"].status,
+      barberId: fixture.database.appointments["kacper-past"].settlement.barberId,
+      amount: fixture.database.appointments["kacper-past"].settlement.amount,
+    },
+    { status: "completed", barberId: "kacper", amount: 50 },
+  );
+  assert.equal("settledAt" in fixture.database.appointments["kacper-past"], false);
+  assert.equal("settledAmount" in fixture.database.appointments["kacper-past"], false);
+});
+
+test("E2E permissions: barber cannot mutate another barber calendar while owner can", async () => {
+  fixture.reset();
+
+  const denied = await request(tokens.mateusz, "POST", {
+    action: "cancel_admin",
+    appointmentId: "kacper-upcoming",
+  });
+  assert.equal(denied.status, 403);
+  assert.equal(fixture.database.appointments["kacper-upcoming"].status, "confirmed");
+
+  const ownerUpdate = await request(tokens.owner, "POST", {
+    action: "reschedule_admin",
+    appointmentId: "kacper-upcoming",
+    dateKey: "2099-01-10",
+    startTime: "14:00",
+  });
+  assert.equal(ownerUpdate.status, 200, await ownerUpdate.text());
+  assert.equal(fixture.database.appointments["kacper-upcoming"].startTime, "14:00");
+});
+
+test("E2E permissions: client cannot mutate another client's appointment", async () => {
+  fixture.reset();
+
+  const response = await request(tokens.clientB, "POST", {
+    action: "cancel_client",
+    appointmentId: "mateusz-upcoming",
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(fixture.database.appointments["mateusz-upcoming"].status, "confirmed");
+});
+
+test("E2E data integrity: a new appointment requires an explicit barber assignment", async () => {
+  fixture.reset();
+  const appointment = createClientAppointment({ id: "missing-barber" });
+  delete appointment.barberId;
+
+  const response = await request(tokens.clientA, "POST", {
+    action: "create_client",
+    appointment,
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(fixture.database.appointments[appointment.id], undefined);
+});
+
+test("E2E data integrity: booking rejects a service outside the selected barber catalog", async () => {
+  fixture.reset();
+  const appointment = createClientAppointment({ id: "invalid-service" });
+  appointment.serviceId = "missing-service";
+
+  const response = await request(tokens.clientA, "POST", {
+    action: "create_client",
+    appointment,
+  });
+
+  assert.equal(response.status, 409);
+  assert.equal(fixture.database.appointments[appointment.id], undefined);
+});
+
+test("E2E permissions: client directory mutations are scoped to the signed-in barber", async () => {
+  fixture.reset();
+
+  const deniedClient = await request(tokens.clientA, "POST", {
+    action: "upsert_admin_client",
+    barberId: "mateusz",
+    client: { id: "manual-client", firstName: "Nowy", lastName: "Klient" },
+  });
+  assert.equal(deniedClient.status, 403);
+
+  const kacperWrite = await request(tokens.kacper, "POST", {
+    action: "upsert_admin_client",
+    barberId: "mateusz",
+    client: {
+      id: "kacper-manual-client",
+      firstName: "Nowy",
+      lastName: "Klient",
+      email: "nowy@example.com",
+      phone: "500500500",
+    },
+  });
+  assert.equal(kacperWrite.status, 200, await kacperWrite.text());
+  assert.deepEqual(fixture.database.clients["kacper-manual-client"].barberIds, { kacper: true });
+  assert.equal(fixture.database.clients["kacper-manual-client"].barberIds.mateusz, undefined);
+});
+
+test("E2E permissions: disabled section access removes its data and mutation capability", async () => {
+  fixture.reset();
+  fixture.database.team.barbers.mateusz.access.clients = false;
+
+  const readResponse = await request(tokens.mateusz, "GET");
+  const result = await readResponse.json();
+  assert.equal("adminClients" in result, true);
+  assert.deepEqual(result.adminClients, []);
+
+  const writeResponse = await request(tokens.mateusz, "POST", {
+    action: "hide_admin_client",
+    clientId: clientAUid,
+  });
+  assert.equal(writeResponse.status, 403);
+});
+
+test("E2E deactivation: inactive Kacper loses admin data and mutation access", async () => {
+  fixture.reset();
+  fixture.database.team.barbers.kacper.active = false;
+
+  const readResponse = await request(tokens.kacper, "GET");
+  const readResult = await readResponse.json();
+  assert.equal(readResponse.status, 200);
+  assert.equal("adminAppointments" in readResult, false);
+  assert.deepEqual(readResult.clientAppointments, []);
+
+  const mutationResponse = await request(tokens.kacper, "POST", {
+    action: "cancel_admin",
+    appointmentId: "kacper-upcoming",
+  });
+  assert.equal(mutationResponse.status, 403);
+
+  const directoryResponse = await request(tokens.kacper, "POST", {
+    action: "upsert_admin_client",
+    client: { id: "inactive-write", firstName: "Brak", lastName: "Dostepu" },
+  });
+  assert.equal(directoryResponse.status, 403);
+
+  const clientBooking = createClientAppointment({
+    id: "inactive-barber-booking",
+    barberId: "kacper",
+    userId: clientAUid,
+    startTime: "15:00",
+  });
+  const clientResponse = await request(tokens.clientA, "POST", {
+    action: "create_client",
+    appointment: clientBooking,
+  });
+  assert.equal(clientResponse.status, 409);
+
+  const ownerResponse = await request(tokens.owner, "GET");
+  const ownerResult = await ownerResponse.json();
+  assert.equal(ownerResult.adminAppointments.some(({ barberId }) => barberId === "kacper"), true);
+});
+
+test("E2E role integrity: a duplicated account assignment is denied admin access", async () => {
+  fixture.reset();
+  fixture.database.team.barbers.kacper.userId = fixture.database.team.barbers.mateusz.userId;
+
+  const response = await request(tokens.mateusz, "GET");
+  const result = await response.json();
+
+  assert.equal(result.context.role, "client");
+  assert.equal(result.context.active, false);
+  assert.equal(result.context.roleError, "conflicting_barber_assignment");
+  assert.equal("adminAppointments" in result, false);
+});
+
+test("E2E client identity: calendar records expose stable IDs for directory counters", async () => {
+  fixture.reset();
+
+  const mateuszResponse = await request(tokens.mateusz, "GET");
+  const kacperResponse = await request(tokens.kacper, "GET");
+  const mateusz = await mateuszResponse.json();
+  const kacper = await kacperResponse.json();
+
+  assert.deepEqual(new Set(mateusz.adminAppointments.map(({ clientId }) => clientId)), new Set([clientAUid]));
+  assert.deepEqual(new Set(kacper.adminAppointments.map(({ clientId }) => clientId)), new Set([clientBUid]));
+});

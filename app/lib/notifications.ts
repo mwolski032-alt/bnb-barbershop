@@ -109,28 +109,23 @@ export const registerPushNotifications = async (
 
   await set(ref(realtimeDb, `notificationTokens/${user.uid}/${tokenPathKey(token)}`), {
     token,
+    active: true,
     isAdmin,
     displayName: user.displayName ?? "",
     email: user.email ?? "",
     userAgent: navigator.userAgent,
+    lastSeenAt: Date.now(),
     updatedAt: Date.now(),
   });
 
   return { ok: true };
 };
 
-export const sendAppointmentNotification = async (
-  event:
-    | "new_booking"
-    | "client_rescheduled"
-    | "client_cancelled"
-    | "admin_rescheduled"
-    | "admin_cancelled"
-    | "test_push",
+const requestTestNotification = async (
   appointment: {
     id: string;
     barberId: string;
-    userId?: string;
+    userId: string;
     clientName: string;
     serviceName: string;
     dateKey: string;
@@ -148,7 +143,7 @@ export const sendAppointmentNotification = async (
         Authorization: `Bearer ${await user.getIdToken()}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ event, appointment }),
+      body: JSON.stringify({ event: "test_push", appointment }),
     });
     const result = (await response.json().catch(() => null)) as Partial<SendPushResult> | null;
 
@@ -176,7 +171,7 @@ export const sendAppointmentNotification = async (
 };
 
 export const sendTestNotification = async (user: NotificationUser) =>
-  sendAppointmentNotification("test_push", {
+  requestTestNotification({
     id: `test-${Date.now()}`,
     barberId: "mateusz",
     userId: user.uid,

@@ -5,14 +5,15 @@ export const databaseUrl =
   process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL ??
   "https://bnbbarber-9a7bd-default-rtdb.europe-west1.firebasedatabase.app";
 
-export const ownerUserIds = new Set(["xkyDu2Lb1Ma8McF7yfyv8PIAj1M2"]);
-export const fixedBarberUserIds = {
-  mateusz: "XxBe4dwVYWZPtl004J4tWq6AMZ73",
-  kacper: "TVwF6j7ePiTFhiGTWWPrq9nmRvJ3",
-};
-
 let cachedAccessToken = "";
 let cachedAccessTokenExpiresAt = 0;
+
+const adminSections = ["schedule", "clients", "analytics", "work", "services", "profile"];
+const noAdminAccess = Object.fromEntries(adminSections.map((section) => [section, false]));
+const fullAdminAccess = Object.fromEntries(adminSections.map((section) => [section, true]));
+
+const normalizeAccess = (access = {}) =>
+  Object.fromEntries(adminSections.map((section) => [section, access?.[section] === true]));
 
 const base64Url = (value) =>
   Buffer.from(value)
@@ -121,6 +122,18 @@ export const readDatabase = async (path, accessToken) => {
   return (await response.json()) ?? null;
 };
 
+export const readDatabaseWithEtag = async (path = "", accessToken) => {
+  const response = await databaseRequest(path, {
+    accessToken,
+    headers: { "X-Firebase-ETag": "true" },
+  });
+  if (!response.ok) throw new Error(`Database snapshot read failed: ${response.status}`);
+  return {
+    etag: response.headers.get("etag") ?? "",
+    value: (await response.json()) ?? {},
+  };
+};
+
 export const writeDatabase = async (path, value, accessToken) => {
   const response = await databaseRequest(path, {
     accessToken,
@@ -141,6 +154,21 @@ export const patchDatabase = async (path, value, accessToken) => {
   });
   if (!response.ok) throw new Error(`Database patch failed: ${response.status}`);
   return (await response.json()) ?? null;
+};
+
+export const writeDatabaseIfUnchanged = async (path, value, etag, accessToken) => {
+  const response = await databaseRequest(path, {
+    accessToken,
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "If-Match": etag,
+    },
+    body: JSON.stringify(value),
+  });
+  if (response.status === 412) return false;
+  if (!response.ok) throw new Error(`Conditional database write failed: ${response.status}`);
+  return true;
 };
 
 export const readAppointmentsWithEtag = async (accessToken) => {
@@ -203,21 +231,67 @@ export const readTeamMember = async (barberId, accessToken) =>
   (await readDatabase(`team/barbers/${encodeURIComponent(barberId)}`, accessToken)) ?? {};
 
 export const getAdminContext = async (user, accessToken) => {
-  if (ownerUserIds.has(user.uid)) return { isAdmin: true, isOwner: true, barberId: "" };
-  const fixedBarber = Object.entries(fixedBarberUserIds).find(([, uid]) => uid === user.uid);
-  if (fixedBarber) {
-    const member = await readDatabase(`team/barbers/${fixedBarber[0]}`, accessToken);
-    if (member && member.active !== false) {
-      return { isAdmin: true, isOwner: false, barberId: fixedBarber[0] };
-    }
-    return { isAdmin: false, isOwner: false, barberId: "" };
+  const team = (await readDatabase("team", accessToken)) ?? {};
+  const owner = team.owner ?? {};
+  if (owner.userId === user.uid && owner.active === true) {
+    return {
+      role: "owner",
+      active: true,
+      isAdmin: true,
+      isOwner: true,
+      barberId: "",
+      access: fullAdminAccess,
+    };
   }
-  const team = (await readDatabase("team/barbers", accessToken)) ?? {};
-  const entry = Object.entries(team).find(([, member]) => member?.userId === user.uid);
-  if (!entry || entry[1]?.active === false) {
-    return { isAdmin: false, isOwner: false, barberId: "" };
+
+  const assignments = Object.entries(team.barbers ?? {}).filter(
+    ([, member]) => member?.userId === user.uid,
+  );
+  if (assignments.length === 0) {
+    return {
+      role: "client",
+      active: true,
+      isAdmin: false,
+      isOwner: false,
+      barberId: "",
+      access: noAdminAccess,
+    };
   }
-  return { isAdmin: true, isOwner: false, barberId: entry[0] };
+
+  if (assignments.length > 1) {
+    return {
+      role: "client",
+      assignedRole: "barber",
+      active: false,
+      isAdmin: false,
+      isOwner: false,
+      barberId: "",
+      access: noAdminAccess,
+      roleError: "conflicting_barber_assignment",
+    };
+  }
+
+  const [barberId, member] = assignments[0];
+  if (member?.active !== true) {
+    return {
+      role: "client",
+      assignedRole: "barber",
+      active: false,
+      isAdmin: false,
+      isOwner: false,
+      barberId: "",
+      access: noAdminAccess,
+    };
+  }
+
+  return {
+    role: "barber",
+    active: true,
+    isAdmin: true,
+    isOwner: false,
+    barberId,
+    access: normalizeAccess(member.access),
+  };
 };
 
 export const jsonResponse = (body, status = 200) =>

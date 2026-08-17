@@ -3,10 +3,15 @@
     ".read": false,
     ".write": false,
     "team": {
+      "owner": {
+        ".read": "auth != null && data.child('userId').val() === auth.uid && data.child('active').val() === true",
+        ".write": "auth != null && data.child('userId').val() === auth.uid && data.child('active').val() === true && newData.child('userId').val() === auth.uid"
+      },
       "barbers": {
-        ".read": "auth != null",
+        ".read": "auth != null && root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true",
         "$barberId": {
-          ".write": "auth != null && auth.uid === 'xkyDu2Lb1Ma8McF7yfyv8PIAj1M2'"
+          ".read": "auth != null && ((root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true) || (data.child('active').val() === true && data.child('userId').val() === auth.uid))",
+          ".write": "auth != null && root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true"
         }
       }
     },
@@ -14,35 +19,39 @@
       "$barberId": {
         ".read": "auth != null",
         "profile": {
-          ".write": "auth != null && (auth.uid === 'xkyDu2Lb1Ma8McF7yfyv8PIAj1M2' || (root.child('team/barbers').child($barberId).child('active').val() === true && root.child('team/barbers').child($barberId).child('userId').val() === auth.uid && root.child('team/barbers').child($barberId).child('access/profile').val() === true))"
+          ".write": "auth != null && ((root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true) || (root.child('team/barbers').child($barberId).child('active').val() === true && root.child('team/barbers').child($barberId).child('userId').val() === auth.uid && root.child('team/barbers').child($barberId).child('access/profile').val() === true))"
         },
         "services": {
-          ".write": "auth != null && (auth.uid === 'xkyDu2Lb1Ma8McF7yfyv8PIAj1M2' || (root.child('team/barbers').child($barberId).child('active').val() === true && root.child('team/barbers').child($barberId).child('userId').val() === auth.uid && root.child('team/barbers').child($barberId).child('access/services').val() === true))"
+          ".write": "auth != null && ((root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true) || (root.child('team/barbers').child($barberId).child('active').val() === true && root.child('team/barbers').child($barberId).child('userId').val() === auth.uid && root.child('team/barbers').child($barberId).child('access/services').val() === true))",
+          "$serviceId": {
+            ".validate": "!newData.exists() || (newData.child('id').val() === $serviceId && newData.child('barberId').val() === $barberId && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('durationMinutes').isNumber() && newData.child('durationMinutes').val() >= 15)"
+          }
         },
         "workSettings": {
-          ".write": "auth != null && (auth.uid === 'xkyDu2Lb1Ma8McF7yfyv8PIAj1M2' || (root.child('team/barbers').child($barberId).child('active').val() === true && root.child('team/barbers').child($barberId).child('userId').val() === auth.uid && root.child('team/barbers').child($barberId).child('access/work').val() === true))"
+          ".write": "auth != null && ((root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true) || (root.child('team/barbers').child($barberId).child('active').val() === true && root.child('team/barbers').child($barberId).child('userId').val() === auth.uid && root.child('team/barbers').child($barberId).child('access/work').val() === true))",
+          "availability": {
+            "$dateKey": {
+              ".validate": "!newData.exists() || (newData.child('id').val() === $dateKey && newData.child('dateKey').val() === $dateKey && newData.child('barberId').val() === $barberId && newData.child('startTime').isString() && newData.child('endTime').isString())"
+            }
+          }
         }
       }
     },
-    "services": {
-      ".read": "auth != null",
-      ".write": "auth != null && (auth.uid === 'xkyDu2Lb1Ma8McF7yfyv8PIAj1M2' || (root.child('team/barbers/mateusz/active').val() === true && root.child('team/barbers/mateusz/userId').val() === auth.uid && root.child('team/barbers/mateusz/access/services').val() === true))"
-    },
-    "workSettings": {
-      ".read": "auth != null",
-      ".write": "auth != null && (auth.uid === 'xkyDu2Lb1Ma8McF7yfyv8PIAj1M2' || (root.child('team/barbers/mateusz/active').val() === true && root.child('team/barbers/mateusz/userId').val() === auth.uid && root.child('team/barbers/mateusz/access/work').val() === true))"
-    },
     "appointments": {
-      ".read": "auth != null && (auth.uid === 'xkyDu2Lb1Ma8McF7yfyv8PIAj1M2' || root.child('team/barbers').child('mateusz').child('userId').val() === auth.uid && root.child('team/barbers').child('mateusz').child('active').val() === true || root.child('team/barbers').child('kacper').child('userId').val() === auth.uid && root.child('team/barbers').child('kacper').child('active').val() === true)",
+      ".read": "auth != null && root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true",
       ".indexOn": ["userId", "barberId"],
       "$appointmentId": {
-        ".write": "auth != null && (auth.uid === 'xkyDu2Lb1Ma8McF7yfyv8PIAj1M2' || (root.child('team/barbers').child(newData.child('barberId').val()).child('active').val() === true && root.child('team/barbers').child(newData.child('barberId').val()).child('userId').val() === auth.uid))"
+        ".write": "auth != null && ((root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true) || (data.exists() && data.child('barberId').val() === newData.child('barberId').val() && root.child('team/barbers').child(data.child('barberId').val()).child('active').val() === true && root.child('team/barbers').child(data.child('barberId').val()).child('userId').val() === auth.uid && root.child('team/barbers').child(data.child('barberId').val()).child('access/schedule').val() === true))"
       }
     },
     "clients": {
-      ".read": "auth != null && (auth.uid === 'xkyDu2Lb1Ma8McF7yfyv8PIAj1M2' || root.child('team/barbers/mateusz/userId').val() === auth.uid && root.child('team/barbers/mateusz/active').val() === true || root.child('team/barbers/kacper/userId').val() === auth.uid && root.child('team/barbers/kacper/active').val() === true)",
-      "$clientId": {
-        ".write": "auth != null && (auth.uid === 'xkyDu2Lb1Ma8McF7yfyv8PIAj1M2' || root.child('team/barbers/mateusz/userId').val() === auth.uid && root.child('team/barbers/mateusz/active').val() === true || root.child('team/barbers/kacper/userId').val() === auth.uid && root.child('team/barbers/kacper/active').val() === true)"
+      ".read": false,
+      ".write": false
+    },
+    "appointmentSync": {
+      "revision": {
+        ".read": "auth != null",
+        ".write": false
       }
     },
     "notificationTokens": {
