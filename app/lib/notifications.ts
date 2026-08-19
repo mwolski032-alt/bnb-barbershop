@@ -1,6 +1,7 @@
-import { ref, set } from "firebase/database";
+import { get, ref, set, update } from "firebase/database";
 import { getAuth } from "firebase/auth";
 import {
+  deleteToken,
   getMessaging,
   getToken,
   isSupported,
@@ -9,6 +10,7 @@ import {
 } from "firebase/messaging";
 
 import { firebaseApp, realtimeDb } from "./firebase";
+import { resolvePushDeviceStatus } from "../../shared/push-notifications.mjs";
 
 type NotificationUser = {
   uid: string;
@@ -29,6 +31,14 @@ export type PushRegistrationResult =
         | "token_unavailable"
         | "token_error";
     };
+
+export type PushDeviceStatus =
+  | "checking"
+  | "enabled"
+  | "disabled"
+  | "blocked"
+  | "unsupported"
+  | "error";
 
 export type SendPushResult = {
   ok: boolean;
@@ -55,6 +65,78 @@ const tokenPathKey = (token: string) =>
     .replaceAll("[", "_")
     .replaceAll("]", "_")
     .replaceAll("/", "_");
+
+const pushOptOutKey = (uid: string) => `bnb-push-disabled:${uid}`;
+
+export const isPushNotificationsLocallyDisabled = (uid: string) => {
+  try {
+    return window.localStorage.getItem(pushOptOutKey(uid)) === "true";
+  } catch {
+    return false;
+  }
+};
+
+const setPushNotificationsLocallyDisabled = (uid: string, disabled: boolean) => {
+  try {
+    if (disabled) {
+      window.localStorage.setItem(pushOptOutKey(uid), "true");
+    } else {
+      window.localStorage.removeItem(pushOptOutKey(uid));
+    }
+  } catch {
+    // Firebase remains the binding source when local storage is unavailable.
+  }
+};
+
+const getCurrentMessagingToken = async () => {
+  if (!(await isSupported()) || !("serviceWorker" in navigator)) return "";
+
+  const serviceWorkerRegistration = await navigator.serviceWorker.getRegistration();
+  if (!serviceWorkerRegistration) return "";
+
+  return getToken(getMessaging(firebaseApp), {
+    vapidKey: readVapidKey(),
+    serviceWorkerRegistration,
+  });
+};
+
+export const getPushNotificationDeviceStatus = async (
+  user: NotificationUser,
+): Promise<PushDeviceStatus> => {
+  if (
+    typeof window === "undefined" ||
+    !("Notification" in window) ||
+    !("PushManager" in window)
+  ) {
+    return "unsupported";
+  }
+
+  const permission = Notification.permission;
+  const optedOut = isPushNotificationsLocallyDisabled(user.uid);
+  if (permission !== "granted" || optedOut) {
+    return resolvePushDeviceStatus({
+      supported: true,
+      permission,
+      optedOut,
+    }) as PushDeviceStatus;
+  }
+
+  try {
+    if (!(await isSupported()) || !("serviceWorker" in navigator)) return "unsupported";
+    const token = await getCurrentMessagingToken();
+    if (!token) return "disabled";
+    const snapshot = await get(
+      ref(realtimeDb, `notificationTokens/${user.uid}/${tokenPathKey(token)}`),
+    );
+    return resolvePushDeviceStatus({
+      supported: true,
+      permission,
+      tokenActive: snapshot.val()?.active === true,
+    }) as PushDeviceStatus;
+  } catch {
+    return "error";
+  }
+};
 
 export const registerPushNotifications = async (
   user: NotificationUser,
@@ -117,8 +199,44 @@ export const registerPushNotifications = async (
     lastSeenAt: Date.now(),
     updatedAt: Date.now(),
   });
+  setPushNotificationsLocallyDisabled(user.uid, false);
 
   return { ok: true };
+};
+
+export const disablePushNotifications = async (
+  user: NotificationUser,
+): Promise<PushRegistrationResult> => {
+  if (
+    typeof window === "undefined" ||
+    !("Notification" in window) ||
+    !("PushManager" in window)
+  ) {
+    return { ok: false, reason: "unsupported_browser" };
+  }
+
+  if (Notification.permission !== "granted") {
+    setPushNotificationsLocallyDisabled(user.uid, true);
+    return { ok: true };
+  }
+
+  try {
+    const token = await getCurrentMessagingToken();
+    if (token) {
+      await update(
+        ref(realtimeDb, `notificationTokens/${user.uid}/${tokenPathKey(token)}`),
+        {
+          active: false,
+          updatedAt: Date.now(),
+        },
+      );
+      await deleteToken(getMessaging(firebaseApp)).catch(() => false);
+    }
+    setPushNotificationsLocallyDisabled(user.uid, true);
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "token_error" };
+  }
 };
 
 const requestTestNotification = async (

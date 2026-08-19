@@ -237,8 +237,10 @@ test("keeps the fixed owner-managed team and role-aware admin avatars", async ()
   assert.match(bookingHome, /className="client-appointment-modal team-member-dialog"/);
   assert.match(
     bookingHome,
-    /photoUrl=\{isBarber \? activeBarberProfile\.photoUrl : activeUser\.photoURL\}/,
+    /photoUrl=\{isBarber \? signedInBarberProfile\.photoUrl : activeUser\.photoURL\}/,
   );
+  assert.match(bookingHome, /barber\.id === signedInBarberId/);
+  assert.match(bookingHome, /const signedInBarberName =/);
   assert.match(bookingHome, /openOwnerBarberPanel\(member\.id, "schedule"\)/);
   assert.match(bookingHome, /openOwnerBarberPanel\(member\.id, "analytics"\)/);
   assert.match(bookingHome, /setSessionContext\(result\.context as SessionContext\)/);
@@ -306,15 +308,38 @@ test("opens system push links and lets the client confirm a changed time", async
   assert.match(appointmentApi, /next\.confirmedBy = action === "confirm_client" \? "client" : "admin"/);
 });
 
-test("silently renews push registration without restoring the removed toggle", async () => {
-  const bookingHome = await readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8");
+test("shows a per-device push toggle and keeps silent token renewal", async () => {
+  const [bookingHome, notifications, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/notifications.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
 
   assert.match(bookingHome, /Notification\.permission !== "granted"/);
   assert.match(bookingHome, /registerPushNotifications\(/);
   assert.match(bookingHome, /listenForForegroundPushNotifications\(/);
-  assert.match(bookingHome, /window\.addEventListener\("pointerdown", registerAfterInteraction/);
-  assert.doesNotMatch(bookingHome, /Włącz powiadomienia/);
-  assert.doesNotMatch(bookingHome, /notification-bell/);
+  assert.match(bookingHome, /className=\{`push-toggle-button/);
+  assert.match(bookingHome, /aria-pressed=\{pushDeviceEnabled\}/);
+  assert.match(bookingHome, /<Bell size=\{18\}/);
+  assert.match(bookingHome, /!isOwner \? \(/);
+  assert.match(bookingHome, /disablePushNotifications\(notificationUser\)/);
+  assert.match(bookingHome, /isPushNotificationsLocallyDisabled\(activeUser\.uid\)/);
+  assert.doesNotMatch(bookingHome, /registerAfterInteraction/);
+  assert.match(notifications, /active: false/);
+  assert.match(notifications, /deleteToken\(getMessaging\(firebaseApp\)\)/);
+  assert.match(styles, /\.push-toggle-button\.enabled/);
+  assert.match(styles, /\.push-toggle-button\.disabled/);
+  assert.match(styles, /\.session-actions/);
+  assert.match(styles, /\.session-pill\s*\{[\s\S]*?min-height:\s*2\.65rem/);
+  assert.match(
+    styles,
+    /\.push-toggle-button\s*\{[\s\S]*?width:\s*2\.65rem;[\s\S]*?height:\s*2\.65rem/,
+  );
+  assert.match(styles, /\.session-pill\s*\{\s*min-height:\s*3\.15rem/);
+  assert.match(
+    styles,
+    /\.push-toggle-button\s*\{\s*width:\s*3\.15rem;\s*height:\s*3\.15rem/,
+  );
 });
 
 test("keeps barber calendars scoped and client directory counters current", async () => {

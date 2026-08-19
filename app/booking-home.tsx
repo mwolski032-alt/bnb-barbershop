@@ -19,6 +19,7 @@ import {
   type User,
 } from "firebase/auth";
 import { onValue, ref, serverTimestamp, set, update } from "firebase/database";
+import { Bell } from "lucide-react";
 
 import { firebaseApp, realtimeDb } from "./lib/firebase";
 import {
@@ -30,8 +31,12 @@ import {
   type AppointmentMutationAction,
 } from "./lib/appointments";
 import {
+  disablePushNotifications,
+  getPushNotificationDeviceStatus,
+  isPushNotificationsLocallyDisabled,
   listenForForegroundPushNotifications,
   registerPushNotifications,
+  type PushDeviceStatus,
 } from "./lib/notifications";
 import {
   isServiceCatalogReady,
@@ -980,6 +985,15 @@ const availabilityLabel: Record<Availability, string> = {
   none: "Brak terminów",
 };
 
+const pushDeviceStatusLabel: Record<PushDeviceStatus, string> = {
+  checking: "Sprawdzanie powiadomień",
+  enabled: "Powiadomienia włączone na tym urządzeniu",
+  disabled: "Powiadomienia wyłączone na tym urządzeniu",
+  blocked: "Powiadomienia zablokowane w ustawieniach urządzenia",
+  unsupported: "Powiadomienia niedostępne na tym urządzeniu",
+  error: "Nie udało się sprawdzić powiadomień",
+};
+
 export function BookingHome() {
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const today = currentDate;
@@ -1071,6 +1085,9 @@ export function BookingHome() {
   const [profileFeedback, setProfileFeedback] = useState<WorkFeedback | null>(null);
   const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isProfilePhotoProcessing, setIsProfilePhotoProcessing] = useState(false);
+  const [pushDeviceStatus, setPushDeviceStatus] = useState<PushDeviceStatus>("checking");
+  const [isPushDeviceUpdating, setIsPushDeviceUpdating] = useState(false);
+  const [pushDeviceFeedback, setPushDeviceFeedback] = useState<WorkFeedback | null>(null);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const bookingServiceRef = useRef<HTMLDivElement | null>(null);
   const bookingBarberRef = useRef<HTMLDivElement | null>(null);
@@ -1111,6 +1128,8 @@ export function BookingHome() {
       : null;
   const isBarber = Boolean(signedInBarberId);
   const isAdmin = isOwner || isBarber;
+  const pushDeviceEnabled = pushDeviceStatus === "enabled";
+  const pushDeviceLabel = pushDeviceStatusLabel[pushDeviceStatus];
   const signedInBarberAccess = sessionContext?.access ?? fullBarberAccess;
   const canAccessAdminSection = (section: AdminSection) =>
     isOwner ||
@@ -1133,6 +1152,13 @@ export function BookingHome() {
       : selectedBarberId;
   const selectedBarber =
     teamMembers.find((barber) => barber.id === visibleBarberId) ?? null;
+  const signedInBarber =
+    teamMembers.find((barber) => barber.id === signedInBarberId) ?? null;
+  const signedInBarberProfile = signedInBarberId
+    ? barberProfiles[signedInBarberId] ?? emptyBarberDetails
+    : emptyBarberDetails;
+  const signedInBarberName =
+    signedInBarberProfile.displayName || signedInBarber?.name || "Barber";
   const activeBarberProfile = barberProfiles[activeBarberId] ?? emptyBarberDetails;
   const activeBarberName = activeBarberProfile.displayName || selectedBarber?.name || "Barber";
   const clientBarberOptions = useMemo(
@@ -1916,16 +1942,27 @@ export function BookingHome() {
   );
 
   const registerCurrentPushDevice = useCallback(async () => {
-    if (!activeUser || isOwner) return;
+    if (!activeUser || isOwner) return null;
 
-    await registerPushNotifications(
+    const result = await registerPushNotifications(
       {
         uid: activeUser.uid,
         displayName: activeUser.displayName ?? null,
         email: activeUser.email ?? null,
       },
       isAdmin,
-    ).catch(() => undefined);
+    ).catch(() => ({ ok: false as const, reason: "token_error" as const }));
+    setPushDeviceStatus(
+      result.ok
+        ? "enabled"
+        : result.reason === "unsupported_browser" ||
+            result.reason === "unsupported_firebase_messaging"
+          ? "unsupported"
+          : result.reason === "permission_denied" && Notification.permission === "denied"
+            ? "blocked"
+            : "error",
+    );
+    return result;
   }, [activeUser, isAdmin, isOwner]);
 
   useEffect(() => {
@@ -1933,6 +1970,45 @@ export function BookingHome() {
 
     return () => window.clearInterval(intervalId);
   }, []);
+
+  useEffect(() => {
+    if (!activeUser || isOwner) {
+      setPushDeviceStatus("checking");
+      setPushDeviceFeedback(null);
+      return undefined;
+    }
+
+    let stopped = false;
+    const notificationUser = {
+      uid: activeUser.uid,
+      displayName: activeUser.displayName ?? null,
+      email: activeUser.email ?? null,
+    };
+    const refreshStatus = async () => {
+      const status = await getPushNotificationDeviceStatus(notificationUser);
+      if (!stopped) setPushDeviceStatus(status);
+    };
+    const refreshAfterReturn = () => {
+      if (document.visibilityState === "visible") void refreshStatus();
+    };
+
+    setPushDeviceStatus("checking");
+    void refreshStatus();
+    window.addEventListener("focus", refreshAfterReturn);
+    document.addEventListener("visibilitychange", refreshAfterReturn);
+
+    return () => {
+      stopped = true;
+      window.removeEventListener("focus", refreshAfterReturn);
+      document.removeEventListener("visibilitychange", refreshAfterReturn);
+    };
+  }, [activeUser, isOwner]);
+
+  useEffect(() => {
+    if (!pushDeviceFeedback) return undefined;
+    const timeoutId = window.setTimeout(() => setPushDeviceFeedback(null), 4500);
+    return () => window.clearTimeout(timeoutId);
+  }, [pushDeviceFeedback]);
 
   useEffect(() => {
     const touchQuery = window.matchMedia("(pointer: coarse)");
@@ -1957,36 +2033,13 @@ export function BookingHome() {
       !activeUser ||
       isOwner ||
       typeof Notification === "undefined" ||
-      Notification.permission !== "granted"
+      Notification.permission !== "granted" ||
+      isPushNotificationsLocallyDisabled(activeUser.uid)
     ) {
       return;
     }
 
     void registerCurrentPushDevice();
-  }, [activeUser, isOwner, registerCurrentPushDevice]);
-
-  useEffect(() => {
-    if (
-      !activeUser ||
-      isOwner ||
-      typeof Notification === "undefined" ||
-      Notification.permission !== "default"
-    ) {
-      return undefined;
-    }
-
-    const registerAfterInteraction = () => {
-      void registerCurrentPushDevice();
-      window.removeEventListener("pointerdown", registerAfterInteraction, true);
-      window.removeEventListener("keydown", registerAfterInteraction, true);
-    };
-    window.addEventListener("pointerdown", registerAfterInteraction, true);
-    window.addEventListener("keydown", registerAfterInteraction, true);
-
-    return () => {
-      window.removeEventListener("pointerdown", registerAfterInteraction, true);
-      window.removeEventListener("keydown", registerAfterInteraction, true);
-    };
   }, [activeUser, isOwner, registerCurrentPushDevice]);
 
   useEffect(() => {
@@ -3050,6 +3103,80 @@ export function BookingHome() {
     setClientAppointmentsListOpen(false);
     setPendingClientCancellationId(null);
     setReschedulingAppointmentId(null);
+  };
+
+  const handlePushDeviceToggle = async () => {
+    if (!activeUser || isOwner || isPushDeviceUpdating || pushDeviceStatus === "checking") return;
+
+    setIsPushDeviceUpdating(true);
+    setPushDeviceFeedback(null);
+    const notificationUser = {
+      uid: activeUser.uid,
+      displayName: activeUser.displayName ?? null,
+      email: activeUser.email ?? null,
+    };
+
+    try {
+      if (pushDeviceEnabled) {
+        const result = await disablePushNotifications(notificationUser);
+        if (!result.ok) {
+          setPushDeviceStatus("error");
+          setPushDeviceFeedback({
+            kind: "error",
+            message: "Nie udało się wyłączyć powiadomień. Spróbuj ponownie.",
+          });
+          return;
+        }
+        setPushDeviceStatus("disabled");
+        setPushDeviceFeedback({
+          kind: "success",
+          message: "Powiadomienia na tym urządzeniu są wyłączone.",
+        });
+        return;
+      }
+
+      if (
+        pushDeviceStatus === "blocked" ||
+        (typeof Notification !== "undefined" && Notification.permission === "denied")
+      ) {
+        setPushDeviceStatus("blocked");
+        setPushDeviceFeedback({
+          kind: "error",
+          message: "Odblokuj powiadomienia dla BNB Barbershop w ustawieniach telefonu.",
+        });
+        return;
+      }
+
+      if (pushDeviceStatus === "unsupported") {
+        setPushDeviceFeedback({
+          kind: "error",
+          message:
+            "Ta przeglądarka nie obsługuje powiadomień. Na iPhonie dodaj aplikację do ekranu początkowego.",
+        });
+        return;
+      }
+
+      const result = await registerCurrentPushDevice();
+      if (!result?.ok) {
+        setPushDeviceFeedback({
+          kind: "error",
+          message:
+            result?.reason === "permission_denied"
+              ? typeof Notification !== "undefined" && Notification.permission === "denied"
+                ? "Powiadomienia zostały zablokowane. Włącz je w ustawieniach telefonu."
+                : "Zezwól na powiadomienia w komunikacie systemowym."
+              : "Nie udało się włączyć powiadomień. Spróbuj ponownie.",
+        });
+        return;
+      }
+
+      setPushDeviceFeedback({
+        kind: "success",
+        message: "Powiadomienia na tym urządzeniu są włączone.",
+      });
+    } finally {
+      setIsPushDeviceUpdating(false);
+    }
   };
 
   const selectBookingBarber = (barberId: string, scrollToServices = true) => {
@@ -5399,21 +5526,46 @@ export function BookingHome() {
                   <h1>Twój panel</h1>
                 </div>
               </div>
-              <div className="session-pill">
-                <ProfileAvatar
-                  className="session-avatar"
-                  name={activeUser.displayName ?? activeUser.email ?? "Klient"}
-                  photoUrl={activeUser.photoURL}
-                />
-                <strong>{activeUser.displayName ?? activeUser.email ?? "Klient"}</strong>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleSignOut();
-                  }}
-                >
-                  Wyloguj
-                </button>
+              <div className="session-actions">
+                <div className="session-pill">
+                  <ProfileAvatar
+                    className="session-avatar"
+                    name={activeUser.displayName ?? activeUser.email ?? "Klient"}
+                    photoUrl={activeUser.photoURL}
+                  />
+                  <strong>{activeUser.displayName ?? activeUser.email ?? "Klient"}</strong>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleSignOut();
+                    }}
+                  >
+                    Wyloguj
+                  </button>
+                </div>
+                {!isOwner ? (
+                  <button
+                    className={`push-toggle-button ${pushDeviceStatus} ${isPushDeviceUpdating ? "updating" : ""}`}
+                    type="button"
+                    aria-label={pushDeviceLabel}
+                    aria-pressed={pushDeviceEnabled}
+                    aria-busy={isPushDeviceUpdating}
+                    title={pushDeviceLabel}
+                    disabled={isPushDeviceUpdating || pushDeviceStatus === "checking"}
+                    onClick={() => void handlePushDeviceToggle()}
+                  >
+                    <Bell size={18} strokeWidth={2.15} aria-hidden="true" />
+                    <span className="push-toggle-status-dot" aria-hidden="true" />
+                  </button>
+                ) : null}
+                {pushDeviceFeedback ? (
+                  <span
+                    className={`push-device-feedback ${pushDeviceFeedback.kind}`}
+                    role="status"
+                  >
+                    {pushDeviceFeedback.message}
+                  </span>
+                ) : null}
               </div>
               {isAdmin ? (
                 <button
@@ -5424,8 +5576,8 @@ export function BookingHome() {
                 >
                   <ProfileAvatar
                     className="admin-user-avatar"
-                    name={isBarber ? activeBarberName : activeUser.displayName ?? activeUser.email ?? "Admin"}
-                    photoUrl={isBarber ? activeBarberProfile.photoUrl : activeUser.photoURL}
+                    name={isBarber ? signedInBarberName : activeUser.displayName ?? activeUser.email ?? "Admin"}
+                    photoUrl={isBarber ? signedInBarberProfile.photoUrl : activeUser.photoURL}
                   />
                 </button>
               ) : null}

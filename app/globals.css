@@ -474,8 +474,23 @@ input:focus-visible {
     inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
+.session-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.48rem;
+  width: min(100%, 25.2rem);
+  min-width: 0;
+}
+
+.session-actions:not(:has(.push-toggle-button)) {
+  width: min(100%, 22rem);
+}
+
 .session-pill {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 0.5rem;
   max-width: min(100%, 22rem);
@@ -485,6 +500,107 @@ input:focus-visible {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.055);
   color: #f5f5f7;
+}
+
+.push-toggle-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.65rem;
+  height: 2.65rem;
+  flex: 0 0 2.65rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.push-toggle-button.enabled {
+  border-color: rgba(48, 209, 88, 0.42);
+  background: rgba(48, 209, 88, 0.14);
+  color: #75e691;
+  box-shadow:
+    0 10px 24px rgba(48, 209, 88, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.push-toggle-button.disabled,
+.push-toggle-button.blocked,
+.push-toggle-button.unsupported,
+.push-toggle-button.error {
+  border-color: rgba(255, 69, 58, 0.38);
+  background: rgba(255, 69, 58, 0.12);
+  color: #ff8d86;
+  box-shadow:
+    0 10px 24px rgba(255, 69, 58, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.push-toggle-button.checking {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #9ca3b2;
+}
+
+.push-toggle-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.push-toggle-button:focus-visible {
+  outline: 2px solid #8db7ff;
+  outline-offset: 2px;
+}
+
+.push-toggle-button:disabled {
+  cursor: wait;
+}
+
+.push-toggle-button.updating svg,
+.push-toggle-button.checking svg {
+  animation: notification-pulse 900ms ease-in-out infinite;
+}
+
+.push-toggle-status-dot {
+  position: absolute;
+  right: 0.3rem;
+  bottom: 0.3rem;
+  width: 0.46rem;
+  height: 0.46rem;
+  border: 2px solid #161922;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.push-device-feedback {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  right: 0;
+  z-index: 18;
+  width: max-content;
+  max-width: min(19rem, calc(100vw - 1.7rem));
+  padding: 0.58rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(23, 26, 35, 0.98);
+  color: #e9edf5;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.34);
+  font-size: 0.7rem;
+  font-weight: 720;
+  line-height: 1.35;
+}
+
+.push-device-feedback.success {
+  border-color: rgba(48, 209, 88, 0.32);
+}
+
+.push-device-feedback.error {
+  border-color: rgba(255, 69, 58, 0.32);
 }
 
 .session-pill img,
@@ -7153,6 +7269,13 @@ h2 {
   }
 }
 
+@keyframes notification-pulse {
+  50% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+}
+
 @keyframes summary-in {
   from {
     opacity: 0;
@@ -8078,6 +8201,10 @@ h2 {
       box-shadow 180ms ease;
   }
 
+  .topbar:not(:has(.avatar-button)) {
+    padding-right: 0.85rem;
+  }
+
   .topbar h1,
   .topbar .eyebrow,
   .topbar-logo-mark {
@@ -8130,6 +8257,12 @@ h2 {
 
   .session-pill {
     min-height: 3.15rem;
+  }
+
+  .push-toggle-button {
+    width: 3.15rem;
+    height: 3.15rem;
+    flex-basis: 3.15rem;
   }
 
   .session-pill img,
