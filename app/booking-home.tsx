@@ -43,6 +43,7 @@ import {
   resolveActiveBarberId,
   shouldApplyAppointmentSnapshot,
 } from "../shared/appointment-sync.mjs";
+import { isBookableStartTime } from "../shared/booking-time.mjs";
 
 type Availability = "high" | "medium" | "low" | "none";
 type Step = "booking" | "confirm" | "success" | "admin";
@@ -923,9 +924,12 @@ const getAvailableTimes = (
   durationMinutes: number,
   appointments: Appointment[],
   workSettings: WorkSettings,
+  now: Date,
 ) =>
-  timeSlots.filter((time) =>
-    isTimeAvailable(dateKeyValue, time, durationMinutes, appointments, workSettings),
+  timeSlots.filter(
+    (time) =>
+      isBookableStartTime(dateKeyValue, time, now) &&
+      isTimeAvailable(dateKeyValue, time, durationMinutes, appointments, workSettings),
   );
 
 const availabilityFromSlots = (freeSlots: number, totalSlots: number): Availability => {
@@ -957,7 +961,7 @@ const buildCalendarDays = (
     const isPastDay = normalizedDate < normalizedToday;
     const totalSlots = isPastDay
       ? 0
-      : getAvailableTimes(dayKey(date), service.durationMinutes, [], workSettings).length;
+      : getAvailableTimes(dayKey(date), service.durationMinutes, [], workSettings, today).length;
     const freeSlots = isPastDay
       ? 0
       : getAvailableTimes(
@@ -965,6 +969,7 @@ const buildCalendarDays = (
           service.durationMinutes,
           appointments,
           workSettings,
+          today,
         ).length;
 
     return {
@@ -1589,8 +1594,9 @@ export function BookingHome() {
         selectedService.durationMinutes,
         schedulingAppointments,
         workSettings,
+        currentDate,
       ),
-    [schedulingAppointments, selectedDayKey, selectedService, workSettings],
+    [currentDate, schedulingAppointments, selectedDayKey, selectedService, workSettings],
   );
   const nearestFreeSlot = useMemo(() => {
     const searchDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -1604,6 +1610,7 @@ export function BookingHome() {
         selectedService.durationMinutes,
         schedulingAppointments,
         workSettings,
+        currentDate,
       );
 
       if (times.length > 0) {
@@ -1616,7 +1623,7 @@ export function BookingHome() {
     }
 
     return null;
-  }, [schedulingAppointments, selectedService, today, workSettings]);
+  }, [currentDate, schedulingAppointments, selectedService, today, workSettings]);
   const clientAppointments = useMemo(
     () =>
       activeUser

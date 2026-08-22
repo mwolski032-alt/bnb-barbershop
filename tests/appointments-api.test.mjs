@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 
+import { getZonedDateTime } from "../shared/booking-time.mjs";
+
 const databaseUrl = "https://mock-appointments.firebaseio.test";
 const mateuszUid = "XxBe4dwVYWZPtl004J4tWq6AMZ73";
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -46,10 +48,10 @@ const database = {
       },
       workSettings: {
         availability: {
-          "2026-08-20": {
-            id: "2026-08-20",
+          "2099-08-20": {
+            id: "2099-08-20",
             barberId: "mateusz",
-            dateKey: "2026-08-20",
+            dateKey: "2099-08-20",
             startTime: "08:00",
             endTime: "16:00",
           },
@@ -69,7 +71,7 @@ const database = {
       phone: "500600700",
       serviceName: "Strzyżenie",
       price: "30 zł",
-      dateKey: "2026-08-20",
+      dateKey: "2099-08-20",
       startTime: "10:00",
       durationMinutes: 60,
       status: "confirmed",
@@ -86,7 +88,7 @@ const database = {
       phone: "999999999",
       serviceName: "Broda",
       price: "20 zł",
-      dateKey: "2026-08-20",
+      dateKey: "2099-08-20",
       startTime: "11:00",
       durationMinutes: 60,
       status: "confirmed",
@@ -210,6 +212,40 @@ test("appointment endpoint rejects missing authentication", async () => {
   assert.equal(response.status, 401);
 });
 
+test("appointment endpoint rejects an elapsed slot from the current day", async () => {
+  const { dateKey } = getZonedDateTime();
+  database.barbers.mateusz.workSettings.availability[dateKey] = {
+    id: dateKey,
+    barberId: "mateusz",
+    dateKey,
+    startTime: "00:00",
+    endTime: "23:59",
+  };
+
+  const response = await request("POST", {
+    action: "create_client",
+    appointment: {
+      id: "elapsed-slot",
+      barberId: "mateusz",
+      userId: "client-uid",
+      clientId: "client-uid",
+      serviceId: "mens-haircut",
+      clientName: "Własny Klient",
+      clientEmail: "client@example.com",
+      phone: "500600700",
+      dateKey,
+      startTime: "00:00",
+      durationMinutes: 60,
+      status: "confirmed",
+    },
+  });
+  const result = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.match(result.error, /minionego terminu/);
+  assert.equal(database.appointments["elapsed-slot"], undefined);
+});
+
 test("Mateusz receives only his own calendar from the canonical team assignment", async () => {
   const response = await request("GET", null, "valid-barber-token");
   const result = await response.json();
@@ -240,7 +276,7 @@ test("atomic booking rejects an occupied time and accepts a free time", async ()
     serviceId: "mens-haircut",
     serviceName: "Strzyżenie męskie",
     price: "30 zł",
-    dateKey: "2026-08-20",
+    dateKey: "2099-08-20",
     startTime: "10:30",
     durationMinutes: 60,
     status: "confirmed",
@@ -269,7 +305,7 @@ test("two simultaneous requests cannot reserve the same free slot", async () => 
         serviceId: "mens-haircut",
         serviceName: "Strzyżenie męskie",
         price: "30 zł",
-        dateKey: "2026-08-20",
+        dateKey: "2099-08-20",
         startTime: "14:00",
         durationMinutes: 60,
         status: "confirmed",

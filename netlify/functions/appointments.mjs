@@ -20,6 +20,7 @@ import {
   processNotificationJob,
   resolveNotificationSiteUrl,
 } from "./_notification-service.mjs";
+import { isBookableStartTime } from "../../shared/booking-time.mjs";
 
 const allowedActions = new Set([
   "create_client",
@@ -137,8 +138,9 @@ const readClientBookingConfiguration = async (appointment, accessToken) => {
     throw new Error("Wybrana godzina jest poza dostępnością barbera.");
   }
 
-  const todayKey = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Warsaw" }).format(new Date());
-  if (appointment.dateKey < todayKey) throw new Error("Nie można zarezerwować minionego terminu.");
+  if (!isBookableStartTime(appointment.dateKey, appointment.startTime)) {
+    throw new Error("Nie można zarezerwować minionego terminu.");
+  }
 };
 
 const readAdminBookingConfiguration = async (appointment, accessToken) => {

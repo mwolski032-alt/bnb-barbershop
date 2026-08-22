@@ -480,20 +480,22 @@ input:focus-visible {
   align-items: center;
   justify-content: flex-end;
   gap: 0.48rem;
-  width: min(100%, 25.2rem);
+  width: fit-content;
+  max-width: 100%;
   min-width: 0;
 }
 
 .session-actions:not(:has(.push-toggle-button)) {
-  width: min(100%, 22rem);
+  width: fit-content;
 }
 
 .session-pill {
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   align-items: center;
   gap: 0.5rem;
   max-width: min(100%, 22rem);
+  min-width: 0;
   min-height: 2.65rem;
   padding: 0.32rem 0.38rem 0.32rem 0.32rem;
   border: 1px solid var(--line);

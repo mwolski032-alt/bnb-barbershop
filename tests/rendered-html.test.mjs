@@ -330,6 +330,8 @@ test("shows a per-device push toggle and keeps silent token renewal", async () =
   assert.match(styles, /\.push-toggle-button\.enabled/);
   assert.match(styles, /\.push-toggle-button\.disabled/);
   assert.match(styles, /\.session-actions/);
+  assert.match(styles, /\.session-actions\s*\{[\s\S]*?width:\s*fit-content;[\s\S]*?max-width:\s*100%/);
+  assert.match(styles, /\.session-pill\s*\{[\s\S]*?flex:\s*0 1 auto[\s\S]*?min-width:\s*0/);
   assert.match(styles, /\.session-pill\s*\{[\s\S]*?min-height:\s*2\.65rem/);
   assert.match(
     styles,
