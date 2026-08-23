@@ -263,6 +263,7 @@ const createLikeActions = new Set([
   "create_admin",
   "upsert_admin_client",
   "hide_admin_client",
+  "delete_admin_client",
 ]);
 
 export const makeAppointmentRequest = (handler, token, method, body) =>

@@ -183,7 +183,7 @@ const request = (method, body, token = "valid-client-token") =>
                     operationId: body.operationId ?? `api-operation-${++operationSequence}`,
                     expectedVersion:
                       body.expectedVersion ??
-                      (["create_client", "create_admin", "upsert_admin_client", "hide_admin_client"].includes(
+                      (["create_client", "create_admin", "upsert_admin_client", "hide_admin_client", "delete_admin_client"].includes(
                         body.action,
                       )
                         ? 0

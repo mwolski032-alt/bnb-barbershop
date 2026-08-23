@@ -151,9 +151,9 @@ test("keeps the persistent client base and manual admin booking workflow", async
   assert.match(bookingHome, /Poza grafikiem/);
   assert.match(bookingHome, /const handleSaveClientFromDialog = async/);
   assert.match(bookingHome, /const removeClientFromDirectory = async/);
-  assert.match(bookingHome, /"hide_admin_client"/);
+  assert.match(bookingHome, /"delete_admin_client"/);
   assert.match(bookingHome, /"upsert_admin_client"/);
-  assert.match(bookingHome, /Historia wizyt,\s*terminarz i analiza pozostaną bez zmian/);
+  assert.match(bookingHome, /wszystkie powiązane wizyty zostaną trwale usunięte/);
   assert.match(bookingHome, /Ten termin nakłada się na inną wizytę/);
   assert.match(bookingHome, /runAppointmentOperation\([\s\S]*"upsert_admin_client"[\s\S]*appointment:/);
   assert.match(styles, /\.client-creator-modal/);
@@ -268,7 +268,9 @@ test("moves the complete client directory into the shared appointments workspace
   assert.match(bookingHome, /canAccessAdminSchedule \? \([\s\S]*openManualClientBooking/);
   assert.match(bookingHome, /href=\{`tel:\+48\$\{phoneDigits\}`\}/);
   assert.match(bookingHome, /href=\{`sms:\+48\$\{phoneDigits\}`\}/);
-  assert.match(bookingHome, /Ukryj klienta/);
+  assert.match(bookingHome, /Usuń klienta/);
+  assert.match(bookingHome, /isVisibleInClientDatabase/);
+  assert.match(appointmentApi, /"delete_admin_client"/);
   assert.match(appointmentApi, /if \(!canAdminAccess\(admin, "schedule"\)\)[\s\S]*Brak uprawnień do umawiania wizyt/);
   assert.match(styles, /\.client-phone-button/);
   assert.match(styles, /\.phone-icon/);

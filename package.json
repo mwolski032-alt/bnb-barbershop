@@ -13,6 +13,7 @@
     "test": "npm run build && node --test tests/*.test.mjs",
     "test:rules": "firebase emulators:exec --only database --project demo-bnb-stage3 \"node --test tests/emulator/firebase-rules.test.mjs\"",
     "data:migrate:dry-run": "node scripts/migrate-data-model.mjs",
+    "data:cleanup:clients": "node scripts/cleanup-client-database.mjs",
     "typecheck": "tsc --noEmit --incremental false",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"

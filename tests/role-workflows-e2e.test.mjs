@@ -106,7 +106,7 @@ test("E2E client flow: booking, client reschedule, barber confirmation and cance
     expectedVersion: 3,
   });
   assert.equal(cancelResponse.status, 200, await cancelResponse.text());
-  assert.equal(fixture.database.appointments[appointment.id].status, "cancelled");
+  assert.equal(fixture.database.appointments[appointment.id], undefined);
 });
 
 test("E2E barber flow: admin reschedule, client confirmation, cancellation and settlement", async () => {
@@ -135,7 +135,7 @@ test("E2E barber flow: admin reschedule, client confirmation, cancellation and s
     expectedVersion: 3,
   });
   assert.equal(cancelResponse.status, 200, await cancelResponse.text());
-  assert.equal(fixture.database.appointments["kacper-upcoming"].status, "cancelled");
+  assert.equal(fixture.database.appointments["kacper-upcoming"], undefined);
 
   const settleResponse = await request(tokens.kacper, "POST", {
     action: "settle_admin",
@@ -162,10 +162,12 @@ test("E2E calendar flow: barber can mark an ended visit as a no-show but not a f
     action: "mark_no_show_admin",
     appointmentId: "kacper-past",
   });
-  assert.equal(noShowResponse.status, 200, await noShowResponse.text());
-  assert.equal(fixture.database.appointments["kacper-past"].status, "no_show");
-  assert.equal(fixture.database.appointments["kacper-past"].noShowBy, "admin");
-  assert.equal(typeof fixture.database.appointments["kacper-past"].noShowAt, "number");
+  const noShowResult = await noShowResponse.json();
+  assert.equal(noShowResponse.status, 200, JSON.stringify(noShowResult));
+  assert.equal(noShowResult.appointment.status, "no_show");
+  assert.equal(noShowResult.appointment.noShowBy, "admin");
+  assert.equal(typeof noShowResult.appointment.noShowAt, "number");
+  assert.equal(fixture.database.appointments["kacper-past"], undefined);
 
   const closedVisitResponse = await request(tokens.kacper, "POST", {
     action: "settle_admin",
@@ -173,8 +175,8 @@ test("E2E calendar flow: barber can mark an ended visit as a no-show but not a f
     expectedVersion: 2,
     amount: 50,
   });
-  assert.equal(closedVisitResponse.status, 409);
-  assert.equal(fixture.database.appointments["kacper-past"].status, "no_show");
+  assert.equal(closedVisitResponse.status, 404);
+  assert.equal(fixture.database.appointments["kacper-past"], undefined);
 
   const futureNoShowResponse = await request(tokens.kacper, "POST", {
     action: "mark_no_show_admin",
@@ -289,6 +291,28 @@ test("E2E permissions: client directory mutations are scoped to the signed-in ba
   assert.equal(hideResponse.status, 200, await hideResponse.text());
   assert.equal(fixture.database.clients[clientBUid].hiddenFor.kacper, true);
   assert.equal(fixture.database.clients[clientBUid].hiddenFor.mateusz, undefined);
+
+  const deleteResponse = await request(tokens.kacper, "POST", {
+    action: "delete_admin_client",
+    clientId: "kacper-manual-client",
+  });
+  assert.equal(deleteResponse.status, 200, await deleteResponse.text());
+  assert.equal(fixture.database.clients["kacper-manual-client"], undefined);
+});
+
+test("E2E owner deletion permanently removes a client and every linked appointment", async () => {
+  fixture.reset();
+
+  const response = await request(tokens.owner, "POST", {
+    action: "delete_admin_client",
+    barberId: "mateusz",
+    clientId: clientAUid,
+  });
+
+  assert.equal(response.status, 200, await response.text());
+  assert.equal(fixture.database.clients[clientAUid], undefined);
+  assert.equal(fixture.database.appointments["mateusz-upcoming"], undefined);
+  assert.equal(fixture.database.appointments["kacper-upcoming"]?.clientId, clientBUid);
 });
 
 test("E2E permissions: client access alone cannot create an appointment through the directory", async () => {

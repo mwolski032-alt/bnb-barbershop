@@ -35,6 +35,7 @@ const allowedActions = new Set([
   "mark_no_show_admin",
   "upsert_admin_client",
   "hide_admin_client",
+  "delete_admin_client",
 ]);
 const scheduleAdminActions = new Set([
   "create_admin",
@@ -632,6 +633,71 @@ const hideAdminClient = async (body, admin, user, accessToken, operation) => {
   return synchronizedOperationResponse(result, user, admin, accessToken, !result.error);
 };
 
+const deleteAdminClient = async (body, admin, user, accessToken, operation) => {
+  if (!canAdminAccess(admin, "clients")) {
+    return jsonResponse({ ok: false, error: "Brak dostępu do bazy klientów." }, 403);
+  }
+
+  const clientId = cleanText(body.clientId, 120);
+  if (!isFirebaseKeySafe(clientId)) {
+    return jsonResponse({ ok: false, error: "Nieprawidłowy identyfikator klienta." }, 400);
+  }
+  const barberId = await resolveManagedBarberId(admin, body.barberId, accessToken);
+  if (!barberId) return jsonResponse({ ok: false, error: "Brak dostępu do wybranego barbera." }, 403);
+
+  const result = await mutateAppointmentOperation(
+    accessToken,
+    operation,
+    "delete_admin_client",
+    user,
+    (database) => {
+      const existing = database.clients?.[clientId];
+      if (!existing || (!admin.isOwner && existing.barberIds?.[barberId] !== true)) {
+        return { error: "Klient nie istnieje w tej kartotece.", status: 404 };
+      }
+
+      const normalizedClient = normalizeClientRecord(clientId, existing);
+      const linkedAppointments = Object.entries(database.appointments ?? {}).filter(([id, raw]) => {
+        const appointment = normalizeAppointment(id, raw);
+        return (
+          appointment.clientId === clientId ||
+          Boolean(normalizedClient.userId && appointment.userId === normalizedClient.userId)
+        );
+      });
+      if (!admin.isOwner && linkedAppointments.some(([, raw]) => raw?.barberId !== barberId)) {
+        return {
+          error: "Klient ma wizyty także u innego barbera. Tylko właściciel może usunąć całą kartę.",
+          status: 409,
+        };
+      }
+
+      const removedAppointmentIds = new Set(linkedAppointments.map(([id]) => id));
+      for (const appointmentId of removedAppointmentIds) {
+        delete database.appointments[appointmentId];
+      }
+      delete database.clients[clientId];
+
+      for (const [operationId, savedOperation] of Object.entries(database.appointmentOperations ?? {})) {
+        const savedClient = savedOperation?.client;
+        if (
+          removedAppointmentIds.has(savedOperation?.appointmentId) ||
+          savedClient?.id === clientId ||
+          Boolean(normalizedClient.userId && savedClient?.userId === normalizedClient.userId)
+        ) {
+          delete database.appointmentOperations[operationId];
+          if (database.notificationOutbox) delete database.notificationOutbox[operationId];
+        }
+      }
+
+      return {
+        database,
+        client: { id: clientId, deleted: true },
+      };
+    },
+  );
+  return synchronizedOperationResponse(result, user, admin, accessToken, !result.error);
+};
+
 const handler = async (request) => {
   try {
     const user = await verifyRequestUser(request);
@@ -660,6 +726,9 @@ const handler = async (request) => {
     }
     if (action === "hide_admin_client") {
       return hideAdminClient(body, admin, user, accessToken, operation);
+    }
+    if (action === "delete_admin_client") {
+      return deleteAdminClient(body, admin, user, accessToken, operation);
     }
 
     const proposed = body.appointment
@@ -836,7 +905,24 @@ const handler = async (request) => {
       }
 
       next = updateAppointmentVersion(next, operation.operationId);
-      appointments[appointmentId] = next;
+      const removesClientHistory = ["cancel_client", "cancel_admin", "mark_no_show_admin"].includes(action);
+      if (removesClientHistory) {
+        delete appointments[appointmentId];
+        const client = database.clients?.[current.clientId];
+        const hasRemainingClientHistory = Object.entries(appointments).some(([id, raw]) => {
+          const appointment = normalizeAppointment(id, raw);
+          return (
+            (appointment.clientId === current.clientId ||
+              Boolean(current.userId && appointment.userId === current.userId)) &&
+            !["cancelled", "no_show"].includes(appointment.status)
+          );
+        });
+        if (client?.userId && !hasRemainingClientHistory) {
+          delete database.clients[current.clientId];
+        }
+      } else {
+        appointments[appointmentId] = next;
+      }
       database.appointments = appointments;
       enqueueAppointmentNotification(
         database,

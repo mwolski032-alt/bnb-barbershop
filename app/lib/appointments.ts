@@ -14,7 +14,8 @@ export type AppointmentMutationAction =
   | "settle_admin"
   | "mark_no_show_admin"
   | "upsert_admin_client"
-  | "hide_admin_client";
+  | "hide_admin_client"
+  | "delete_admin_client";
 
 export type AppointmentApiResult<T> = {
   ok: boolean;

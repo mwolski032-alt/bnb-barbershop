@@ -324,8 +324,9 @@ test("booking, reschedule, confirmation and cancellation each create a backend d
     },
   );
   assert.equal(Object.values(database.notificationOutbox).every((job) => job.status === "delivered"), true);
-  assert.equal(database.appointments[appointment.id].status, "cancelled");
-  assert.equal(database.appointments[appointment.id].version, 4);
+  assert.equal(database.appointments[appointment.id], undefined);
+  assert.equal(database.appointmentOperations["flow-cancel"].appointment.status, "cancelled");
+  assert.equal(database.appointmentOperations["flow-cancel"].appointment.version, 4);
 });
 
 test("admin changes reach every active client device and link to the exact appointment", async () => {

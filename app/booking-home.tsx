@@ -442,6 +442,9 @@ const normalizeAppointmentStatus = (status?: string): AppointmentStatus =>
 const isClosedAppointmentStatus = (status?: string) =>
   ["cancelled", "completed", "no_show"].includes(normalizeAppointmentStatus(status));
 
+const isVisibleInClientDatabase = (status?: string) =>
+  !["cancelled", "no_show"].includes(normalizeAppointmentStatus(status));
+
 const normalizeAppointmentColor = (color?: string): AppointmentColor =>
   appointmentColorPalette.includes(color as AppointmentColor)
     ? (color as AppointmentColor)
@@ -1357,10 +1360,12 @@ export function BookingHome() {
   );
   const adminClientAppointments = useMemo(
     () =>
-      [...barberAllAppointments].sort((first, second) => {
-        if (first.dateKey !== second.dateKey) return first.dateKey.localeCompare(second.dateKey);
-        return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
-      }),
+      barberAllAppointments
+        .filter((appointment) => isVisibleInClientDatabase(appointment.status))
+        .sort((first, second) => {
+          if (first.dateKey !== second.dateKey) return first.dateKey.localeCompare(second.dateKey);
+          return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
+        }),
     [barberAllAppointments],
   );
   const adminScheduleDays = useMemo(() => {
@@ -3900,15 +3905,15 @@ export function BookingHome() {
     try {
       setIsClientSaving(true);
       await runAppointmentOperation(
-        "hide_admin_client",
+        "delete_admin_client",
         { clientId: pendingClientRemovalId, barberId: activeBarberId },
-        { key: `hide_admin_client:${pendingClientRemovalId}`, expectedVersion: 0 },
+        { key: `delete_admin_client:${pendingClientRemovalId}`, expectedVersion: 0 },
       );
       setPendingClientRemovalId(null);
       setSelectedAdminClientId(null);
       setClientFeedback({
         kind: "success",
-        message: "Klient został ukryty w bazie. Historia wizyt pozostała bez zmian.",
+        message: "Klient i jego historia wizyt zostały trwale usunięte z bazy.",
       });
     } catch {
       setClientFeedback({ kind: "error", message: "Nie udało się usunąć klienta z kartoteki." });
@@ -7224,7 +7229,7 @@ export function BookingHome() {
                 );
               })}
             </div>
-            {canAccessAdminClients && !selectedAdminClient.hiddenFromDirectory ? (
+            {canAccessAdminClients ? (
               <footer className="client-profile-footer">
                 <button
                   className="remove-client-button"
@@ -7232,7 +7237,7 @@ export function BookingHome() {
                   onClick={() => setPendingClientRemovalId(selectedAdminClient.id)}
                 >
                   <span className="trash-icon" aria-hidden="true" />
-                  Ukryj klienta
+                  Usuń klienta
                 </button>
               </footer>
             ) : null}
@@ -7268,11 +7273,11 @@ export function BookingHome() {
             </button>
             <div className="modal-title">
               <p className="eyebrow">Kartoteka klientów</p>
-              <h2 id="client-removal-title">Ukryć klienta?</h2>
+              <h2 id="client-removal-title">Usunąć klienta?</h2>
             </div>
             <p className="cancellation-copy" id="client-removal-description">
-              {pendingClientRemoval.name} zniknie z kartoteki {activeBarberName}. Historia wizyt,
-              terminarz i analiza pozostaną bez zmian.
+              {pendingClientRemoval.name} oraz wszystkie powiązane wizyty zostaną trwale usunięte
+              z bazy. Tej operacji nie można cofnąć.
             </p>
             <div className="modal-actions cancellation-actions">
               <button
@@ -7288,7 +7293,7 @@ export function BookingHome() {
                 disabled={isClientSaving}
                 onClick={() => void removeClientFromDirectory()}
               >
-                {isClientSaving ? "Ukrywanie..." : "Ukryj klienta"}
+                {isClientSaving ? "Usuwanie..." : "Usuń na zawsze"}
               </button>
             </div>
           </section>
