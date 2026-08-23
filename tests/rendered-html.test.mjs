@@ -240,7 +240,7 @@ test("keeps the scoped barber profile and centered client action", async () => {
   assert.match(styles, /\.barber-profile-view/);
   assert.match(styles, /\.add-client-button span::before/);
   assert.match(styles, /translate\(-50%, -50%\)/);
-  assert.match(styles, /repeat\(var\(--admin-nav-items, 6\), minmax\(0, 1fr\)\)/);
+  assert.match(styles, /repeat\(var\(--admin-nav-items, 5\), minmax\(0, 1fr\)\)/);
 });
 
 test("keeps the mastered admin schedule and availability editor", async () => {
@@ -300,7 +300,10 @@ test("moves the complete client directory into the shared appointments workspace
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
   ]);
 
-  assert.match(bookingHome, /type AdminSection = Exclude<BarberAdminSection, "clients"> \| "team"/);
+  assert.match(
+    bookingHome,
+    /type AdminSection = Exclude<BarberAdminSection, "clients" \| "services"> \| "team"/,
+  );
   assert.match(bookingHome, /<span>Klienci<\/span>/);
   assert.match(bookingHome, /className="client-search"/);
   assert.match(bookingHome, /className="client-filters"/);
@@ -369,7 +372,27 @@ test("keeps settlement-driven admin analytics", async () => {
   assert.match(bookingHome, /visibleAdminSections\.map\(\(section\) =>/);
   assert.match(bookingHome, /adminNavigationIcons/);
   assert.match(bookingHome, /NavigationIcon/);
-  assert.match(styles, /repeat\(var\(--admin-nav-items, 6\), minmax\(0, 1fr\)\)/);
+  assert.match(styles, /repeat\(var\(--admin-nav-items, 5\), minmax\(0, 1fr\)\)/);
+});
+
+test("merges days and services into one permission-aware work workspace", async () => {
+  const [bookingHome, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /type WorkWorkspaceTab = "days" \| "services"/);
+  assert.match(bookingHome, /useState<WorkWorkspaceTab>\("days"\)/);
+  assert.match(bookingHome, /const canAccessAdminWorkWorkspace = canAccessAdminWork \|\| canAccessAdminServices/);
+  assert.match(bookingHome, /const renderWorkWorkspaceTabs = \(\) =>/);
+  assert.match(bookingHome, /aria-label="Widok dni pracy i usług"/);
+  assert.match(bookingHome, /<span>Dni<\/span>/);
+  assert.match(bookingHome, /<span>Usługi<\/span>/);
+  assert.match(bookingHome, /Dni dostępne dla klientów/);
+  assert.match(bookingHome, /Usługi w aplikacji/);
+  assert.doesNotMatch(bookingHome, /adminSection === "services"/);
+  assert.doesNotMatch(bookingHome, /setAdminSection\("services"\)/);
+  assert.match(styles, /\.work-workspace-panel\.active/);
 });
 
 test("keeps the fixed owner-managed team and role-aware admin avatars", async () => {

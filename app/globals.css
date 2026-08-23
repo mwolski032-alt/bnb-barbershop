@@ -3049,6 +3049,10 @@ h2 {
   grid-template-rows: auto auto minmax(0, 1fr);
 }
 
+.work-workspace-panel.active {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
 .admin-workspace-tabs {
   display: grid;
   grid-auto-columns: minmax(0, 1fr);
@@ -7941,7 +7945,7 @@ h2 {
   left: max(0.85rem, calc((100vw - 29rem) / 2 + 0.85rem));
   z-index: 40;
   display: grid;
-  grid-template-columns: repeat(var(--admin-nav-items, 6), minmax(0, 1fr));
+  grid-template-columns: repeat(var(--admin-nav-items, 5), minmax(0, 1fr));
   gap: 0;
   padding: 0.3rem;
   border: 1px solid var(--line);
@@ -8007,7 +8011,7 @@ h2 {
   top: 0.3rem;
   bottom: 0.3rem;
   left: 0.3rem;
-  width: calc((100% - 0.6rem) / var(--admin-nav-items, 6));
+  width: calc((100% - 0.6rem) / var(--admin-nav-items, 5));
   border-radius: 999px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08)),
@@ -9443,7 +9447,7 @@ h2 {
     top: 0.24rem;
     bottom: 0.24rem;
     left: 0.24rem;
-    width: calc((100% - 0.48rem) / var(--admin-nav-items, 6));
+    width: calc((100% - 0.48rem) / var(--admin-nav-items, 5));
   }
 
   .analytics-period-control button {

@@ -95,9 +95,13 @@ type BarberAdminSection =
   | "work"
   | "services"
   | "profile";
-type AdminSection = Exclude<BarberAdminSection, "clients"> | "team";
-type StandaloneAdminSection = Exclude<BarberAdminSection, "schedule" | "clients">;
+type AdminSection = Exclude<BarberAdminSection, "clients" | "services"> | "team";
+type StandaloneAdminSection = Exclude<
+  BarberAdminSection,
+  "schedule" | "clients" | "services"
+>;
 type AdminWorkspaceTab = "upcoming" | "schedule" | "clients";
+type WorkWorkspaceTab = "days" | "services";
 
 type Service = {
   id: string;
@@ -366,7 +370,7 @@ const barberAdminSections: BarberAdminSection[] = [
   "services",
   "profile",
 ];
-const standaloneAdminSections: StandaloneAdminSection[] = ["analytics", "work", "services", "profile"];
+const standaloneAdminSections: StandaloneAdminSection[] = ["analytics", "work", "profile"];
 const fullBarberAccess: Record<BarberAdminSection, boolean> = {
   schedule: true,
   clients: true,
@@ -468,7 +472,6 @@ const adminSectionLabels: Record<AdminSection, string> = {
   schedule: "Terminy",
   analytics: "Analiza",
   work: "Praca",
-  services: "Usługi",
   profile: "Profil",
   team: "Zespół",
 };
@@ -486,7 +489,6 @@ const adminNavigationLabels: Record<AdminSection, string> = {
   schedule: "Terminy",
   analytics: "Analiza",
   work: "Praca",
-  services: "Usługi",
   profile: "Profil",
   team: "Zespół",
 };
@@ -495,7 +497,6 @@ const adminNavigationIcons = {
   schedule: CalendarDays,
   analytics: BarChart3,
   work: Clock3,
-  services: Scissors,
   profile: CircleUserRound,
   team: UsersRound,
 } satisfies Record<AdminSection, typeof CalendarDays>;
@@ -1431,6 +1432,7 @@ export function BookingHome() {
   const [adminSection, setAdminSection] = useState<AdminSection>("schedule");
   const [adminWorkspaceTab, setAdminWorkspaceTab] =
     useState<AdminWorkspaceTab>("upcoming");
+  const [workWorkspaceTab, setWorkWorkspaceTab] = useState<WorkWorkspaceTab>("days");
   const [visibleMonth, setVisibleMonth] = useState(
     () => new Date(today.getFullYear(), today.getMonth(), 1),
   );
@@ -1576,9 +1578,17 @@ export function BookingHome() {
   const canAccessAdminClients =
     Boolean(isOwner) || Boolean(isBarber && signedInBarberAccess.clients);
   const canAccessAdminWorkspace = canAccessAdminSchedule || canAccessAdminClients;
-  const canAccessAdminSection = (section: AdminSection) =>
-    isOwner ||
-    (isBarber && section !== "team" && signedInBarberAccess[section as BarberAdminSection]);
+  const canAccessAdminWork =
+    Boolean(isOwner) || Boolean(isBarber && signedInBarberAccess.work);
+  const canAccessAdminServices =
+    Boolean(isOwner) || Boolean(isBarber && signedInBarberAccess.services);
+  const canAccessAdminWorkWorkspace = canAccessAdminWork || canAccessAdminServices;
+  const canAccessAdminSection = (section: AdminSection) => {
+    if (isOwner) return true;
+    if (!isBarber || section === "team") return false;
+    if (section === "work") return canAccessAdminWorkWorkspace;
+    return signedInBarberAccess[section];
+  };
   const visibleAdminSections: AdminSection[] = [
     ...(canAccessAdminWorkspace ? (["schedule"] as AdminSection[]) : []),
     ...standaloneAdminSections.filter((section) => canAccessAdminSection(section)),
@@ -3036,6 +3046,14 @@ export function BookingHome() {
       }
       return;
     }
+    if (adminSection === "work" && canAccessAdminWorkWorkspace) {
+      if (workWorkspaceTab === "days" && !canAccessAdminWork) {
+        setWorkWorkspaceTab("services");
+      } else if (workWorkspaceTab === "services" && !canAccessAdminServices) {
+        setWorkWorkspaceTab("days");
+      }
+      return;
+    }
     if (
       adminSection !== "team" &&
       adminSection !== "schedule" &&
@@ -3046,10 +3064,17 @@ export function BookingHome() {
 
     const firstAllowedSection: AdminSection | undefined = canAccessAdminWorkspace
       ? "schedule"
-      : standaloneAdminSections.find((section) => signedInBarberAccess[section]);
+      : standaloneAdminSections.find((section) =>
+          section === "work"
+            ? signedInBarberAccess.work || signedInBarberAccess.services
+            : signedInBarberAccess[section],
+        );
     if (firstAllowedSection) {
       setAdminSection(firstAllowedSection);
       if (firstAllowedSection === "schedule") setAdminWorkspaceTab("upcoming");
+      if (firstAllowedSection === "work") {
+        setWorkWorkspaceTab(signedInBarberAccess.work ? "days" : "services");
+      }
     } else {
       setStep("booking");
     }
@@ -3058,11 +3083,15 @@ export function BookingHome() {
     adminWorkspaceTab,
     canAccessAdminClients,
     canAccessAdminSchedule,
+    canAccessAdminServices,
+    canAccessAdminWork,
+    canAccessAdminWorkWorkspace,
     canAccessAdminWorkspace,
     isBarber,
     isOwner,
     signedInBarberAccess,
     step,
+    workWorkspaceTab,
   ]);
 
   useEffect(() => {
@@ -3453,6 +3482,7 @@ export function BookingHome() {
     setEditingAvailabilityKey(null);
     setWorkFeedback(null);
     setAdminSection("work");
+    setWorkWorkspaceTab("days");
   };
 
   const updateServiceDraft = (field: keyof ServiceDraft, value: string) => {
@@ -3478,7 +3508,8 @@ export function BookingHome() {
       price: String(getServicePriceValue(service.price) || ""),
       durationMinutes: String(service.durationMinutes),
     });
-    setAdminSection("services");
+    setAdminSection("work");
+    setWorkWorkspaceTab("services");
   };
 
   const saveService = async () => {
@@ -4826,6 +4857,36 @@ export function BookingHome() {
       ) : null}
     </nav>
   );
+  const renderWorkWorkspaceTabs = () => (
+    <nav className="admin-workspace-tabs" role="tablist" aria-label="Widok dni pracy i usług">
+      {canAccessAdminWork ? (
+        <button
+          className={workWorkspaceTab === "days" ? "active" : ""}
+          type="button"
+          role="tab"
+          aria-selected={workWorkspaceTab === "days"}
+          onClick={() => setWorkWorkspaceTab("days")}
+        >
+          <CalendarDays className="workspace-tab-icon" aria-hidden="true" strokeWidth={2.1} />
+          <span>Dni</span>
+          <small>{availabilityWindows.length}</small>
+        </button>
+      ) : null}
+      {canAccessAdminServices ? (
+        <button
+          className={workWorkspaceTab === "services" ? "active" : ""}
+          type="button"
+          role="tab"
+          aria-selected={workWorkspaceTab === "services"}
+          onClick={() => setWorkWorkspaceTab("services")}
+        >
+          <Scissors className="workspace-tab-icon" aria-hidden="true" strokeWidth={2.1} />
+          <span>Usługi</span>
+          <small>{services.length}</small>
+        </button>
+      ) : null}
+    </nav>
+  );
   if (!authReady || (activeUser && !sessionReady)) {
     return (
       <main className="auth-shell" aria-label="Ładowanie logowania">
@@ -6064,8 +6125,13 @@ export function BookingHome() {
               </div>
             </div>
 
-            <div className={`admin-tab-panel ${adminSection === "work" ? "active" : ""}`}>
-              <div className="admin-section-header">
+            <div
+              className={`admin-tab-panel work-workspace-panel ${adminSection === "work" ? "active" : ""}`}
+            >
+              {renderWorkWorkspaceTabs()}
+              {canAccessAdminWork && workWorkspaceTab === "days" ? (
+                <>
+                  <div className="admin-section-header">
                 <div>
                   <p className="eyebrow">Dorywczo</p>
                   <h2>Dni dostępne dla klientów</h2>
@@ -6352,11 +6418,13 @@ export function BookingHome() {
                     )}
                   </div>
                 </section>
-              </div>
-            </div>
+                  </div>
+                </>
+              ) : null}
 
-            <div className={`admin-tab-panel ${adminSection === "services" ? "active" : ""}`}>
-              <div className="admin-section-header">
+              {canAccessAdminServices && workWorkspaceTab === "services" ? (
+                <>
+                  <div className="admin-section-header">
                 <div>
                   <p className="eyebrow">Oferta</p>
                   <h2>Usługi w aplikacji</h2>
@@ -6472,7 +6540,9 @@ export function BookingHome() {
                     </article>
                   ))}
                 </section>
-              </div>
+                  </div>
+                </>
+              ) : null}
             </div>
 
             {isOwner ? (
@@ -6787,6 +6857,9 @@ export function BookingHome() {
                   onClick={() => {
                     setAdminSection(section);
                     if (section === "schedule") setAdminWorkspaceTab("upcoming");
+                    if (section === "work") {
+                      setWorkWorkspaceTab(canAccessAdminWork ? "days" : "services");
+                    }
                   }}
                 >
                   <NavigationIcon
