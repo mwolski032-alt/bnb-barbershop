@@ -5,14 +5,31 @@ import {
   writeDatabaseIfUnchanged,
 } from "./_firebase-admin.mjs";
 import { processDueNotificationJobs } from "./_notification-service.mjs";
-import { advanceExpiredWaitlistOffers } from "../../shared/waitlist.mjs";
+import {
+  advanceExpiredWaitlistOffers,
+  offerAvailableWaitlistSlots,
+} from "../../shared/waitlist.mjs";
 
 const advanceWaitlist = async (accessToken, now) => {
   for (let attempt = 0; attempt < 6; attempt += 1) {
     const { value, etag } = await readDatabaseWithEtag("", accessToken);
     const database = structuredClone(value ?? {});
-    const result = advanceExpiredWaitlistOffers(database, now);
-    if (!result.changed) return result;
+    const expired = advanceExpiredWaitlistOffers(database, now);
+    const available = offerAvailableWaitlistSlots(database, {
+      now,
+      excludedEntryIds: expired.expiredEntryIds,
+    });
+    const changed = expired.changed || available.changed;
+    const result = {
+      changed,
+      expiredCount: expired.expiredCount,
+      offeredCount: available.offeredCount,
+      notificationOperationIds: [
+        ...expired.notificationOperationIds,
+        ...available.notificationOperationIds,
+      ],
+    };
+    if (!changed) return result;
     const revision = (Number(database.appointmentSync?.revision) || 0) + 1;
     database.appointmentSync = { revision, updatedAt: now };
     if (await writeDatabaseIfUnchanged("", database, etag, accessToken)) {

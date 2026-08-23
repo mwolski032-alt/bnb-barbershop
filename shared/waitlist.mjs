@@ -1,6 +1,7 @@
 import { isBookableStartTime } from "./booking-time.mjs";
 
 export const WAITLIST_OFFER_DURATION_MS = 10 * 60 * 1000;
+export const WAITLIST_REOFFER_COOLDOWN_MS = 60 * 60 * 1000;
 
 const timeToMinutes = (time) => {
   const [hours, minutes] = String(time).split(":").map(Number);
@@ -15,8 +16,115 @@ const matchesTimePreference = (preference, startTime) => {
   return true;
 };
 
-export const waitlistEntryMatchesSlot = (entry, slot) =>
+const rangesOverlap = (firstStart, firstDuration, secondStart, secondDuration) =>
+  firstStart < secondStart + secondDuration && secondStart < firstStart + firstDuration;
+
+const dateKeyFromUtc = (date) =>
+  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    date.getUTCDate(),
+  ).padStart(2, "0")}`;
+
+const dateKeysBetween = (dateFrom, dateTo, maxDays = 62) => {
+  const [startYear, startMonth, startDay] = String(dateFrom).split("-").map(Number);
+  const [endYear, endMonth, endDay] = String(dateTo).split("-").map(Number);
+  const current = new Date(Date.UTC(startYear, startMonth - 1, startDay));
+  const end = new Date(Date.UTC(endYear, endMonth - 1, endDay));
+  const keys = [];
+  while (current <= end && keys.length < maxDays) {
+    keys.push(dateKeyFromUtc(current));
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return keys;
+};
+
+const formatTime = (minutes) =>
+  `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+
+const hasSlotConflict = (database, slot, now) => {
+  const conflictsWithAppointment = Object.values(database.appointments ?? {}).some(
+    (appointment) =>
+      appointment?.status !== "cancelled" &&
+      appointment?.barberId === slot.barberId &&
+      appointment?.dateKey === slot.dateKey &&
+      rangesOverlap(
+        timeToMinutes(appointment.startTime),
+        Number(appointment.durationMinutes) || 15,
+        timeToMinutes(slot.startTime),
+        slot.durationMinutes,
+      ),
+  );
+  if (conflictsWithAppointment) return true;
+
+  return Object.values(database.waitlistEntries ?? {}).some(
+    (entry) =>
+      entry?.status === "offered" &&
+      Number(entry.offer?.expiresAt) > now &&
+      entry.offer?.barberId === slot.barberId &&
+      entry.offer?.dateKey === slot.dateKey &&
+      rangesOverlap(
+        timeToMinutes(entry.offer.startTime),
+        Number(entry.offer.durationMinutes) || Number(entry.durationMinutes) || 15,
+        timeToMinutes(slot.startTime),
+        slot.durationMinutes,
+      ),
+  );
+};
+
+const findAvailableSlotForEntry = (database, entry, now) => {
+  const member = database.team?.barbers?.[entry.barberId];
+  const barber = database.barbers?.[entry.barberId];
+  const service = barber?.services?.[entry.serviceId];
+  if (
+    member?.active !== true ||
+    !member.userId ||
+    !service ||
+    service.id !== entry.serviceId ||
+    service.barberId !== entry.barberId
+  ) {
+    return null;
+  }
+
+  const durationMinutes = Math.max(15, Number(service.durationMinutes) || 15);
+  const todayKey = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Warsaw" }).format(
+    new Date(now),
+  );
+  const dateFrom = entry.dateFrom > todayKey ? entry.dateFrom : todayKey;
+
+  for (const dateKey of dateKeysBetween(dateFrom, entry.dateTo)) {
+    const availability = barber.workSettings?.availability?.[dateKey];
+    if (
+      !availability ||
+      availability.id !== dateKey ||
+      availability.dateKey !== dateKey ||
+      availability.barberId !== entry.barberId
+    ) {
+      continue;
+    }
+
+    const start = Math.ceil(timeToMinutes(availability.startTime) / 15) * 15;
+    const end = timeToMinutes(availability.endTime);
+    for (let minutes = start; minutes + durationMinutes <= end; minutes += 15) {
+      const startTime = formatTime(minutes);
+      if (!matchesTimePreference(entry.timePreference, startTime)) continue;
+      if (!isBookableStartTime(dateKey, startTime, new Date(now))) continue;
+      const slot = {
+        barberId: entry.barberId,
+        serviceId: entry.serviceId,
+        serviceName: String(service.name || entry.serviceName || "Usługa"),
+        price: String(service.price || ""),
+        dateKey,
+        startTime,
+        durationMinutes,
+      };
+      if (!hasSlotConflict(database, slot, now)) return slot;
+    }
+  }
+  return null;
+};
+
+export const waitlistEntryMatchesSlot = (entry, slot, now = Date.now()) =>
   entry?.status === "waiting" &&
+  Number(entry.nextOfferAt || 0) <= now &&
   entry.barberId === slot.barberId &&
   entry.serviceId === slot.serviceId &&
   entry.dateFrom <= slot.dateKey &&
@@ -111,7 +219,7 @@ export const offerWaitlistSlot = (
       (entry) =>
         !excludedIds.has(entry.id) &&
         entry.userId !== excludeUserId &&
-        waitlistEntryMatchesSlot(entry, slot),
+        waitlistEntryMatchesSlot(entry, slot, now),
     )
     .sort(
       (first, second) =>
@@ -136,6 +244,7 @@ export const offerWaitlistSlot = (
     ...entry,
     status: "offered",
     offer,
+    nextOfferAt: 0,
     version: Math.max(1, Number(entry.version) || 1) + 1,
     updatedAt: now,
   };
@@ -170,6 +279,7 @@ export const advanceExpiredWaitlistOffers = (database, now = Date.now()) => {
       ...entry,
       status: "waiting",
       offer: null,
+      nextOfferAt: now + WAITLIST_REOFFER_COOLDOWN_MS,
       version: Math.max(1, Number(entry.version) || 1) + 1,
       updatedAt: now,
     };
@@ -181,7 +291,55 @@ export const advanceExpiredWaitlistOffers = (database, now = Date.now()) => {
     if (result.operationId) notificationOperationIds.push(result.operationId);
   }
 
-  return { changed: expired.length > 0, expiredCount: expired.length, notificationOperationIds };
+  return {
+    changed: expired.length > 0,
+    expiredCount: expired.length,
+    expiredEntryIds: expired.map((entry) => entry.id),
+    notificationOperationIds,
+  };
+};
+
+export const offerAvailableWaitlistSlots = (
+  database,
+  { now = Date.now(), maxOffers = 20, excludedEntryIds = [] } = {},
+) => {
+  const excludedIds = new Set(excludedEntryIds);
+  const waitingIds = Object.entries(database.waitlistEntries ?? {})
+    .map(([id, entry]) => ({ ...entry, id: entry?.id || id }))
+    .filter(
+      (entry) =>
+        entry.status === "waiting" &&
+        !excludedIds.has(entry.id) &&
+        Number(entry.nextOfferAt || 0) <= now,
+    )
+    .sort(
+      (first, second) =>
+        (Number(first.createdAt) || 0) - (Number(second.createdAt) || 0) ||
+        first.id.localeCompare(second.id),
+    )
+    .map((entry) => entry.id);
+  const notificationOperationIds = [];
+
+  for (const entryId of waitingIds) {
+    if (notificationOperationIds.length >= Math.max(1, Math.min(50, Number(maxOffers) || 20))) {
+      break;
+    }
+    const entry = database.waitlistEntries?.[entryId];
+    if (entry?.status !== "waiting") continue;
+    const slot = findAvailableSlotForEntry(database, entry, now);
+    if (!slot) continue;
+    const result = offerWaitlistSlot(database, slot, {
+      sourceOperationId: `waitlist-available-${entryId}-${slot.dateKey}-${slot.startTime}-${now}`,
+      now,
+    });
+    if (result.operationId) notificationOperationIds.push(result.operationId);
+  }
+
+  return {
+    changed: notificationOperationIds.length > 0,
+    offeredCount: notificationOperationIds.length,
+    notificationOperationIds,
+  };
 };
 
 export const hasBlockingWaitlistOffer = (database, appointment, userId, now = Date.now()) =>

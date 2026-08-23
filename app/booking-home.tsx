@@ -3861,6 +3861,13 @@ export function BookingHome() {
 
   const joinClientWaitlist = async () => {
     if (!canJoinWaitlist || !activeUser || !selectedBarber || isWaitlistSaving) return;
+    const pushPermissionRequest =
+      typeof window !== "undefined" &&
+      "Notification" in window &&
+      "PushManager" in window &&
+      Notification.permission === "default"
+        ? Notification.requestPermission().catch(() => "denied" as NotificationPermission)
+        : null;
     const waitlistId = `waitlist-${window.crypto?.randomUUID?.() ?? Date.now()}`;
     try {
       setIsWaitlistSaving(true);
@@ -3893,8 +3900,17 @@ export function BookingHome() {
         kind: "success",
         message: "Gotowe. Powiadomimy Cię, gdy zwolni się pasujący termin.",
       });
-      if (!pushDeviceEnabled && pushDeviceStatus !== "unsupported") {
-        void registerCurrentPushDevice();
+      const requestedPermission = pushPermissionRequest
+        ? await pushPermissionRequest
+        : typeof Notification !== "undefined"
+          ? Notification.permission
+          : "denied";
+      if (
+        !pushDeviceEnabled &&
+        pushDeviceStatus !== "unsupported" &&
+        requestedPermission !== "denied"
+      ) {
+        await registerCurrentPushDevice();
       }
     } catch (error) {
       setWaitlistFeedback({

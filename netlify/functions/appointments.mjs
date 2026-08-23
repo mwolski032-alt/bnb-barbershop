@@ -380,6 +380,7 @@ const mutateAppointmentOperation = async (accessToken, operation, action, user, 
         appointment: existingOperation.appointment,
         client: existingOperation.client,
         waitlistEntry: existingOperation.waitlistEntry,
+        notificationOperationIds: existingOperation.notificationOperationIds ?? [],
         syncRevision: Number(existingOperation.syncRevision) || 0,
         idempotent: true,
       };
@@ -398,6 +399,7 @@ const mutateAppointmentOperation = async (accessToken, operation, action, user, 
       appointment: result.appointment,
       client: result.client,
       waitlistEntry: result.waitlistEntry,
+      notificationOperationIds: result.notificationOperationIds ?? [],
       syncRevision,
       createdAt: Date.now(),
     };
@@ -546,20 +548,30 @@ const synchronizedOperationResponse = async (
   notificationEvent = "",
 ) => {
   let notification = null;
-  if (ok && notificationEvent && result.operationId && request) {
-    try {
-      notification = await processNotificationJob(result.operationId, {
-        accessToken,
-        force: true,
-        siteUrl: resolveNotificationSiteUrl(request),
-      });
-    } catch (error) {
-      notification = {
-        ok: false,
-        state: "queued",
-        error: error instanceof Error ? error.message : "Notification delivery was queued.",
-      };
-    }
+  const notificationOperationIds = [
+    ...(notificationEvent && result.operationId ? [result.operationId] : []),
+    ...(Array.isArray(result.notificationOperationIds) ? result.notificationOperationIds : []),
+  ].filter((operationId, index, values) => operationId && values.indexOf(operationId) === index);
+  if (ok && notificationOperationIds.length > 0 && request) {
+    const deliveries = await Promise.all(
+      notificationOperationIds.map(async (operationId) => {
+        try {
+          return await processNotificationJob(operationId, {
+            accessToken,
+            force: true,
+            siteUrl: resolveNotificationSiteUrl(request),
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            state: "queued",
+            operationId,
+            error: error instanceof Error ? error.message : "Notification delivery was queued.",
+          };
+        }
+      }),
+    );
+    notification = deliveries[0] ?? null;
   }
   const snapshot = await getAppointmentData(user, admin, accessToken);
   return jsonResponse(
@@ -1123,12 +1135,14 @@ const handler = async (request) => {
 
       next = updateAppointmentVersion(next, operation.operationId);
       const removesClientHistory = ["cancel_client", "cancel_admin", "mark_no_show_admin"].includes(action);
+      const notificationOperationIds = [];
       if (action === "cancel_client" || action === "cancel_admin") {
-        offerWaitlistSlot(database, current, {
+        const waitlistOffer = offerWaitlistSlot(database, current, {
           sourceOperationId: operation.operationId,
           actorUid: user.uid,
           excludeUserId: current.userId,
         });
+        if (waitlistOffer.operationId) notificationOperationIds.push(waitlistOffer.operationId);
       }
       if (removesClientHistory) {
         delete appointments[appointmentId];
@@ -1154,7 +1168,7 @@ const handler = async (request) => {
         next,
         operation.operationId,
       );
-      return { database, appointment: next };
+      return { database, appointment: next, notificationOperationIds };
       },
     );
 

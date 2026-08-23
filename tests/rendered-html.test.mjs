@@ -165,12 +165,14 @@ test("keeps the client and admin waitlist workflow visible and actionable", asyn
   assert.match(bookingHome, /Powiadom mnie o terminie/);
   assert.match(bookingHome, /Lista rezerwowa/);
   assert.match(bookingHome, /acceptWaitlistOffer/);
+  assert.match(bookingHome, /Notification\.requestPermission\(\)/);
   assert.match(bookingHome, /openWaitlistBooking/);
   assert.match(bookingHome, />Umów</);
   assert.match(appointmentsApi, /"join_waitlist"/);
   assert.match(appointmentsApi, /hasBlockingWaitlistOffer/);
   assert.match(notificationService, /waitlist_slot_open/);
   assert.match(worker, /advanceExpiredWaitlistOffers/);
+  assert.match(worker, /offerAvailableWaitlistSlots/);
   assert.match(styles, /\.waitlist-callout/);
   assert.match(styles, /\.admin-waitlist-row/);
   assert.match(styles, /\.admin-waitlist-book/);
@@ -429,7 +431,10 @@ test("keeps barber ownership and excludes the owner from appointment notificatio
   assert.doesNotMatch(bookingHome, /inAppNotifications/);
   assert.doesNotMatch(notificationService, /writeInAppNotifications/);
   assert.doesNotMatch(bookingHome, /notificationButton/);
-  assert.match(appointmentApi, /processNotificationJob\(result\.operationId/);
+  assert.match(
+    appointmentApi,
+    /notificationOperationIds\.map[\s\S]*processNotificationJob\(operationId/,
+  );
 });
 
 test("opens system push links and lets the client confirm a changed time", async () => {

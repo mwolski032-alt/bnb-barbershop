@@ -7,6 +7,7 @@ const ownerUid = "xkyDu2Lb1Ma8McF7yfyv8PIAj1M2";
 const mateuszUid = "XxBe4dwVYWZPtl004J4tWq6AMZ73";
 const kacperUid = "TVwF6j7ePiTFhiGTWWPrq9nmRvJ3";
 const clientUid = "client-uid";
+const waitlistClientUid = "waitlist-client-uid";
 const databaseUrl = "https://mock-bnb.firebaseio.test";
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 
@@ -80,6 +81,9 @@ const initialDatabase = () => ({
       phone: { token: "client-phone-token", active: true, isAdmin: false },
       tablet: { token: "client-tablet-token", active: true, isAdmin: false },
       retired: { token: "retired-token", active: false, isAdmin: false },
+    },
+    [waitlistClientUid]: {
+      phone: { token: "waitlist-client-token", active: true, isAdmin: false },
     },
   },
   appointments: {},
@@ -384,6 +388,89 @@ test("waitlist notification links directly to the offered barber, service, date 
   assert.equal(sentEmails.some(({ html }) => html.includes("Zarezerwuj termin")), true);
 });
 
+test("cancellation immediately delivers the waitlist offer created in the same request", async () => {
+  reset();
+  const appointment = appointmentFor({ id: "cancelled-for-waitlist", startTime: "15:00" });
+  database.appointments[appointment.id] = appointment;
+  database.waitlistEntries = {
+    waiting: {
+      id: "waiting",
+      userId: waitlistClientUid,
+      clientName: "Klient z listy",
+      clientEmail: "waitlist@example.com",
+      phone: "600700800",
+      barberId: "mateusz",
+      serviceId: "cut",
+      serviceName: "Strzyżenie",
+      durationMinutes: 60,
+      dateFrom: "2099-01-10",
+      dateTo: "2099-01-10",
+      timePreference: "afternoon",
+      status: "waiting",
+      version: 1,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    },
+  };
+
+  const response = await appointmentRequest("client-token", {
+    action: "cancel_client",
+    operationId: "cancel-and-notify-waitlist",
+    expectedVersion: 1,
+    appointmentId: appointment.id,
+  });
+  assert.equal(response.status, 200, await response.text());
+
+  const waitlistJob = Object.values(database.notificationOutbox).find(
+    (job) => job.event === "waitlist_slot_open",
+  );
+  assert.equal(waitlistJob.status, "delivered");
+  assert.equal(
+    sentPushes.some(({ message }) => message.token === "waitlist-client-token"),
+    true,
+  );
+  assert.equal(sentEmails.some(({ to }) => to === "waitlist@example.com"), true);
+});
+
+test("scheduled worker discovers a newly available slot and notifies the waiting client", async () => {
+  reset();
+  database.waitlistEntries = {
+    waiting: {
+      id: "waiting",
+      userId: waitlistClientUid,
+      clientName: "Klient z listy",
+      clientEmail: "waitlist@example.com",
+      phone: "600700800",
+      barberId: "mateusz",
+      serviceId: "cut",
+      serviceName: "Strzyżenie",
+      durationMinutes: 60,
+      dateFrom: "2099-01-10",
+      dateTo: "2099-01-10",
+      timePreference: "morning",
+      status: "waiting",
+      version: 1,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    },
+  };
+
+  const response = await notificationWorker.default();
+  const result = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(result));
+  assert.equal(database.waitlistEntries.waiting.status, "offered");
+  assert.equal(result.waitlist.offeredCount, 1);
+
+  const waitlistJob = Object.values(database.notificationOutbox).find(
+    (job) => job.event === "waitlist_slot_open",
+  );
+  assert.equal(waitlistJob.status, "delivered");
+  assert.equal(
+    sentPushes.some(({ message }) => message.token === "waitlist-client-token"),
+    true,
+  );
+});
+
 test("confirmation actions have distinct backend events for the proper audience", async () => {
   reset();
   const clientConfirmation = seedJob("client_confirmed", "confirm_client", { id: "client-confirmed" });
@@ -507,7 +594,10 @@ test("scheduled worker and frontend wiring keep appointment notifications backen
   ]);
   assert.deepEqual(notificationWorker.config, { schedule: "* * * * *" });
   assert.doesNotMatch(frontend, /sendAppointmentNotification/);
-  assert.match(appointmentsSource, /processNotificationJob\(result\.operationId/);
+  assert.match(
+    appointmentsSource,
+    /notificationOperationIds\.map[\s\S]*processNotificationJob\(operationId/,
+  );
   assert.match(notificationSource, /confirm_client: "client_confirmed"/);
   assert.match(notificationSource, /confirm_admin: "admin_confirmed"/);
   assert.match(notificationSource, /status: "invalid"/);
