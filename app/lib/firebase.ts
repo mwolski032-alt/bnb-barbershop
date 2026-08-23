@@ -9,9 +9,18 @@ const readEnv = (key: string, fallback: string) => {
   return processValue || importMetaValue || fallback;
 };
 
+const configuredAuthDomain = readEnv(
+  "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN",
+  "bnbbarber-9a7bd.firebaseapp.com",
+);
+const authDomain =
+  typeof window !== "undefined" && window.location.hostname === "bnbbarber.netlify.app"
+    ? window.location.host
+    : configuredAuthDomain;
+
 const firebaseConfig = {
   apiKey: readEnv("NEXT_PUBLIC_FIREBASE_API_KEY", "AIzaSyATrBnGXzcxUR8r6Y-AeAeXDVPeKAjrymU"),
-  authDomain: readEnv("NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN", "bnbbarber-9a7bd.firebaseapp.com"),
+  authDomain,
   databaseURL: readEnv(
     "NEXT_PUBLIC_FIREBASE_DATABASE_URL",
     "https://bnbbarber-9a7bd-default-rtdb.europe-west1.firebasedatabase.app",

@@ -70,9 +70,12 @@ test("keeps the premium client booking flow and safety controls", async () => {
 });
 
 test("keeps the client-focused sign-in experience concise", async () => {
-  const [bookingHome, styles] = await Promise.all([
+  const [bookingHome, styles, firebaseSource, netlifyConfig, firebaseConfig] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/firebase.ts", import.meta.url), "utf8"),
+    readFile(new URL("../netlify.toml", import.meta.url), "utf8"),
+    readFile(new URL("../firebase.json", import.meta.url), "utf8"),
   ]);
 
   assert.match(bookingHome, /Twój następny termin/);
@@ -80,6 +83,13 @@ test("keeps the client-focused sign-in experience concise", async () => {
   assert.match(bookingHome, /Przypomnienie przed wizytą/);
   assert.doesNotMatch(bookingHome, /Bez podglądu cudzych rezerwacji/);
   assert.doesNotMatch(bookingHome, /Łatwiejsze przesunięcie wizyty/);
+  assert.match(bookingHome, /shouldUseRedirectSignIn\(window\.navigator\)/);
+  assert.match(bookingHome, /getRedirectResult\(firebaseAuth\)/);
+  assert.match(bookingHome, /shouldFallbackToRedirect\(errorCode\)/);
+  assert.match(firebaseSource, /window\.location\.hostname === "bnbbarber\.netlify\.app"/);
+  assert.match(netlifyConfig, /from = "\/__\/auth\/\*"/);
+  assert.match(netlifyConfig, /status = 200/);
+  assert.match(firebaseConfig, /https:\/\/bnbbarber\.netlify\.app\/__\/auth\/handler/);
   assert.match(styles, /\.auth-benefits span::before/);
 });
 

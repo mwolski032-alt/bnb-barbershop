@@ -1,4 +1,17 @@
 {
+  "auth": {
+    "providers": {
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "BNB Barbershop",
+        "supportEmail": "mwolski032@gmail.com",
+        "authorizedRedirectUris": [
+          "https://bnbbarber-9a7bd.firebaseapp.com/__/auth/handler",
+          "https://bnbbarber-9a7bd.web.app/__/auth/handler",
+          "https://bnbbarber.netlify.app/__/auth/handler"
+        ]
+      }
+    }
+  },
   "database": {
     "rules": "database.rules.json"
   },

@@ -6,3 +6,9 @@
   NITRO_PRESET = "netlify"
   NETLIFY_NEXT_PLUGIN_SKIP = "true"
   NODE_VERSION = "22.13.0"
+
+[[redirects]]
+  from = "/__/auth/*"
+  to = "https://bnbbarber-9a7bd.firebaseapp.com/__/auth/:splat"
+  status = 200
+  force = true

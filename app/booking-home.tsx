@@ -12,9 +12,11 @@ import {
 } from "react";
 import {
   getAuth,
+  getRedirectResult,
   GoogleAuthProvider,
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   type User,
 } from "firebase/auth";
@@ -47,6 +49,11 @@ import {
   formatNearestAppointmentLabel,
   selectNearestAppointments,
 } from "../shared/appointment-label.mjs";
+import {
+  getGoogleSignInErrorMessage,
+  shouldFallbackToRedirect,
+  shouldUseRedirectSignIn,
+} from "../shared/auth-flow.mjs";
 import { isBookableStartTime } from "../shared/booking-time.mjs";
 
 type Availability = "high" | "medium" | "low" | "none";
@@ -2158,11 +2165,17 @@ export function BookingHome() {
   useEffect(() => {
     const firebaseAuth = getAuth(firebaseApp);
 
+    void getRedirectResult(firebaseAuth).catch((error: { code?: string }) => {
+      setAuthError(getGoogleSignInErrorMessage(error.code));
+      setIsSigningIn(false);
+    });
+
     return onAuthStateChanged(firebaseAuth, (user) => {
       setCurrentUser(user);
       setSessionContext(null);
       setSessionReady(!user);
       setAuthReady(true);
+      if (user) setAuthError("");
 
       if (user?.displayName) {
         setForm((current) => ({
@@ -3172,11 +3185,32 @@ export function BookingHome() {
       const firebaseAuth = getAuth(firebaseApp);
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
-      await signInWithPopup(firebaseAuth, provider);
+      const useRedirect = shouldUseRedirectSignIn(window.navigator);
+
+      if (useRedirect) {
+        await signInWithRedirect(firebaseAuth, provider);
+      } else {
+        await signInWithPopup(firebaseAuth, provider);
+      }
     } catch (error) {
       const errorCode = (error as { code?: string }).code;
-      if (errorCode !== "auth/popup-closed-by-user") {
-        setAuthError("Nie udało się zalogować. Spróbuj ponownie.");
+      if (shouldFallbackToRedirect(errorCode)) {
+        try {
+          const firebaseAuth = getAuth(firebaseApp);
+          const provider = new GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: "select_account" });
+          await signInWithRedirect(firebaseAuth, provider);
+          return;
+        } catch (redirectError) {
+          setAuthError(
+            getGoogleSignInErrorMessage((redirectError as { code?: string }).code),
+          );
+        }
+      } else if (
+        errorCode !== "auth/popup-closed-by-user" &&
+        errorCode !== "auth/cancelled-popup-request"
+      ) {
+        setAuthError(getGoogleSignInErrorMessage(errorCode));
       }
     } finally {
       setIsSigningIn(false);
