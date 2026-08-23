@@ -37,19 +37,27 @@ test("server-renders the BNB booking app shell", async () => {
 });
 
 test("keeps BNB metadata and production assets wired", async () => {
-  const [page, layout, manifest, serviceWorker] = await Promise.all([
+  const [page, layout, manifest, serviceWorker, notifications] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/notifications.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /BNB Barbershop \| Rezerwacja wizyty/);
   assert.match(page, /<BookingHome \/>/);
   assert.match(layout, /applicationName:\s*"BNB Barbershop"/);
-  assert.match(layout, /manifest:\s*"\/manifest\.webmanifest\?v=3"/);
+  assert.match(layout, /manifest:\s*"\/manifest\.webmanifest\?v=4"/);
+  assert.match(layout, /\/favicon\.svg\?v=4/);
+  assert.match(layout, /\/icons\/apple-touch-icon-v4\.png/);
   assert.match(manifest, /"name":\s*"BNB Barbershop"/);
+  assert.match(manifest, /\/icons\/icon-192-v4\.png/);
+  assert.match(manifest, /\/icons\/icon-512-v4\.png/);
+  assert.doesNotMatch(manifest, /maskable-512\.png/);
   assert.match(serviceWorker, /bnb-barbershop-v4/);
+  assert.match(serviceWorker, /badge:.*\/icons\/notification-b-v4\.png/);
+  assert.match(notifications, /badge:\s*"\/icons\/notification-b-v4\.png"/);
 });
 
 test("keeps the premium client booking flow and safety controls", async () => {

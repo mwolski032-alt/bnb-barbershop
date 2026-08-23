@@ -18,8 +18,8 @@ const showPushNotification = (payload = {}) => {
   const title = notification.title ?? data.title ?? "BNB Barbershop";
   const options = {
     body: notification.body ?? data.body ?? "Masz nowe powiadomienie.",
-    icon: notification.icon ?? data.icon ?? "/icons/icon-192.png",
-    badge: notification.badge ?? data.badge ?? "/icons/icon-192.png",
+    icon: notification.icon ?? data.icon ?? "/icons/icon-192-v4.png",
+    badge: notification.badge ?? data.badge ?? "/icons/notification-b-v4.png",
     tag: notification.tag ?? data.tag ?? "bnb-barbershop",
     data: {
       url: payload.fcmOptions?.link ?? data.link ?? "/",

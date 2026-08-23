@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   title: "BNB Barbershop | Rezerwacje",
   description: "Niezależna aplikacja do umawiania usług barberskich.",
   applicationName: "BNB Barbershop",
-  manifest: "/manifest.webmanifest?v=3",
+  manifest: "/manifest.webmanifest?v=4",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -27,11 +27,13 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/icons/icon-192.png?v=3", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512.png?v=3", sizes: "512x512", type: "image/png" },
+      { url: "/favicon.svg?v=4", type: "image/svg+xml" },
+      { url: "/icons/favicon-32-v4.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/icon-192-v4.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512-v4.png", sizes: "512x512", type: "image/png" },
     ],
-    shortcut: "/icons/icon-192.png?v=3",
-    apple: "/icons/apple-touch-icon.png?v=3",
+    shortcut: "/icons/favicon-32-v4.png",
+    apple: "/icons/apple-touch-icon-v4.png",
   },
 };
 
