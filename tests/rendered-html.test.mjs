@@ -272,6 +272,13 @@ test("moves the complete client directory into the shared appointments workspace
   assert.match(appointmentApi, /if \(!canAdminAccess\(admin, "schedule"\)\)[\s\S]*Brak uprawnień do umawiania wizyt/);
   assert.match(styles, /\.client-phone-button/);
   assert.match(styles, /\.phone-icon/);
+  assert.match(bookingHome, /<Phone className="phone-icon"/);
+  assert.match(bookingHome, /<MessageSquare className="sms-icon"/);
+  assert.match(bookingHome, /<Mail className="email-icon"/);
+  assert.match(bookingHome, /<Calendar className="small-calendar-icon"/);
+  assert.match(bookingHome, /<Clock className="workspace-tab-icon upcoming"/);
+  assert.doesNotMatch(styles, /\.phone-icon::/);
+  assert.doesNotMatch(styles, /\.workspace-tab-icon\.upcoming::/);
   assert.doesNotMatch(styles, /\.clients-icon/);
 });
 
@@ -473,7 +480,8 @@ test("separates active visits from the client directory", async () => {
   assert.match(bookingHome, /Aktywne wizyty/);
   assert.match(bookingHome, /clientWorkspaceTab === "directory"/);
   assert.match(styles, /\.client-workspace-tabs/);
-  assert.match(styles, /\.client-workspace-tab-icon\.appointments/);
+  assert.match(styles, /\.client-workspace-tab-icon/);
+  assert.match(bookingHome, /<Calendar[\s\S]*className="client-workspace-tab-icon appointments"/);
 });
 
 test("keeps the client barber selection and resilient profile photos", async () => {

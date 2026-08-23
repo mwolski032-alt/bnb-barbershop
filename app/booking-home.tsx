@@ -21,7 +21,7 @@ import {
   type User,
 } from "firebase/auth";
 import { onValue, ref, serverTimestamp, set, update } from "firebase/database";
-import { Bell } from "lucide-react";
+import { Bell, Calendar, Clock, Mail, MessageSquare, Phone, Users } from "lucide-react";
 
 import { firebaseApp, realtimeDb } from "./lib/firebase";
 import {
@@ -4086,7 +4086,7 @@ export function BookingHome() {
         aria-selected={adminWorkspaceTab === "upcoming"}
         onClick={() => setAdminWorkspaceTab("upcoming")}
       >
-        <span className="workspace-tab-icon upcoming" aria-hidden="true" />
+        <Clock className="workspace-tab-icon upcoming" aria-hidden="true" strokeWidth={2.1} />
         <span>Najbliższe</span>
         <small>{Math.min(4, upcomingAdminAppointments.length)}</small>
       </button>
@@ -4098,7 +4098,7 @@ export function BookingHome() {
           aria-selected={adminWorkspaceTab === "schedule"}
           onClick={() => setAdminWorkspaceTab("schedule")}
         >
-          <span className="workspace-tab-icon schedule" aria-hidden="true" />
+          <Calendar className="workspace-tab-icon schedule" aria-hidden="true" strokeWidth={2.1} />
           <span>Kalendarz</span>
         </button>
       ) : null}
@@ -4110,7 +4110,7 @@ export function BookingHome() {
           aria-selected={adminWorkspaceTab === "clients"}
           onClick={() => setAdminWorkspaceTab("clients")}
         >
-          <span className="workspace-tab-icon clients" aria-hidden="true" />
+          <Users className="workspace-tab-icon clients" aria-hidden="true" strokeWidth={2.1} />
           <span>Klienci</span>
         </button>
       ) : null}
@@ -4820,7 +4820,11 @@ export function BookingHome() {
                       setClientSearch("");
                     }}
                   >
-                    <span className="client-workspace-tab-icon appointments" aria-hidden="true" />
+                    <Calendar
+                      className="client-workspace-tab-icon appointments"
+                      aria-hidden="true"
+                      strokeWidth={2.1}
+                    />
                     Aktywne wizyty
                     <small>{activeAdminClientProfiles.length}</small>
                   </button>
@@ -4835,7 +4839,11 @@ export function BookingHome() {
                       setClientSearch("");
                     }}
                   >
-                    <span className="client-workspace-tab-icon directory" aria-hidden="true" />
+                    <Users
+                      className="client-workspace-tab-icon directory"
+                      aria-hidden="true"
+                      strokeWidth={2.1}
+                    />
                     Klienci
                     <small>{directoryAdminClientProfiles.length}</small>
                   </button>
@@ -4994,7 +5002,7 @@ export function BookingHome() {
                               aria-label={`Umów wizytę dla ${client.name}`}
                               title="Umów wizytę"
                             >
-                              <span className="small-calendar-icon" aria-hidden="true" />
+                              <Calendar className="small-calendar-icon" aria-hidden="true" strokeWidth={2.1} />
                             </button>
                           ) : null}
                           {hasPhone ? (
@@ -5004,11 +5012,11 @@ export function BookingHome() {
                               aria-label={`Zadzwoń do ${client.name}`}
                               title="Zadzwoń"
                             >
-                              <span className="phone-icon" aria-hidden="true" />
+                              <Phone className="phone-icon" aria-hidden="true" strokeWidth={2.1} />
                             </a>
                           ) : (
                             <span className="client-phone-button disabled" aria-label="Brak numeru telefonu">
-                              <span className="phone-icon" aria-hidden="true" />
+                              <Phone className="phone-icon" aria-hidden="true" strokeWidth={2.1} />
                             </span>
                           )}
                           {contactAppointment ? (
@@ -5019,7 +5027,7 @@ export function BookingHome() {
                               onClick={() => openSmsComposer(client, contactAppointment)}
                               aria-label={hasPhone ? `Napisz SMS do ${client.name}` : "Brak numeru telefonu"}
                             >
-                              <span className="sms-icon" aria-hidden="true" />
+                              <MessageSquare className="sms-icon" aria-hidden="true" strokeWidth={2.1} />
                             </button>
                           ) : hasPhone ? (
                             <a
@@ -5027,11 +5035,11 @@ export function BookingHome() {
                               href={`sms:+48${phoneDigits}`}
                               aria-label={`Napisz SMS do ${client.name}`}
                             >
-                              <span className="sms-icon" aria-hidden="true" />
+                              <MessageSquare className="sms-icon" aria-hidden="true" strokeWidth={2.1} />
                             </a>
                           ) : (
                             <span className="sms-button disabled" aria-label="Brak numeru telefonu">
-                              <span className="sms-icon" aria-hidden="true" />
+                              <MessageSquare className="sms-icon" aria-hidden="true" strokeWidth={2.1} />
                             </span>
                           )}
                           {client.email ? (
@@ -5040,11 +5048,11 @@ export function BookingHome() {
                               href={`mailto:${client.email}?subject=${encodeURIComponent("BNB Barbershop - Twoja wizyta")}`}
                               aria-label={`Napisz e-mail do ${client.name}`}
                             >
-                              <span className="email-icon" aria-hidden="true" />
+                              <Mail className="email-icon" aria-hidden="true" strokeWidth={2.1} />
                             </a>
                           ) : (
                             <span className="client-email-button disabled" aria-label="Brak adresu e-mail">
-                              <span className="email-icon" aria-hidden="true" />
+                              <Mail className="email-icon" aria-hidden="true" strokeWidth={2.1} />
                             </span>
                           )}
                           <button
@@ -6654,7 +6662,7 @@ export function BookingHome() {
             </button>
             <header className="client-creator-header">
               <span className="client-creator-icon" aria-hidden="true">
-                <span className="small-calendar-icon" />
+                <Calendar className="small-calendar-icon" strokeWidth={2.1} />
               </span>
               <div>
                 <p className="eyebrow">Nowa wizyta</p>
@@ -6753,7 +6761,7 @@ export function BookingHome() {
 
             <header className="client-creator-header">
               <span className="client-creator-icon" aria-hidden="true">
-                {clientDialog.mode === "create" ? "+" : <span className="small-calendar-icon" />}
+                {clientDialog.mode === "create" ? "+" : <Calendar className="small-calendar-icon" strokeWidth={2.1} />}
               </span>
               <div>
                 <p className="eyebrow">
@@ -7033,13 +7041,13 @@ export function BookingHome() {
                     type="button"
                     onClick={() => openManualClientBooking(selectedAdminClient)}
                   >
-                    <span className="small-calendar-icon" aria-hidden="true" />
+                    <Calendar className="small-calendar-icon" aria-hidden="true" strokeWidth={2.1} />
                     Umów
                   </button>
                 ) : null}
                 {getPhoneDigits(selectedAdminClient.phone).length === 9 ? (
                   <a className="call" href={`tel:+48${getPhoneDigits(selectedAdminClient.phone)}`}>
-                    <span className="phone-icon" aria-hidden="true" />
+                    <Phone className="phone-icon" aria-hidden="true" strokeWidth={2.1} />
                     Zadzwoń
                   </a>
                 ) : null}
@@ -7054,12 +7062,12 @@ export function BookingHome() {
                         if (appointment) openSmsComposer(selectedAdminClient, appointment);
                       }}
                     >
-                      <span className="sms-icon" aria-hidden="true" />
+                      <MessageSquare className="sms-icon" aria-hidden="true" strokeWidth={2.1} />
                       SMS
                     </button>
                   ) : (
                     <a href={`sms:+48${getPhoneDigits(selectedAdminClient.phone)}`}>
-                      <span className="sms-icon" aria-hidden="true" />
+                      <MessageSquare className="sms-icon" aria-hidden="true" strokeWidth={2.1} />
                       SMS
                     </a>
                   )
@@ -7068,7 +7076,7 @@ export function BookingHome() {
                   <a
                     href={`mailto:${selectedAdminClient.email}?subject=${encodeURIComponent("BNB Barbershop - Twoja wizyta")}`}
                   >
-                    <span className="email-icon" aria-hidden="true" />
+                    <Mail className="email-icon" aria-hidden="true" strokeWidth={2.1} />
                     E-mail
                   </a>
                 ) : null}
@@ -7311,7 +7319,7 @@ export function BookingHome() {
             </button>
             <div className="sms-composer-heading">
               <span className="sms-composer-icon" aria-hidden="true">
-                <span className="sms-icon" />
+                <MessageSquare className="sms-icon" strokeWidth={2.1} />
               </span>
               <div>
                 <p className="eyebrow">Nowa wiadomość</p>

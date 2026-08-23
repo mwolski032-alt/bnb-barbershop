@@ -2654,75 +2654,11 @@ h2 {
 }
 
 .workspace-tab-icon {
-  position: relative;
-  width: 1rem;
-  height: 1rem;
+  display: block;
+  width: 1.05rem;
+  height: 1.05rem;
   flex: 0 0 auto;
   color: currentColor;
-}
-
-.workspace-tab-icon.upcoming {
-  border: 1.5px solid currentColor;
-  border-radius: 50%;
-}
-
-.workspace-tab-icon.upcoming::before,
-.workspace-tab-icon.upcoming::after {
-  position: absolute;
-  top: 0.2rem;
-  left: 0.43rem;
-  width: 1.5px;
-  height: 0.3rem;
-  border-radius: 999px;
-  background: currentColor;
-  content: "";
-  transform-origin: bottom;
-}
-
-.workspace-tab-icon.upcoming::after {
-  transform: rotate(125deg);
-}
-
-.workspace-tab-icon.schedule {
-  border: 1.5px solid currentColor;
-  border-radius: 0.22rem;
-}
-
-.workspace-tab-icon.schedule::before {
-  position: absolute;
-  top: 0.24rem;
-  right: -1.5px;
-  left: -1.5px;
-  height: 1.5px;
-  background: currentColor;
-  content: "";
-}
-
-.workspace-tab-icon.clients {
-  background:
-    radial-gradient(circle at 38% 30%, currentColor 0 0.17rem, transparent 0.18rem),
-    radial-gradient(circle at 75% 38%, currentColor 0 0.12rem, transparent 0.13rem);
-}
-
-.workspace-tab-icon.clients::before,
-.workspace-tab-icon.clients::after {
-  position: absolute;
-  bottom: 0.08rem;
-  left: 0.08rem;
-  width: 0.58rem;
-  height: 0.34rem;
-  border: 1.5px solid currentColor;
-  border-bottom: 0;
-  border-radius: 999px 999px 0 0;
-  content: "";
-}
-
-.workspace-tab-icon.clients::after {
-  right: 0.02rem;
-  left: auto;
-  width: 0.38rem;
-  height: 0.27rem;
-  opacity: 0.72;
 }
 
 .nearest-appointments-view {
@@ -4281,40 +4217,11 @@ h2 {
 }
 
 .client-workspace-tab-icon {
-  position: relative;
-  width: 1rem;
-  height: 1rem;
+  display: block;
+  width: 1.05rem;
+  height: 1.05rem;
   flex: 0 0 auto;
-}
-
-.client-workspace-tab-icon.appointments {
-  border: 1.5px solid currentColor;
-  border-radius: 0.2rem;
-}
-
-.client-workspace-tab-icon.appointments::before,
-.client-workspace-tab-icon.appointments::after {
-  position: absolute;
-  top: -0.22rem;
-  width: 0.12rem;
-  height: 0.38rem;
-  border-radius: 999px;
-  background: currentColor;
-  content: "";
-}
-
-.client-workspace-tab-icon.appointments::before {
-  left: 0.2rem;
-}
-
-.client-workspace-tab-icon.appointments::after {
-  right: 0.2rem;
-}
-
-.client-workspace-tab-icon.directory {
-  border: 1.5px solid currentColor;
-  border-radius: 50% 50% 0.3rem 0.3rem;
-  clip-path: polygon(20% 0, 80% 0, 100% 100%, 0 100%);
+  color: currentColor;
 }
 
 .client-directory-tools {
@@ -4610,34 +4517,15 @@ h2 {
   cursor: pointer;
 }
 
-.small-calendar-icon {
-  position: relative;
+.small-calendar-icon,
+.sms-icon,
+.phone-icon,
+.email-icon {
   display: block;
-  width: 1.08rem;
-  height: 0.98rem;
-  border: 2px solid currentColor;
-  border-radius: 0.22rem;
-}
-
-.small-calendar-icon::before {
-  content: "";
-  position: absolute;
-  top: 0.2rem;
-  right: 0;
-  left: 0;
-  height: 2px;
-  background: currentColor;
-}
-
-.small-calendar-icon::after {
-  content: "";
-  position: absolute;
-  top: -0.28rem;
-  right: 0.16rem;
-  left: 0.16rem;
-  height: 0.32rem;
-  border-right: 2px solid currentColor;
-  border-left: 2px solid currentColor;
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 auto;
+  color: currentColor;
 }
 
 .client-card-button {
@@ -4719,102 +4607,6 @@ h2 {
 
 .modal-details span:nth-last-child(-n + 2) {
   border-bottom: 0;
-}
-
-.sms-icon {
-  position: relative;
-  display: block;
-  width: 1.2rem;
-  height: 0.9rem;
-  border: 2px solid currentColor;
-  border-radius: 0.32rem;
-}
-
-.sms-icon::before {
-  content: "";
-  position: absolute;
-  right: 0.18rem;
-  bottom: -0.34rem;
-  width: 0.42rem;
-  height: 0.42rem;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  background: transparent;
-  transform: rotate(45deg);
-}
-
-.sms-icon::after {
-  content: "";
-  position: absolute;
-  top: 0.22rem;
-  right: 0.22rem;
-  left: 0.22rem;
-  height: 2px;
-  border-radius: 999px;
-  background: currentColor;
-  box-shadow: 0 0.28rem 0 currentColor;
-}
-
-.phone-icon {
-  position: relative;
-  display: block;
-  width: 0.78rem;
-  height: 1.16rem;
-  border-bottom: 0.18rem solid currentColor;
-  border-left: 0.18rem solid currentColor;
-  border-radius: 0 0 0 0.62rem;
-  transform: rotate(-42deg);
-}
-
-.phone-icon::before,
-.phone-icon::after {
-  position: absolute;
-  left: -0.27rem;
-  width: 0.42rem;
-  height: 0.28rem;
-  border-radius: 0.16rem;
-  background: currentColor;
-  content: "";
-}
-
-.phone-icon::before {
-  top: -0.08rem;
-}
-
-.phone-icon::after {
-  bottom: -0.12rem;
-  transform: rotate(90deg);
-  transform-origin: center;
-}
-
-.email-icon {
-  position: relative;
-  width: 1.16rem;
-  height: 0.86rem;
-  border: 2px solid currentColor;
-  border-radius: 0.24rem;
-}
-
-.email-icon::before,
-.email-icon::after {
-  content: "";
-  position: absolute;
-  top: 0.08rem;
-  width: 0.7rem;
-  height: 2px;
-  background: currentColor;
-}
-
-.email-icon::before {
-  left: 0.03rem;
-  transform: rotate(34deg);
-  transform-origin: left center;
-}
-
-.email-icon::after {
-  right: 0.03rem;
-  transform: rotate(-34deg);
-  transform-origin: right center;
 }
 
 .clients-empty-state {
