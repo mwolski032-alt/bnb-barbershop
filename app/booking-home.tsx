@@ -24,25 +24,32 @@ import { onValue, ref, serverTimestamp, set, update } from "firebase/database";
 import {
   Apple,
   ArrowLeft,
+  BarChart3,
   Bell,
   BellRing,
   Bot,
   Calendar,
   CalendarClock,
+  CalendarDays,
+  CalendarPlus,
   CheckCircle2,
   ChevronRight,
+  CircleUserRound,
   Clock,
+  Clock3,
   Compass,
   Download,
   EllipsisVertical,
   Mail,
   MessageSquare,
   Phone,
+  Scissors,
   Share2,
   Smartphone,
   SquarePlus,
   Trash2,
   Users,
+  UsersRound,
   X,
 } from "lucide-react";
 
@@ -250,8 +257,8 @@ type ManualBookingDraft = {
 };
 
 type ClientDialogState =
-  | { mode: "create" }
-  | { mode: "book"; clientId: string };
+  | { mode: "create"; waitlistEntryId?: string }
+  | { mode: "book"; clientId: string; waitlistEntryId?: string };
 
 type SmsComposerState = {
   clientId: string;
@@ -483,6 +490,15 @@ const adminNavigationLabels: Record<AdminSection, string> = {
   profile: "Profil",
   team: "Zespół",
 };
+
+const adminNavigationIcons = {
+  schedule: CalendarDays,
+  analytics: BarChart3,
+  work: Clock3,
+  services: Scissors,
+  profile: CircleUserRound,
+  team: UsersRound,
+} satisfies Record<AdminSection, typeof CalendarDays>;
 
 const analyticsPeriodLabels: Record<AnalyticsPeriod, string> = {
   week: "Tydzień",
@@ -2165,6 +2181,9 @@ export function BookingHome() {
     clientDialog?.mode === "book"
       ? adminClientProfiles.find((client) => client.id === clientDialog.clientId) ?? null
       : null;
+  const manualBookingWaitlistEntry = clientDialog?.waitlistEntryId
+    ? allAdminWaitlistEntries.find((entry) => entry.id === clientDialog.waitlistEntryId) ?? null
+    : null;
   const manualBookingService =
     services.find((service) => service.id === manualBookingDraft.serviceId) ?? services[0];
   const manualBookingHasConflict = Boolean(
@@ -4332,6 +4351,58 @@ export function BookingHome() {
     setClientDialog({ mode: "book", clientId: client.id });
   };
 
+  const openWaitlistBooking = (entry: WaitlistEntry) => {
+    const phoneDigits = getPhoneDigits(entry.phone);
+    const normalizedEmail = entry.clientEmail.trim().toLocaleLowerCase("pl");
+    const matchingClient = adminClientProfiles.find((client) => {
+      const sameUser = client.appointments.some(
+        (appointment) => appointment.userId === entry.userId,
+      );
+      const samePhone =
+        phoneDigits.length === 9 && getPhoneDigits(client.phone) === phoneDigits;
+      const sameEmail =
+        Boolean(normalizedEmail) &&
+        client.email.trim().toLocaleLowerCase("pl") === normalizedEmail;
+      return sameUser || samePhone || sameEmail;
+    });
+    const todayKey = dayKey(today);
+    const suggestedTime =
+      entry.offer?.startTime ??
+      ({ any: "18:00", morning: "09:00", afternoon: "13:00", evening: "18:00" } as const)[
+        entry.timePreference
+      ];
+
+    setCalendarClientPickerOpen(false);
+    setSelectedAdminClientId(null);
+    setClientFeedback(null);
+    setManualBookingDraft({
+      serviceId: services.some((service) => service.id === entry.serviceId)
+        ? entry.serviceId
+        : services[0]?.id ?? "",
+      dateKey: entry.offer?.dateKey ?? (entry.dateFrom >= todayKey ? entry.dateFrom : todayKey),
+      startTime: suggestedTime,
+    });
+
+    if (matchingClient) {
+      setClientDialog({
+        mode: "book",
+        clientId: matchingClient.id,
+        waitlistEntryId: entry.id,
+      });
+      return;
+    }
+
+    const name = splitClientName(entry.clientName);
+    setClientDraft({
+      firstName: name.firstName,
+      lastName: name.lastName,
+      email: entry.clientEmail,
+      phone: formatPhoneNumber(phoneDigits),
+    });
+    setClientSaveMode("booking");
+    setClientDialog({ mode: "create", waitlistEntryId: entry.id });
+  };
+
   const handleSaveClientFromDialog = async () => {
     if (!clientDialog || !isAdmin || isClientSaving) return;
 
@@ -4421,6 +4492,7 @@ export function BookingHome() {
     const linkedUserId =
       clientRecords.find((record) => record.id === matchingClient?.id)?.userId ||
       matchingClient?.appointments.find((appointment) => appointment.userId)?.userId ||
+      manualBookingWaitlistEntry?.userId ||
       undefined;
     const name = splitClientName(fullName);
     const now = getTimestamp();
@@ -5175,6 +5247,17 @@ export function BookingHome() {
                             ) : null}
                           </div>
                           <div className="admin-waitlist-actions">
+                            {canAccessAdminSchedule ? (
+                              <button
+                                className="admin-waitlist-book"
+                                type="button"
+                                onClick={() => openWaitlistBooking(entry)}
+                                aria-label={`Umów wizytę dla ${entry.clientName}`}
+                              >
+                                <CalendarPlus aria-hidden="true" />
+                                <span>Umów</span>
+                              </button>
+                            ) : null}
                             {phoneDigits.length === 9 ? (
                               <>
                                 <a href={`tel:+48${phoneDigits}`} aria-label={`Zadzwoń do ${entry.clientName}`}>
@@ -6678,20 +6761,27 @@ export function BookingHome() {
             aria-label="Sekcje admina"
           >
             <span className="admin-nav-pill" aria-hidden="true" />
-            {visibleAdminSections.map((section) => (
-              <button
-                className={adminSection === section ? "active" : ""}
-                key={section}
-                type="button"
-                onClick={() => {
-                  setAdminSection(section);
-                  if (section === "schedule") setAdminWorkspaceTab("upcoming");
-                }}
-              >
-                <span className={`admin-nav-icon ${section}-icon`} aria-hidden="true" />
-                <span>{adminNavigationLabels[section]}</span>
-              </button>
-            ))}
+            {visibleAdminSections.map((section) => {
+              const NavigationIcon = adminNavigationIcons[section];
+              return (
+                <button
+                  className={adminSection === section ? "active" : ""}
+                  key={section}
+                  type="button"
+                  onClick={() => {
+                    setAdminSection(section);
+                    if (section === "schedule") setAdminWorkspaceTab("upcoming");
+                  }}
+                >
+                  <NavigationIcon
+                    className="admin-nav-icon"
+                    aria-hidden="true"
+                    strokeWidth={1.9}
+                  />
+                  <span>{adminNavigationLabels[section]}</span>
+                </button>
+              );
+            })}
           </nav>
             </>
           )}

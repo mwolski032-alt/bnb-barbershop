@@ -165,12 +165,15 @@ test("keeps the client and admin waitlist workflow visible and actionable", asyn
   assert.match(bookingHome, /Powiadom mnie o terminie/);
   assert.match(bookingHome, /Lista rezerwowa/);
   assert.match(bookingHome, /acceptWaitlistOffer/);
+  assert.match(bookingHome, /openWaitlistBooking/);
+  assert.match(bookingHome, />Umów</);
   assert.match(appointmentsApi, /"join_waitlist"/);
   assert.match(appointmentsApi, /hasBlockingWaitlistOffer/);
   assert.match(notificationService, /waitlist_slot_open/);
   assert.match(worker, /advanceExpiredWaitlistOffers/);
   assert.match(styles, /\.waitlist-callout/);
   assert.match(styles, /\.admin-waitlist-row/);
+  assert.match(styles, /\.admin-waitlist-book/);
   assert.match(styles, /\.waitlist-modal/);
 });
 
@@ -362,6 +365,8 @@ test("keeps settlement-driven admin analytics", async () => {
   assert.match(styles, /\.analytics-kpi-grid/);
   assert.match(styles, /\.analytics-chart/);
   assert.match(bookingHome, /visibleAdminSections\.map\(\(section\) =>/);
+  assert.match(bookingHome, /adminNavigationIcons/);
+  assert.match(bookingHome, /NavigationIcon/);
   assert.match(styles, /repeat\(var\(--admin-nav-items, 6\), minmax\(0, 1fr\)\)/);
 });
 

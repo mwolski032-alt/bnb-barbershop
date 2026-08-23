@@ -3568,6 +3568,24 @@ h2 {
   color: #ffaaa4;
 }
 
+.admin-waitlist-actions .admin-waitlist-book {
+  grid-auto-flow: column;
+  gap: 0.38rem;
+  width: auto;
+  min-width: 4.5rem;
+  padding: 0 0.72rem;
+  border-radius: 999px;
+  background: rgba(76, 141, 255, 0.16);
+  color: #b9d1ff;
+  font-size: 0.68rem;
+  font-weight: 820;
+}
+
+.admin-waitlist-actions .admin-waitlist-book:hover {
+  background: rgba(76, 141, 255, 0.24);
+  color: #ffffff;
+}
+
 .admin-waitlist-actions button:disabled {
   cursor: wait;
   opacity: 0.45;
@@ -7964,179 +7982,20 @@ h2 {
 }
 
 .admin-nav-icon {
-  position: relative;
   display: block;
-  width: 1.08rem;
-  height: 1.08rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 auto;
   color: currentColor;
-  opacity: 0.9;
+  opacity: 0.94;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 220ms ease, opacity 220ms ease;
 }
 
-.schedule-icon {
-  border: 0.11rem solid currentColor;
-  border-radius: 0.24rem;
-}
-
-.schedule-icon::before {
-  content: "";
-  position: absolute;
-  top: 0.25rem;
-  right: -0.11rem;
-  left: -0.11rem;
-  height: 0.11rem;
-  background: currentColor;
-}
-
-.schedule-icon::after {
-  content: "";
-  position: absolute;
-  top: 0.52rem;
-  left: 0.25rem;
-  width: 0.12rem;
-  height: 0.12rem;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow:
-    0.3rem 0 currentColor,
-    0 0.28rem currentColor,
-    0.3rem 0.28rem currentColor;
-}
-
-.analytics-icon {
-  border-bottom: 0.11rem solid currentColor;
-  border-left: 0.11rem solid currentColor;
-  border-radius: 0 0 0 0.16rem;
-}
-
-.analytics-icon::before {
-  position: absolute;
-  bottom: 0.11rem;
-  left: 0.16rem;
-  width: 0.13rem;
-  height: 0.28rem;
-  border-radius: 999px 999px 0 0;
-  background: currentColor;
-  box-shadow:
-    0.27rem -0.2rem currentColor,
-    0.54rem -0.42rem currentColor;
-  content: "";
-}
-
-.work-icon {
-  border: 0.11rem solid currentColor;
-  border-radius: 50%;
-}
-
-.work-icon::before,
-.work-icon::after {
-  content: "";
-  position: absolute;
-  background: currentColor;
-  border-radius: 999px;
-  transform-origin: bottom center;
-}
-
-.work-icon::before {
-  top: 0.22rem;
-  left: 0.46rem;
-  width: 0.11rem;
-  height: 0.34rem;
-}
-
-.work-icon::after {
-  top: 0.48rem;
-  left: 0.47rem;
-  width: 0.32rem;
-  height: 0.11rem;
-}
-
-.services-icon {
-  background:
-    radial-gradient(circle at 24% 76%, transparent 0 0.12rem, currentColor 0.13rem 0.23rem, transparent 0.24rem),
-    radial-gradient(circle at 76% 76%, transparent 0 0.12rem, currentColor 0.13rem 0.23rem, transparent 0.24rem);
-}
-
-.services-icon::before,
-.services-icon::after {
-  content: "";
-  position: absolute;
-  top: 0.04rem;
-  left: 0.48rem;
-  width: 0.11rem;
-  height: 0.72rem;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-.services-icon::before {
-  transform: rotate(42deg);
-}
-
-.services-icon::after {
-  transform: rotate(-42deg);
-}
-
-.profile-icon {
-  border: 0.11rem solid currentColor;
-  border-radius: 50%;
-}
-
-.profile-icon::before {
-  position: absolute;
-  top: 0.15rem;
-  left: 50%;
-  width: 0.28rem;
-  height: 0.28rem;
-  border-radius: 50%;
-  background: currentColor;
-  content: "";
-  transform: translateX(-50%);
-}
-
-.profile-icon::after {
-  position: absolute;
-  right: 0.16rem;
-  bottom: 0.13rem;
-  left: 0.16rem;
-  height: 0.34rem;
-  border-radius: 999px 999px 0.22rem 0.22rem;
-  background: currentColor;
-  content: "";
-}
-
-.team-icon {
-  position: relative;
-  display: block;
-  width: 1.08rem;
-  height: 1.08rem;
-  background:
-    radial-gradient(circle at 35% 28%, currentColor 0 0.2rem, transparent 0.21rem),
-    radial-gradient(circle at 76% 38%, currentColor 0 0.15rem, transparent 0.16rem);
-}
-
-.team-icon::before,
-.team-icon::after {
-  position: absolute;
-  border: 0.11rem solid currentColor;
-  border-bottom: 0;
-  content: "";
-}
-
-.team-icon::before {
-  right: 0.34rem;
-  bottom: 0.08rem;
-  left: 0.06rem;
-  height: 0.4rem;
-  border-radius: 999px 999px 0 0;
-}
-
-.team-icon::after {
-  right: 0;
-  bottom: 0.12rem;
-  width: 0.4rem;
-  height: 0.3rem;
-  border-radius: 999px 999px 0 0;
-  opacity: 0.72;
+.admin-bottom-nav button.active .admin-nav-icon {
+  opacity: 1;
+  transform: translateY(-0.02rem);
 }
 
 .admin-bottom-nav button:active {
@@ -9576,8 +9435,8 @@ h2 {
   }
 
   .admin-nav-icon {
-    width: 0.92rem;
-    height: 0.92rem;
+    width: 1.05rem;
+    height: 1.05rem;
   }
 
   .admin-nav-pill {
