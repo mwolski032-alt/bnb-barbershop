@@ -3619,7 +3619,7 @@ export function BookingHome() {
 
   const declineAdminAppointment = async (appointmentId: string) => {
     const appointment = adminAppointments.find((item) => item.id === appointmentId);
-    if (!window.confirm(`Odmówić wizytę ${appointment?.clientName ?? "klienta"}?`)) return;
+    if (!window.confirm(`Odwołać wizytę ${appointment?.clientName ?? "klienta"}?`)) return;
 
     if (!appointment) return;
     await runAppointmentOperation(
@@ -4440,6 +4440,16 @@ export function BookingHome() {
                                 onClick={() => openSmsComposer(client, appointment)}
                               >
                                 SMS
+                              </button>
+                            ) : null}
+                            {canAccessAdminSchedule ? (
+                              <button
+                                className="cancel"
+                                type="button"
+                                onClick={() => void declineAdminAppointment(appointment.id)}
+                                aria-label={`Odwołaj wizytę ${appointment.clientName} o ${appointment.startTime}`}
+                              >
+                                Odwołaj
                               </button>
                             ) : null}
                           </div>

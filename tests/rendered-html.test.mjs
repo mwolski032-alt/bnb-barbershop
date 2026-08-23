@@ -241,9 +241,14 @@ test("merges schedule and clients into a permission-aware nearest appointments w
   assert.match(bookingHome, /<strong>\{nearestAppointmentLabel\}<\/strong>/);
   assert.match(bookingHome, /canAccessAdminSchedule && settlementAvailable/);
   assert.match(bookingHome, /canAccessAdminClients && client/);
+  assert.match(
+    bookingHome,
+    /className="cancel"[\s\S]*declineAdminAppointment\(appointment\.id\)[\s\S]*Odwołaj/,
+  );
   assert.match(styles, /\.admin-workspace-tabs/);
   assert.match(styles, /\.nearest-appointment-card\.primary/);
   assert.match(styles, /\.nearest-appointment-actions/);
+  assert.match(styles, /\.nearest-appointment-actions button\.cancel/);
 });
 
 test("moves the complete client directory into the shared appointments workspace", async () => {
