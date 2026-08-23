@@ -37,12 +37,13 @@ test("server-renders the BNB booking app shell", async () => {
 });
 
 test("keeps BNB metadata and production assets wired", async () => {
-  const [page, layout, manifest, serviceWorker, notifications] = await Promise.all([
+  const [page, layout, manifest, serviceWorker, notifications, netlifyConfig] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/notifications.ts", import.meta.url), "utf8"),
+    readFile(new URL("../netlify.toml", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /BNB Barbershop \| Rezerwacja wizyty/);
@@ -58,6 +59,7 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(serviceWorker, /bnb-barbershop-v4/);
   assert.match(serviceWorker, /badge:.*\/icons\/notification-b-v4\.png/);
   assert.match(notifications, /badge:\s*"\/icons\/notification-b-v4\.png"/);
+  assert.match(netlifyConfig, /Content-Type\s*=\s*"application\/manifest\+json; charset=UTF-8"/);
 });
 
 test("keeps the premium client booking flow and safety controls", async () => {
