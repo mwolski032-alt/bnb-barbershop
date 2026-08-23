@@ -12,6 +12,7 @@ export const tokens = {
   kacper: "kacper-id-token",
   clientA: "client-a-id-token",
   clientB: "client-b-id-token",
+  unverifiedClient: "unverified-client-id-token",
 };
 
 const databaseUrl = "https://mock-role-workflows.firebaseio.test";
@@ -159,11 +160,26 @@ const writePath = (database, path, value) => {
 };
 
 const tokenUsers = {
-  [tokens.owner]: { localId: ownerUid, email: "owner@example.com" },
-  [tokens.mateusz]: { localId: mateuszUid, email: "mateusz@example.com" },
-  [tokens.kacper]: { localId: kacperUid, email: "kacper@example.com" },
-  [tokens.clientA]: { localId: clientAUid, email: "client-a@example.com" },
-  [tokens.clientB]: { localId: clientBUid, email: "client-b@example.com" },
+  [tokens.owner]: { localId: ownerUid, email: "owner@example.com", emailVerified: true },
+  [tokens.mateusz]: { localId: mateuszUid, email: "mateusz@example.com", emailVerified: true },
+  [tokens.kacper]: { localId: kacperUid, email: "kacper@example.com", emailVerified: true },
+  [tokens.clientA]: {
+    localId: clientAUid,
+    email: "client-a@example.com",
+    emailVerified: true,
+    displayName: "Klient A",
+  },
+  [tokens.clientB]: {
+    localId: clientBUid,
+    email: "client-b@example.com",
+    emailVerified: true,
+    displayName: "Klient B",
+  },
+  [tokens.unverifiedClient]: {
+    localId: "unverified-client-uid",
+    email: "unverified@example.com",
+    emailVerified: false,
+  },
 };
 
 const clone = (value) => structuredClone(value);

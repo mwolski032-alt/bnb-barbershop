@@ -13,6 +13,7 @@ import {
   isFirebaseKeySafe,
   normalizeAppointmentRecord,
   normalizeClientRecord,
+  normalizeEmail,
   upsertCanonicalClient,
 } from "../../shared/data-model.mjs";
 import {
@@ -413,8 +414,174 @@ const mutateAppointmentOperation = async (accessToken, operation, action, user, 
     };
   });
 
-const getAppointmentData = async (user, admin, accessToken) => {
-  const database = (await readDatabase("", accessToken)) ?? {};
+const linkVerifiedClientAccount = async (user, accessToken) => {
+  const verifiedEmail = normalizeEmail(user.email);
+  if (!user.emailVerified || !verifiedEmail || !isFirebaseKeySafe(user.uid)) {
+    return { linked: false };
+  }
+
+  return mutateDatabaseRoot(accessToken, (database) => {
+    const normalizedClients = Object.fromEntries(
+      Object.entries(database.clients ?? {}).map(([id, client]) => [
+        id,
+        normalizeClientRecord(id, client),
+      ]),
+    );
+    const emailClientEntries = Object.entries(normalizedClients).filter(
+      ([, client]) => normalizeEmail(client.email) === verifiedEmail,
+    );
+    const accountClient = normalizedClients[user.uid];
+    const matchingClientIds = new Set(emailClientEntries.map(([id]) => id));
+    if (accountClient) matchingClientIds.add(user.uid);
+
+    const normalizedAppointments = Object.entries(database.appointments ?? {}).map(([id, raw]) => [
+      id,
+      normalizeAppointment(id, raw),
+    ]);
+    const relatedAppointments = normalizedAppointments.filter(
+      ([, appointment]) =>
+        appointment.userId === user.uid ||
+        matchingClientIds.has(appointment.clientId) ||
+        normalizeEmail(appointment.clientEmail) === verifiedEmail,
+    );
+    const relatedWaitlistEntries = Object.entries(database.waitlistEntries ?? {})
+      .filter(([, entry]) => ["waiting", "offered"].includes(entry?.status))
+      .map(([id, entry]) => [id, normalizeWaitlistEntry(id, entry)])
+      .filter(
+        ([, entry]) =>
+          entry.userId === user.uid || normalizeEmail(entry.clientEmail) === verifiedEmail,
+      );
+
+    const hasIdentityToLink =
+      emailClientEntries.some(([id, client]) => id !== user.uid || client.userId !== user.uid) ||
+      relatedAppointments.some(
+        ([, appointment]) =>
+          appointment.userId !== user.uid || appointment.clientId !== user.uid,
+      ) ||
+      relatedWaitlistEntries.some(([, entry]) => entry.userId !== user.uid);
+    if (!hasIdentityToLink) return { database, linked: false, idempotent: true };
+
+    const conflictingUserId = [
+      ...emailClientEntries.map(([, client]) => client.userId),
+      ...relatedAppointments.map(([, appointment]) => appointment.userId),
+      ...relatedWaitlistEntries.map(([, entry]) => entry.userId),
+    ].find((userId) => userId && userId !== user.uid);
+    if (conflictingUserId) {
+      return { database, linked: false, idempotent: true };
+    }
+
+    const sourceClient =
+      accountClient ||
+      emailClientEntries
+        .map(([, client]) => client)
+        .sort(
+          (first, second) =>
+            (Number(first.createdAt) || Number.MAX_SAFE_INTEGER) -
+            (Number(second.createdAt) || Number.MAX_SAFE_INTEGER),
+        )[0];
+    const sourceAppointment = relatedAppointments.map(([, appointment]) => appointment)[0];
+    const fallbackName = cleanText(
+      sourceAppointment?.clientName || user.displayName || verifiedEmail.split("@")[0],
+      120,
+    )
+      .split(/\s+/)
+      .filter(Boolean);
+    const barberIds = {
+      ...(accountClient?.barberIds ?? {}),
+      ...Object.fromEntries(
+        relatedAppointments
+          .map(([, appointment]) => appointment.barberId)
+          .filter(Boolean)
+          .map((barberId) => [barberId, true]),
+      ),
+    };
+    const now = Date.now();
+    const clientResult = upsertCanonicalClient(
+      database.clients ?? {},
+      user.uid,
+      {
+        ...(accountClient ?? {}),
+        firstName: accountClient?.firstName || sourceClient?.firstName || fallbackName[0] || "",
+        lastName:
+          accountClient?.lastName || sourceClient?.lastName || fallbackName.slice(1).join(" "),
+        email: verifiedEmail,
+        phone: accountClient?.phone || sourceClient?.phone || sourceAppointment?.phone || "",
+        photoUrl:
+          cleanText(user.photoUrl, 500000) ||
+          accountClient?.photoUrl ||
+          sourceClient?.photoUrl ||
+          sourceAppointment?.clientPhotoUrl ||
+          "",
+        userId: user.uid,
+        barberIds,
+        createdAt:
+          Number(accountClient?.createdAt) || Number(sourceClient?.createdAt) || now,
+        updatedAt: now,
+      },
+      { verifiedEmail, verifiedUserId: user.uid },
+    );
+    if (clientResult.error) return clientResult;
+
+    database.clients = clientResult.clients;
+    database.appointments ??= {};
+    const linkOperationId = `link_account:${user.uid}`;
+    let linkedAppointments = 0;
+    for (const [appointmentId, appointment] of normalizedAppointments) {
+      const canonicalClientId = clientResult.aliases[appointment.clientId];
+      const belongsToAccount =
+        appointment.userId === user.uid ||
+        Boolean(canonicalClientId) ||
+        normalizeEmail(appointment.clientEmail) === verifiedEmail;
+      if (!belongsToAccount) continue;
+
+      const next = {
+        ...appointment,
+        clientId: clientResult.canonicalId,
+        userId: user.uid,
+        clientEmail: verifiedEmail,
+        clientPhotoUrl: appointment.clientPhotoUrl || cleanText(user.photoUrl, 500000),
+      };
+      if (
+        next.clientId === appointment.clientId &&
+        next.userId === appointment.userId &&
+        next.clientEmail === appointment.clientEmail &&
+        next.clientPhotoUrl === appointment.clientPhotoUrl
+      ) {
+        continue;
+      }
+      database.appointments[appointmentId] = updateAppointmentVersion(next, linkOperationId);
+      linkedAppointments += 1;
+    }
+
+    database.waitlistEntries ??= {};
+    let linkedWaitlistEntries = 0;
+    for (const [entryId, entry] of relatedWaitlistEntries) {
+      if (entry.userId === user.uid) continue;
+      database.waitlistEntries[entryId] = {
+        ...entry,
+        userId: user.uid,
+        clientEmail: verifiedEmail,
+        version: Math.max(1, Number(entry.version) || 1) + 1,
+        updatedAt: now,
+      };
+      linkedWaitlistEntries += 1;
+    }
+
+    const syncRevision = (Number(database.appointmentSync?.revision) || 0) + 1;
+    database.appointmentSync = { revision: syncRevision, updatedAt: now };
+    return {
+      database,
+      linked: true,
+      client: clientResult.client,
+      linkedAppointments,
+      linkedWaitlistEntries,
+      syncRevision,
+    };
+  });
+};
+
+const getAppointmentData = async (user, admin, accessToken, databaseSnapshot = null) => {
+  const database = databaseSnapshot ?? (await readDatabase("", accessToken)) ?? {};
   const rawTeam = database.team?.barbers ?? {};
   const teamMembers = Object.entries(rawTeam)
     .filter(([, member]) => admin.isOwner || (member?.active === true && member?.userId))
@@ -918,7 +1085,11 @@ const handler = async (request) => {
     const admin = await getAdminContext(user, accessToken);
 
     if (request.method === "GET") {
-      return jsonResponse({ ok: true, ...(await getAppointmentData(user, admin, accessToken)) });
+      const identityLink = await linkVerifiedClientAccount(user, accessToken);
+      return jsonResponse({
+        ok: true,
+        ...(await getAppointmentData(user, admin, accessToken, identityLink.database)),
+      });
     }
     if (request.method !== "POST") return jsonResponse({ ok: false, error: "Method not allowed." }, 405);
 

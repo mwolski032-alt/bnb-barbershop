@@ -316,6 +316,36 @@ test("runtime client upsert keeps authenticated family members sharing a phone s
   assert.equal(result.clients["client-b"].email, "anna@example.com");
 });
 
+test("verified account merge trusts the signed-in email even when a manual phone was mistyped", () => {
+  const result = upsertCanonicalClient(
+    {
+      manual: {
+        id: "manual",
+        firstName: "Jan",
+        lastName: "Kowalski",
+        email: "jan@example.com",
+        phone: "500600700",
+        barberIds: { mateusz: true },
+      },
+    },
+    "client-uid",
+    {
+      firstName: "Jan",
+      lastName: "Kowalski",
+      email: "jan@example.com",
+      phone: "600700800",
+      userId: "client-uid",
+      barberIds: { kacper: true },
+    },
+    { verifiedEmail: "jan@example.com", verifiedUserId: "client-uid" },
+  );
+
+  assert.equal(result.error, undefined);
+  assert.deepEqual(Object.keys(result.clients), ["client-uid"]);
+  assert.equal(result.client.userId, "client-uid");
+  assert.deepEqual(result.client.barberIds, { mateusz: true, kacper: true });
+});
+
 test("integrity validation rejects duplicated account assignments and invalid availability ranges", () => {
   const database = canonicalBase();
   database.team.barbers.kacper.userId = database.team.barbers.mateusz.userId;

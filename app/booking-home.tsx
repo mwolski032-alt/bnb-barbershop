@@ -7809,11 +7809,12 @@ export function BookingHome() {
                     />
                   </label>
                   <label>
-                    <span>E-mail <small>opcjonalnie</small></span>
+                    <span>E-mail <small>łączy konto Google</small></span>
                     <input
                       type="email"
                       autoComplete="email"
                       inputMode="email"
+                      required
                       value={clientDraft.email}
                       onChange={(event) =>
                         setClientDraft((current) => ({ ...current, email: event.target.value }))
@@ -7837,6 +7838,10 @@ export function BookingHome() {
                       placeholder="500 000 000"
                     />
                   </label>
+                  <p className="client-account-link-hint">
+                    Po pierwszym logowaniu tym adresem Google klient zobaczy wspólną historię
+                    wizyt, a kolejne powiadomienia trafią do jego konta.
+                  </p>
                 </div>
               </>
             ) : (

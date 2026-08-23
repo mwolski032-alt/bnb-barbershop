@@ -99,6 +99,7 @@ export const verifyRequestUser = async (request) => {
   return {
     uid: String(user.localId),
     email: String(user.email ?? ""),
+    emailVerified: user.emailVerified === true,
     displayName: String(user.displayName ?? ""),
     photoUrl: String(user.photoUrl ?? ""),
   };

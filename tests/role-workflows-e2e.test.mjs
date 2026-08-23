@@ -53,6 +53,100 @@ test("E2E roles: client, Mateusz, Kacper and owner see only their API calendars"
   assert.equal(JSON.stringify(client.occupancy).includes("client-b@example.com"), false);
 });
 
+test("E2E Google identity: login links manual visits and routes later notifications to the client", async () => {
+  fixture.reset();
+  fixture.database.clients["manual-google-client"] = {
+    id: "manual-google-client",
+    firstName: "Klient",
+    lastName: "A",
+    email: "CLIENT-A@example.com",
+    phone: "511222333",
+    barberIds: { mateusz: true },
+  };
+  fixture.database.appointments["manual-google-visit"] = {
+    id: "manual-google-visit",
+    barberId: "mateusz",
+    clientId: "manual-google-client",
+    serviceId: "cut",
+    clientName: "Klient A",
+    clientEmail: "client-a@example.com",
+    phone: "511222333",
+    serviceName: "Strzyzenie",
+    price: "50 zl",
+    dateKey: "2099-01-10",
+    startTime: "12:00",
+    durationMinutes: 60,
+    color: "blue",
+    status: "confirmed",
+    version: 1,
+  };
+
+  const loginResponse = await request(tokens.clientA, "GET");
+  const loginResult = await loginResponse.json();
+
+  assert.equal(loginResponse.status, 200, JSON.stringify(loginResult));
+  assert.deepEqual(
+    loginResult.clientAppointments.map(({ id }) => id).sort(),
+    ["manual-google-visit", "mateusz-upcoming"],
+  );
+  assert.equal(fixture.database.clients["manual-google-client"], undefined);
+  assert.equal(fixture.database.clients[clientAUid].userId, clientAUid);
+  assert.equal(fixture.database.appointments["manual-google-visit"].clientId, clientAUid);
+  assert.equal(fixture.database.appointments["manual-google-visit"].userId, clientAUid);
+  assert.equal(fixture.database.appointments["manual-google-visit"].version, 2);
+
+  const operationId = "admin-reschedule-linked-google-client";
+  const rescheduleResponse = await request(tokens.mateusz, "POST", {
+    action: "reschedule_admin",
+    operationId,
+    expectedVersion: 2,
+    appointmentId: "manual-google-visit",
+    dateKey: "2099-01-10",
+    startTime: "14:00",
+  });
+
+  assert.equal(rescheduleResponse.status, 200, await rescheduleResponse.text());
+  assert.equal(fixture.database.appointmentOperations[operationId].appointment.userId, clientAUid);
+  assert.equal(fixture.database.notificationOutbox[operationId].userId, clientAUid);
+});
+
+test("E2E identity safety: an unverified email cannot claim a manual client card", async () => {
+  fixture.reset();
+  fixture.database.clients["unverified-manual-client"] = {
+    id: "unverified-manual-client",
+    firstName: "Niezweryfikowany",
+    lastName: "Klient",
+    email: "unverified@example.com",
+    phone: "511222333",
+    barberIds: { mateusz: true },
+  };
+  fixture.database.appointments["unverified-manual-visit"] = {
+    id: "unverified-manual-visit",
+    barberId: "mateusz",
+    clientId: "unverified-manual-client",
+    serviceId: "cut",
+    clientName: "Niezweryfikowany Klient",
+    clientEmail: "unverified@example.com",
+    phone: "511222333",
+    serviceName: "Strzyzenie",
+    price: "50 zl",
+    dateKey: "2099-01-10",
+    startTime: "12:00",
+    durationMinutes: 60,
+    color: "blue",
+    status: "confirmed",
+    version: 1,
+  };
+
+  const response = await request(tokens.unverifiedClient, "GET");
+  const result = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(result.clientAppointments, []);
+  assert.equal(fixture.database.clients["unverified-manual-client"].userId, undefined);
+  assert.equal(fixture.database.appointments["unverified-manual-visit"].userId, undefined);
+});
+
 test("E2E client directory: each barber receives only assigned clients while owner sees both", async () => {
   fixture.reset();
 

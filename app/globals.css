@@ -5927,6 +5927,19 @@ h2 {
   font-weight: 700;
 }
 
+.client-account-link-hint {
+  grid-column: 1 / -1;
+  margin: -0.1rem 0 0;
+  padding: 0.65rem 0.72rem;
+  border: 1px solid rgba(76, 141, 255, 0.2);
+  border-radius: 0.72rem;
+  background: rgba(76, 141, 255, 0.08);
+  color: #9fb2d1;
+  font-size: 0.68rem;
+  font-weight: 720;
+  line-height: 1.45;
+}
+
 .client-form-grid input,
 .manual-booking-grid input,
 .manual-booking-grid select {

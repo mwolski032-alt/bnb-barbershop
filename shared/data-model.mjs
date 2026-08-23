@@ -163,7 +163,7 @@ const mergeClientRecords = (canonicalId, records) => {
   };
 };
 
-export const upsertCanonicalClient = (clients = {}, requestedId, value = {}) => {
+export const upsertCanonicalClient = (clients = {}, requestedId, value = {}, options = {}) => {
   const clientId = cleanText(requestedId, 120);
   if (!isFirebaseKeySafe(clientId)) {
     return { error: "Nieprawidłowy identyfikator klienta." };
@@ -178,7 +178,7 @@ export const upsertCanonicalClient = (clients = {}, requestedId, value = {}) => 
   });
   const group = findDuplicateClientGroups(normalizedClients).find((ids) => ids.includes(clientId)) ?? [clientId];
   const records = group.map((id) => ({ id, client: normalizedClients[id] }));
-  const mergeError = validateClientGroupCanMerge(records);
+  const mergeError = validateClientGroupCanMerge(records, options);
   if (mergeError) return { error: `Nie można bezpiecznie połączyć klientów: ${mergeError}.` };
 
   const canonicalId = chooseCanonicalClientId(records);
@@ -247,13 +247,21 @@ const findDuplicateClientGroups = (clients) => {
   return [...groups.values()].filter((group) => group.length > 1);
 };
 
-const validateClientGroupCanMerge = (records) => {
+const validateClientGroupCanMerge = (records, options = {}) => {
   const userIds = [...new Set(records.map(({ client }) => client.userId).filter(Boolean))];
   if (userIds.length > 1) return "powiązane rekordy mają różne userId";
 
   const phones = [...new Set(records.map(({ client }) => normalizePhone(client.phone)).filter(Boolean))];
   const emails = [...new Set(records.map(({ client }) => normalizeEmail(client.email)).filter(Boolean))];
+  const verifiedEmail = normalizeEmail(options.verifiedEmail);
+  const verifiedUserId = cleanText(options.verifiedUserId, 128);
+  const isVerifiedAccountMerge =
+    Boolean(verifiedEmail && verifiedUserId) &&
+    emails.length === 1 &&
+    emails[0] === verifiedEmail &&
+    userIds.every((userId) => userId === verifiedUserId);
   if (phones.length > 1 && emails.length === 1) {
+    if (isVerifiedAccountMerge) return "";
     return "rekordy łączy wyłącznie e-mail, ale mają różne numery telefonu";
   }
   return "";

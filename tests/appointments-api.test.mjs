@@ -130,10 +130,14 @@ globalThis.fetch = async (input, options = {}) => {
   if (url.startsWith("https://identitytoolkit.googleapis.com/v1/accounts:lookup")) {
     const { idToken } = JSON.parse(options.body);
     if (idToken === "valid-client-token") {
-      return Response.json({ users: [{ localId: "client-uid", email: "client@example.com" }] });
+      return Response.json({
+        users: [{ localId: "client-uid", email: "client@example.com", emailVerified: true }],
+      });
     }
     if (idToken === "valid-barber-token") {
-      return Response.json({ users: [{ localId: mateuszUid, email: "barber@example.com" }] });
+      return Response.json({
+        users: [{ localId: mateuszUid, email: "barber@example.com", emailVerified: true }],
+      });
     }
     return new Response("Unauthorized", { status: 401 });
   }

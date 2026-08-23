@@ -191,6 +191,8 @@ test("keeps the persistent client base and manual admin booking workflow", async
   assert.match(bookingHome, /Dodaj klienta/);
   assert.match(bookingHome, /Zapisz i umów/);
   assert.match(bookingHome, /Poza grafikiem/);
+  assert.match(bookingHome, /łączy konto Google/);
+  assert.match(bookingHome, /kolejne powiadomienia trafią do jego konta/);
   assert.match(bookingHome, /const handleSaveClientFromDialog = async/);
   assert.match(bookingHome, /const removeClientFromDirectory = async/);
   assert.match(bookingHome, /"delete_admin_client"/);
@@ -200,6 +202,7 @@ test("keeps the persistent client base and manual admin booking workflow", async
   assert.match(bookingHome, /runAppointmentOperation\([\s\S]*"upsert_admin_client"[\s\S]*appointment:/);
   assert.match(styles, /\.client-creator-modal/);
   assert.match(styles, /\.manual-booking-grid/);
+  assert.match(styles, /\.client-account-link-hint/);
   assert.match(styles, /\.book-client-button/);
   assert.match(styles, /\.remove-client-button/);
   assert.match(styles, /\.trash-icon/);
