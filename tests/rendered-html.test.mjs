@@ -551,6 +551,14 @@ test("separates active visits from the client directory", async () => {
 
   assert.match(bookingHome, /type ClientWorkspaceTab = "appointments" \| "directory"/);
   assert.match(bookingHome, /const activeAdminClientProfiles = useMemo/);
+  assert.match(
+    bookingHome,
+    /const calendarBookingClients = useMemo\(\(\) => \{[\s\S]*return directoryAdminClientProfiles\.filter/,
+  );
+  assert.doesNotMatch(
+    bookingHome,
+    /const calendarBookingClients = useMemo\(\(\) => \{[\s\S]*return adminClientProfiles\.filter/,
+  );
   assert.match(bookingHome, /role="tablist" aria-label="Widok bazy klientów"/);
   assert.match(bookingHome, /Aktywne wizyty/);
   assert.match(bookingHome, /clientWorkspaceTab === "directory"/);

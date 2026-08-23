@@ -1922,7 +1922,7 @@ export function BookingHome() {
   const calendarBookingClients = useMemo(() => {
     const query = calendarClientSearch.trim().toLocaleLowerCase("pl");
 
-    return adminClientProfiles.filter((client) =>
+    return directoryAdminClientProfiles.filter((client) =>
       !query
         ? true
         : [client.name, client.email, client.phone, getPhoneDigits(client.phone)]
@@ -1930,7 +1930,7 @@ export function BookingHome() {
             .toLocaleLowerCase("pl")
             .includes(query),
     );
-  }, [adminClientProfiles, calendarClientSearch]);
+  }, [calendarClientSearch, directoryAdminClientProfiles]);
   const analytics = useMemo(() => {
     const range = getAnalyticsRange(analyticsPeriod, currentDate);
     const isWithin = (appointment: AdminAppointment, start: Date, end: Date) => {
