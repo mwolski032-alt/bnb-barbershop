@@ -17,6 +17,7 @@ export const notificationEventByAction = {
   confirm_admin: "admin_confirmed",
   cancel_client: "client_cancelled",
   cancel_admin: "admin_cancelled",
+  notify_waitlist: "waitlist_slot_open",
 };
 
 const MAX_ATTEMPTS = 6;
@@ -77,6 +78,16 @@ const eventCopy = {
     body: (appointment) => `${appointment.serviceName} została odwołana przez barbera.`,
     clientEmail: true,
   },
+  waitlist_slot_open: {
+    target: "client",
+    title: "Zwolnił się termin",
+    body: (appointment) =>
+      `${appointment.serviceName}: ${appointment.dateKey}, ${appointment.startTime}. Termin czeka na Ciebie przez 10 minut.`,
+    clientTitle: "Zwolnił się termin z listy rezerwowej",
+    clientBody: (appointment) =>
+      `${appointment.serviceName}: ${appointment.dateKey}, ${appointment.startTime}. Zarezerwuj w ciągu 10 minut.`,
+    clientEmail: true,
+  },
   test_push: {
     target: "client",
     title: "Test powiadomień BNB",
@@ -103,7 +114,7 @@ const escapeHtml = (value) => String(value ?? "")
   .replaceAll(">", "&gt;")
   .replaceAll('"', "&quot;");
 
-const renderAppointmentEmail = (title, body, appointment) => `
+const renderAppointmentEmail = (title, body, appointment, actionUrl = "") => `
   <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
     <h2 style="margin: 0 0 12px;">${escapeHtml(title)}</h2>
     <p>${escapeHtml(body)}</p>
@@ -114,6 +125,7 @@ const renderAppointmentEmail = (title, body, appointment) => `
       <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Usługa</td><td>${escapeHtml(appointment.serviceName)}</td></tr>
       <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Termin</td><td>${escapeHtml(`${appointment.dateKey} ${appointment.startTime}`)}</td></tr>
     </table>
+    ${actionUrl ? `<p style="margin-top: 20px;"><a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:#111827;color:#ffffff;text-decoration:none;font-weight:700;">Zarezerwuj termin</a></p>` : ""}
   </div>
 `;
 
@@ -174,12 +186,25 @@ const removeNotificationToken = (accessToken, device) =>
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
+const buildNotificationLink = (siteUrl, appointment, event) => {
+  const link = new URL(siteUrl);
+  link.searchParams.set("event", event);
+  if (event === "waitlist_slot_open" && appointment.waitlistId) {
+    link.searchParams.set("waitlist", appointment.waitlistId);
+    link.searchParams.set("barber", appointment.barberId);
+    link.searchParams.set("service", appointment.serviceId);
+    link.searchParams.set("date", appointment.dateKey);
+    link.searchParams.set("time", appointment.startTime);
+  } else {
+    link.searchParams.set("appointment", appointment.id);
+  }
+  return link;
+};
+
 const sendToDevice = async (accessToken, device, notification, appointment, event, siteUrl) => {
   const projectId = process.env.FIREBASE_PROJECT_ID;
   if (!projectId) return { status: "failed", error: "Missing FIREBASE_PROJECT_ID.", errorCode: "" };
-  const link = new URL(siteUrl);
-  link.searchParams.set("appointment", appointment.id);
-  link.searchParams.set("event", event);
+  const link = buildNotificationLink(siteUrl, appointment, event);
 
   try {
     const response = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
@@ -383,6 +408,9 @@ const processClaimedJob = async (accessToken, job, siteUrl) => {
   }));
 
   const appointmentWithBarber = { ...appointment, barberName: context.barber.name };
+  const waitlistActionUrl = job.event === "waitlist_slot_open"
+    ? buildNotificationLink(siteUrl, appointmentWithBarber, job.event).href
+    : "";
   const emailDeliveries = { ...(previous.emails ?? {}) };
   const emailTasks = [];
   if (
@@ -418,7 +446,7 @@ const processClaimedJob = async (accessToken, job, siteUrl) => {
       to: appointment.clientEmail,
       subject: `BNB Barbershop: ${title}`,
       text: body,
-      html: renderAppointmentEmail(title, body, appointmentWithBarber),
+      html: renderAppointmentEmail(title, body, appointmentWithBarber, waitlistActionUrl),
       idempotencyKey: `bnb-${job.operationId}-client`,
     }).then(async (result) => {
       emailDeliveries.client = { ...result, lastAttemptAt: Date.now() };

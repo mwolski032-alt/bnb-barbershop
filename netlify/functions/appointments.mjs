@@ -21,6 +21,11 @@ import {
   resolveNotificationSiteUrl,
 } from "./_notification-service.mjs";
 import { isBookableStartTime } from "../../shared/booking-time.mjs";
+import {
+  consumeMatchingWaitlistEntry,
+  hasBlockingWaitlistOffer,
+  offerWaitlistSlot,
+} from "../../shared/waitlist.mjs";
 
 const allowedActions = new Set([
   "create_client",
@@ -36,6 +41,9 @@ const allowedActions = new Set([
   "upsert_admin_client",
   "hide_admin_client",
   "delete_admin_client",
+  "join_waitlist",
+  "leave_waitlist",
+  "remove_waitlist_admin",
 ]);
 const scheduleAdminActions = new Set([
   "create_admin",
@@ -48,6 +56,7 @@ const scheduleAdminActions = new Set([
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+const waitlistTimePreferences = new Set(["any", "morning", "afternoon", "evening"]);
 
 const timeToMinutes = (time) => {
   const [hours, minutes] = String(time).split(":").map(Number);
@@ -55,6 +64,54 @@ const timeToMinutes = (time) => {
 };
 const rangesOverlap = (firstStart, firstDuration, secondStart, secondDuration) =>
   firstStart < secondStart + secondDuration && secondStart < firstStart + firstDuration;
+
+const normalizeWaitlistEntry = (id, value = {}) => ({
+  id: cleanText(value.id || id, 120),
+  userId: cleanText(value.userId, 128),
+  clientName: cleanText(value.clientName, 120),
+  clientEmail: cleanText(value.clientEmail, 254).toLowerCase(),
+  phone: cleanText(value.phone, 32),
+  barberId: cleanText(value.barberId, 80),
+  serviceId: cleanText(value.serviceId, 120),
+  serviceName: cleanText(value.serviceName, 120),
+  durationMinutes: Math.max(15, Number(value.durationMinutes) || 15),
+  dateFrom: cleanText(value.dateFrom, 10),
+  dateTo: cleanText(value.dateTo, 10),
+  timePreference: waitlistTimePreferences.has(value.timePreference)
+    ? value.timePreference
+    : "any",
+  status: value.status === "offered" ? "offered" : "waiting",
+  offer: value.offer && typeof value.offer === "object" ? value.offer : null,
+  version: Math.max(1, Number(value.version) || 1),
+  createdAt: Number(value.createdAt) || 0,
+  updatedAt: Number(value.updatedAt) || 0,
+});
+
+const addDaysToDateKey = (dateKey, days) => {
+  const date = new Date(`${dateKey}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+};
+
+const validateWaitlistEntry = (entry) => {
+  const todayKey = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Warsaw" }).format(new Date());
+  if (!isFirebaseKeySafe(entry.id) || !isFirebaseKeySafe(entry.barberId) || !isFirebaseKeySafe(entry.serviceId)) {
+    return "Nieprawidłowy identyfikator listy, barbera lub usługi.";
+  }
+  if (entry.clientName.length < 3 || entry.phone.replace(/\D/g, "").length !== 9) {
+    return "Podaj imię i nazwisko oraz prawidłowy numer telefonu.";
+  }
+  if (!datePattern.test(entry.dateFrom) || !datePattern.test(entry.dateTo)) {
+    return "Nieprawidłowy zakres dat.";
+  }
+  if (entry.dateFrom < todayKey || entry.dateTo < entry.dateFrom) {
+    return "Zakres listy rezerwowej nie może obejmować minionych dni.";
+  }
+  if (entry.dateTo > addDaysToDateKey(entry.dateFrom, 60)) {
+    return "Zakres listy rezerwowej może obejmować maksymalnie 60 dni.";
+  }
+  return "";
+};
 
 const normalizeAppointment = (id, value = {}) => normalizeAppointmentRecord(id, value);
 
@@ -322,6 +379,7 @@ const mutateAppointmentOperation = async (accessToken, operation, action, user, 
         operationId: operation.operationId,
         appointment: existingOperation.appointment,
         client: existingOperation.client,
+        waitlistEntry: existingOperation.waitlistEntry,
         syncRevision: Number(existingOperation.syncRevision) || 0,
         idempotent: true,
       };
@@ -339,6 +397,7 @@ const mutateAppointmentOperation = async (accessToken, operation, action, user, 
       appointmentId: result.appointment?.id ?? "",
       appointment: result.appointment,
       client: result.client,
+      waitlistEntry: result.waitlistEntry,
       syncRevision,
       createdAt: Date.now(),
     };
@@ -378,6 +437,7 @@ const getAppointmentData = async (user, admin, accessToken) => {
         : {}),
     }));
   const rawAppointments = database.appointments ?? {};
+  const rawWaitlistEntries = database.waitlistEntries ?? {};
   const occupancy = [];
   const clientAppointments = [];
   const adminAppointments = [];
@@ -408,6 +468,33 @@ const getAppointmentData = async (user, admin, accessToken) => {
     if (appointment.userId === user.uid) clientAppointments.push(appointment);
   }
 
+  const waitlistEntries = Object.entries(rawWaitlistEntries)
+    .map(([id, entry]) => normalizeWaitlistEntry(id, entry))
+    .filter((entry) => ["waiting", "offered"].includes(entry.status))
+    .sort(
+      (first, second) =>
+        first.dateFrom.localeCompare(second.dateFrom) ||
+        (Number(first.createdAt) || 0) - (Number(second.createdAt) || 0),
+    );
+  const clientWaitlist = waitlistEntries.filter((entry) => entry.userId === user.uid);
+  const now = Date.now();
+  for (const entry of waitlistEntries) {
+    if (
+      entry.status !== "offered" ||
+      entry.userId === user.uid ||
+      Number(entry.offer?.expiresAt) <= now
+    ) {
+      continue;
+    }
+    occupancy.push({
+      id: `waitlist-hold-${entry.id}`,
+      barberId: entry.offer.barberId,
+      dateKey: entry.offer.dateKey,
+      startTime: entry.offer.startTime,
+      durationMinutes: Number(entry.offer.durationMinutes) || entry.durationMinutes,
+    });
+  }
+
   if (canReadAdminAppointments(admin)) {
     const rawClients = canAdminAccess(admin, "clients") ? database.clients ?? {} : {};
     const appointmentClientIds = new Set(
@@ -430,6 +517,10 @@ const getAppointmentData = async (user, admin, accessToken) => {
       adminAppointments,
       clientAppointments,
       adminClients,
+      clientWaitlist,
+      adminWaitlist: waitlistEntries.filter(
+        (entry) => admin.isOwner || entry.barberId === admin.barberId,
+      ),
       syncRevision: Number(database.appointmentSync?.revision) || 0,
       occupancy,
     };
@@ -440,6 +531,7 @@ const getAppointmentData = async (user, admin, accessToken) => {
     teamMembers,
     occupancy,
     clientAppointments,
+    clientWaitlist,
     syncRevision: Number(database.appointmentSync?.revision) || 0,
   };
 };
@@ -480,6 +572,7 @@ const synchronizedOperationResponse = async (
       appointment: result.appointment,
       currentAppointment: result.currentAppointment,
       client: result.client,
+      waitlistEntry: result.waitlistEntry,
       notification,
       ...snapshot,
     },
@@ -575,7 +668,11 @@ const upsertAdminClient = async (body, admin, user, accessToken, operation, requ
       if (hasConflict(database.appointments, candidate)) {
         return { error: "Ten termin został właśnie zajęty." };
       }
+      if (hasBlockingWaitlistOffer(database, candidate, candidate.userId || "")) {
+        return { error: "Ten termin jest chwilowo zarezerwowany dla osoby z listy oczekujących." };
+      }
       database.appointments[candidate.id] = candidate;
+      if (candidate.userId) consumeMatchingWaitlistEntry(database, candidate, candidate.userId);
       enqueueAppointmentNotification(database, "new_booking", candidate, operation.operationId);
       savedAppointment = candidate;
     }
@@ -698,6 +795,109 @@ const deleteAdminClient = async (body, admin, user, accessToken, operation) => {
   return synchronizedOperationResponse(result, user, admin, accessToken, !result.error);
 };
 
+const joinWaitlist = async (body, admin, user, accessToken, operation) => {
+  const requested = normalizeWaitlistEntry(body.waitlistEntry?.id, {
+    ...body.waitlistEntry,
+    userId: user.uid,
+    clientEmail: user.email,
+    status: "waiting",
+    offer: null,
+  });
+  const validationError = validateWaitlistEntry(requested);
+  if (validationError) return jsonResponse({ ok: false, error: validationError }, 400);
+
+  const member = await readTeamMember(requested.barberId, accessToken);
+  if (!member?.userId || member.active !== true) {
+    return jsonResponse({ ok: false, error: "Wybrany barber jest nieaktywny." }, 409);
+  }
+  const service = await readDatabase(
+    `barbers/${requested.barberId}/services/${encodeURIComponent(requested.serviceId)}`,
+    accessToken,
+  );
+  if (
+    !service ||
+    cleanText(service.id, 120) !== requested.serviceId ||
+    cleanText(service.barberId, 80) !== requested.barberId
+  ) {
+    return jsonResponse({ ok: false, error: "Wybrana usługa nie jest już dostępna." }, 409);
+  }
+  requested.serviceName = cleanText(service.name, 120);
+  requested.durationMinutes = Number(service.durationMinutes);
+
+  const result = await mutateAppointmentOperation(
+    accessToken,
+    operation,
+    "join_waitlist",
+    user,
+    (database) => {
+      database.waitlistEntries ??= {};
+      if (database.waitlistEntries[requested.id]) {
+        return { error: "Ten zapis na listę rezerwową już istnieje.", status: 409 };
+      }
+      const duplicate = Object.values(database.waitlistEntries).some(
+        (entry) =>
+          entry?.userId === user.uid &&
+          entry.barberId === requested.barberId &&
+          entry.serviceId === requested.serviceId &&
+          ["waiting", "offered"].includes(entry.status),
+      );
+      if (duplicate) {
+        return { error: "Masz już aktywny zapis na tę usługę u wybranego barbera.", status: 409 };
+      }
+      const now = Date.now();
+      const waitlistEntry = {
+        ...requested,
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
+      database.waitlistEntries[waitlistEntry.id] = waitlistEntry;
+      return { database, waitlistEntry };
+    },
+  );
+  return synchronizedOperationResponse(result, user, admin, accessToken, !result.error);
+};
+
+const removeWaitlistEntry = async (body, admin, user, accessToken, operation, asAdmin) => {
+  const waitlistId = cleanText(body.waitlistId, 120);
+  if (!isFirebaseKeySafe(waitlistId)) {
+    return jsonResponse({ ok: false, error: "Nieprawidłowy zapis na listę rezerwową." }, 400);
+  }
+
+  const result = await mutateAppointmentOperation(
+    accessToken,
+    operation,
+    asAdmin ? "remove_waitlist_admin" : "leave_waitlist",
+    user,
+    (database) => {
+      const rawEntry = database.waitlistEntries?.[waitlistId];
+      if (!rawEntry) return { error: "Zapis na listę już nie istnieje.", status: 404 };
+      const entry = normalizeWaitlistEntry(waitlistId, rawEntry);
+      if (asAdmin) {
+        if (
+          !admin.isAdmin ||
+          (!canAdminAccess(admin, "schedule") && !canAdminAccess(admin, "clients")) ||
+          (!admin.isOwner && admin.barberId !== entry.barberId)
+        ) {
+          return { error: "Brak dostępu do tej listy rezerwowej.", status: 403 };
+        }
+      } else if (entry.userId !== user.uid) {
+        return { error: "Brak dostępu do tego zapisu.", status: 403 };
+      }
+      if (Number(entry.version) !== operation.expectedVersion) {
+        return {
+          error: "Lista rezerwowa została w międzyczasie zmieniona. Odśwież widok.",
+          code: "stale_version",
+          status: 409,
+        };
+      }
+      delete database.waitlistEntries[waitlistId];
+      return { database, waitlistEntry: { ...entry, deleted: true } };
+    },
+  );
+  return synchronizedOperationResponse(result, user, admin, accessToken, !result.error);
+};
+
 const handler = async (request) => {
   try {
     const user = await verifyRequestUser(request);
@@ -729,6 +929,15 @@ const handler = async (request) => {
     }
     if (action === "delete_admin_client") {
       return deleteAdminClient(body, admin, user, accessToken, operation);
+    }
+    if (action === "join_waitlist") {
+      return joinWaitlist(body, admin, user, accessToken, operation);
+    }
+    if (action === "leave_waitlist") {
+      return removeWaitlistEntry(body, admin, user, accessToken, operation, false);
+    }
+    if (action === "remove_waitlist_admin") {
+      return removeWaitlistEntry(body, admin, user, accessToken, operation, true);
     }
 
     const proposed = body.appointment
@@ -786,7 +995,11 @@ const handler = async (request) => {
         if (hasConflict(database.appointments, candidate)) {
           return { error: "Ten termin został właśnie zajęty." };
         }
+        if (hasBlockingWaitlistOffer(database, candidate, user.uid)) {
+          return { error: "Ten termin jest chwilowo zarezerwowany dla osoby z listy oczekujących." };
+        }
         database.appointments[candidate.id] = candidate;
+        consumeMatchingWaitlistEntry(database, candidate, user.uid);
         enqueueAppointmentNotification(database, "new_booking", candidate, operation.operationId);
         return { database, appointment: candidate, client: clientResult.client };
         },
@@ -831,8 +1044,12 @@ const handler = async (request) => {
         if (operation.expectedVersion !== 0) return staleVersionError(operation, null);
         const candidate = createAppointmentVersion(proposed, operation.operationId);
         if (hasConflict(appointments, candidate)) return { error: "Ten termin został właśnie zajęty." };
+        if (hasBlockingWaitlistOffer(database, candidate, candidate.userId || "")) {
+          return { error: "Ten termin jest chwilowo zarezerwowany dla osoby z listy oczekujących." };
+        }
         appointments[candidate.id] = candidate;
         database.appointments = appointments;
+        if (candidate.userId) consumeMatchingWaitlistEntry(database, candidate, candidate.userId);
         enqueueAppointmentNotification(
           database,
           notificationEventByAction[action],
@@ -906,6 +1123,13 @@ const handler = async (request) => {
 
       next = updateAppointmentVersion(next, operation.operationId);
       const removesClientHistory = ["cancel_client", "cancel_admin", "mark_no_show_admin"].includes(action);
+      if (action === "cancel_client" || action === "cancel_admin") {
+        offerWaitlistSlot(database, current, {
+          sourceOperationId: operation.operationId,
+          actorUid: user.uid,
+          excludeUserId: current.userId,
+        });
+      }
       if (removesClientHistory) {
         delete appointments[appointmentId];
         const client = database.clients?.[current.clientId];

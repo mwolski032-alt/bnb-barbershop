@@ -25,8 +25,10 @@ import {
   Apple,
   ArrowLeft,
   Bell,
+  BellRing,
   Bot,
   Calendar,
+  CalendarClock,
   CheckCircle2,
   ChevronRight,
   Clock,
@@ -39,6 +41,7 @@ import {
   Share2,
   Smartphone,
   SquarePlus,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
@@ -263,6 +266,55 @@ type WorkFeedback = {
 };
 
 type ClientSaveMode = "record" | "booking";
+type WaitlistTimePreference = "any" | "morning" | "afternoon" | "evening";
+
+type WaitlistOffer = {
+  dateKey: string;
+  startTime: string;
+  barberId: string;
+  serviceId: string;
+  serviceName: string;
+  price: string;
+  durationMinutes: number;
+  offeredAt: number;
+  expiresAt: number;
+};
+
+type WaitlistEntry = {
+  id: string;
+  userId: string;
+  clientName: string;
+  clientEmail: string;
+  phone: string;
+  barberId: string;
+  serviceId: string;
+  serviceName: string;
+  durationMinutes: number;
+  dateFrom: string;
+  dateTo: string;
+  timePreference: WaitlistTimePreference;
+  status: "waiting" | "offered";
+  offer?: WaitlistOffer | null;
+  version: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+type WaitlistDraft = {
+  dateFrom: string;
+  dateTo: string;
+  timePreference: WaitlistTimePreference;
+  clientName: string;
+  phone: string;
+};
+
+type PendingWaitlistSelection = {
+  waitlistId: string;
+  barberId: string;
+  serviceId: string;
+  dateKey: string;
+  startTime: string;
+};
 
 type BarberProfile = {
   id: string;
@@ -331,6 +383,13 @@ const emptyBarberDetails: BarberDetails = {
   instagram: "",
   bio: "",
   photoUrl: "",
+};
+
+const waitlistTimePreferenceLabels: Record<WaitlistTimePreference, string> = {
+  any: "Dowolna pora",
+  morning: "Rano · do 12:00",
+  afternoon: "Popołudnie · 12:00–17:00",
+  evening: "Wieczór · od 17:00",
 };
 
 function ProfileAvatar({ className, name, photoUrl, alt = "" }: ProfileAvatarProps) {
@@ -516,6 +575,12 @@ const formatDuration = (minutes: number) => {
 const getPhoneDigits = (value: string) => {
   const digits = value.replace(/\D/g, "");
   return digits.startsWith("48") && digits.length >= 11 ? digits.slice(2, 11) : digits.slice(0, 9);
+};
+
+const shiftDateKey = (key: string, days: number) => {
+  const date = dateFromKey(key);
+  date.setDate(date.getDate() + days);
+  return dayKey(date);
 };
 
 const getServicePriceValue = (value: string) =>
@@ -1374,6 +1439,20 @@ export function BookingHome() {
   const [allAdminAppointments, setAllAdminAppointments] = useState<AdminAppointment[]>([]);
   const [ownClientAppointments, setOwnClientAppointments] = useState<AdminAppointment[]>([]);
   const [clientRecords, setClientRecords] = useState<ClientRecord[]>([]);
+  const [clientWaitlistEntries, setClientWaitlistEntries] = useState<WaitlistEntry[]>([]);
+  const [allAdminWaitlistEntries, setAllAdminWaitlistEntries] = useState<WaitlistEntry[]>([]);
+  const [waitlistDialogOpen, setWaitlistDialogOpen] = useState(false);
+  const [waitlistDraft, setWaitlistDraft] = useState<WaitlistDraft>(() => ({
+    dateFrom: dayKey(today),
+    dateTo: shiftDateKey(dayKey(today), 7),
+    timePreference: "any",
+    clientName: "",
+    phone: "",
+  }));
+  const [waitlistFeedback, setWaitlistFeedback] = useState<WorkFeedback | null>(null);
+  const [isWaitlistSaving, setIsWaitlistSaving] = useState(false);
+  const [pendingWaitlistSelection, setPendingWaitlistSelection] =
+    useState<PendingWaitlistSelection | null>(null);
   const [barberWorkSettings, setBarberWorkSettings] = useState<WorkSettings>(defaultWorkSettings);
   const [form, setForm] = useState<FormState>({ fullName: "", phone: "" });
   const [serviceDraft, setServiceDraft] = useState<ServiceDraft>({
@@ -1605,6 +1684,24 @@ export function BookingHome() {
       services[0] ??
       { ...unavailableService, barberId: activeBarberId },
     [activeBarberId, selectedServiceId, services],
+  );
+  const activeClientWaitlistEntry =
+    clientWaitlistEntries.find(
+      (entry) =>
+        entry.barberId === activeBarberId && entry.serviceId === selectedService.id,
+    ) ?? null;
+  const adminWaitlistEntries = useMemo(
+    () =>
+      allAdminWaitlistEntries
+        .filter((entry) => entry.barberId === activeBarberId)
+        .sort(
+          (first, second) =>
+            (first.status === "offered" ? -1 : 1) -
+              (second.status === "offered" ? -1 : 1) ||
+            first.dateFrom.localeCompare(second.dateFrom) ||
+            first.createdAt - second.createdAt,
+        ),
+    [activeBarberId, allAdminWaitlistEntries],
   );
   const days = useMemo(
     () => buildCalendarDays(visibleMonth, selectedService, schedulingAppointments, workSettings, today),
@@ -2125,6 +2222,15 @@ export function BookingHome() {
   );
   const canConfirm =
     Boolean(activeUser) && form.fullName.trim().length >= 3 && getPhoneDigits(form.phone).length === 9;
+  const canJoinWaitlist = Boolean(
+    activeUser &&
+      selectedBarber &&
+      selectedService.id &&
+      waitlistDraft.clientName.trim().length >= 3 &&
+      getPhoneDigits(waitlistDraft.phone).length === 9 &&
+      waitlistDraft.dateFrom >= dayKey(today) &&
+      waitlistDraft.dateTo >= waitlistDraft.dateFrom,
+  );
   const canSaveService =
     serviceDraft.name.trim().length >= 2 &&
     Number.isFinite(getServicePriceValue(serviceDraft.price)) &&
@@ -2244,6 +2350,8 @@ export function BookingHome() {
       setOwnClientAppointments(loadedClientAppointments);
       setAppointments(result.occupancy ?? []);
       setClientRecords((result.adminClients ?? []) as ClientRecord[]);
+      setClientWaitlistEntries((result.clientWaitlist ?? []) as WaitlistEntry[]);
+      setAllAdminWaitlistEntries((result.adminWaitlist ?? []) as WaitlistEntry[]);
       if (result.teamMembers) {
         setTeamMembers(
           (result.teamMembers as Partial<BarberProfile>[]).map((member, index) =>
@@ -2444,6 +2552,14 @@ export function BookingHome() {
     const url = new URL(window.location.href);
     const appointmentId = url.searchParams.get("appointment")?.trim();
     if (appointmentId) setPendingNotificationAppointmentId(appointmentId);
+    const waitlistId = url.searchParams.get("waitlist")?.trim() ?? "";
+    const barberId = url.searchParams.get("barber")?.trim() ?? "";
+    const serviceId = url.searchParams.get("service")?.trim() ?? "";
+    const dateKey = url.searchParams.get("date")?.trim() ?? "";
+    const startTime = url.searchParams.get("time")?.trim() ?? "";
+    if (waitlistId && barberId && serviceId && dateKey && startTime) {
+      setPendingWaitlistSelection({ waitlistId, barberId, serviceId, dateKey, startTime });
+    }
   }, []);
 
   useEffect(() => {
@@ -2570,6 +2686,10 @@ export function BookingHome() {
       setAllAdminAppointments([]);
       setOwnClientAppointments([]);
       setClientRecords([]);
+      setClientWaitlistEntries([]);
+      setAllAdminWaitlistEntries([]);
+      setWaitlistDialogOpen(false);
+      setPendingWaitlistSelection(null);
       latestSyncRevisionRef.current = -1;
       return undefined;
     }
@@ -2713,6 +2833,85 @@ export function BookingHome() {
       `${url.pathname}${url.search}${url.hash}`,
     );
   }, [activeUser, allAdminAppointments, isAdmin, ownClientAppointments, pendingNotificationAppointmentId]);
+
+  useEffect(() => {
+    if (!activeUser || !pendingWaitlistSelection || !sessionReady) return;
+    const entry = clientWaitlistEntries.find(
+      (item) => item.id === pendingWaitlistSelection.waitlistId,
+    );
+    const clearWaitlistUrl = () => {
+      const url = new URL(window.location.href);
+      ["waitlist", "barber", "service", "date", "time", "event"].forEach((key) =>
+        url.searchParams.delete(key),
+      );
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${url.pathname}${url.search}${url.hash}`,
+      );
+    };
+
+    if (!entry?.offer || Number(entry.offer.expiresAt) <= currentDate.getTime()) {
+      setWaitlistFeedback({
+        kind: "error",
+        message: "Ta oferta już wygasła. Nadal powiadomimy Cię o kolejnym pasującym terminie.",
+      });
+      setPendingWaitlistSelection(null);
+      clearWaitlistUrl();
+      return;
+    }
+    if (selectedBarberId !== pendingWaitlistSelection.barberId) {
+      setSelectedBarberId(pendingWaitlistSelection.barberId);
+      setSelectedServiceId("");
+      setSelectedTime("");
+      return;
+    }
+    if (!serviceCatalogReady) return;
+    if (!services.some((service) => service.id === pendingWaitlistSelection.serviceId)) {
+      setWaitlistFeedback({ kind: "error", message: "Wybrana usługa nie jest już dostępna." });
+      setPendingWaitlistSelection(null);
+      clearWaitlistUrl();
+      return;
+    }
+    if (
+      selectedServiceId !== pendingWaitlistSelection.serviceId ||
+      selectedKey !== pendingWaitlistSelection.dateKey
+    ) {
+      const offerDate = dateFromKey(pendingWaitlistSelection.dateKey);
+      setSelectedServiceId(pendingWaitlistSelection.serviceId);
+      setVisibleMonth(new Date(offerDate.getFullYear(), offerDate.getMonth(), 1));
+      setSelectedKey(pendingWaitlistSelection.dateKey);
+      setSelectedTime("");
+      return;
+    }
+    if (!availableTimes.includes(pendingWaitlistSelection.startTime)) return;
+
+    setSelectedTime(pendingWaitlistSelection.startTime);
+    setForm({ fullName: entry.clientName, phone: entry.phone });
+    setPendingWaitlistSelection(null);
+    clearWaitlistUrl();
+    window.requestAnimationFrame(() => {
+      const target = bookingTimeRef.current;
+      if (!target) return;
+      const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      target.scrollIntoView({
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+        block: "start",
+      });
+    });
+  }, [
+    activeUser,
+    availableTimes,
+    clientWaitlistEntries,
+    currentDate,
+    pendingWaitlistSelection,
+    selectedBarberId,
+    selectedKey,
+    selectedServiceId,
+    serviceCatalogReady,
+    services,
+    sessionReady,
+  ]);
 
   useEffect(() => {
     if (!activeUser || !activeBarberId) {
@@ -2869,7 +3068,8 @@ export function BookingHome() {
         selectedAdminClient ||
         pendingClientRemovalId ||
         clientDialog ||
-        smsComposer,
+        smsComposer ||
+        waitlistDialogOpen,
     );
     if (!clientModalOpen) return undefined;
 
@@ -2912,7 +3112,9 @@ export function BookingHome() {
       }
       if (event.key !== "Escape") return;
 
-      if (pendingClientRemovalId) {
+      if (waitlistDialogOpen) {
+        setWaitlistDialogOpen(false);
+      } else if (pendingClientRemovalId) {
         setPendingClientRemovalId(null);
       } else if (pendingClientCancellation) {
         setPendingClientCancellationId(null);
@@ -2948,6 +3150,7 @@ export function BookingHome() {
     selectedClientAppointment,
     smsComposer,
     visibleStep,
+    waitlistDialogOpen,
   ]);
 
   useEffect(() => {
@@ -3622,6 +3825,120 @@ export function BookingHome() {
     if (scrollToServices && window.matchMedia("(max-width: 767px)").matches) {
       window.requestAnimationFrame(() => scrollToBookingSection(bookingServiceRef.current));
     }
+  };
+
+  const openWaitlistDialog = () => {
+    const startDate = selectedKey >= dayKey(today) ? selectedKey : dayKey(today);
+    setWaitlistDraft({
+      dateFrom: startDate,
+      dateTo: shiftDateKey(startDate, 7),
+      timePreference: "any",
+      clientName: form.fullName || activeUser?.displayName || "",
+      phone: form.phone,
+    });
+    setWaitlistFeedback(null);
+    setWaitlistDialogOpen(true);
+  };
+
+  const joinClientWaitlist = async () => {
+    if (!canJoinWaitlist || !activeUser || !selectedBarber || isWaitlistSaving) return;
+    const waitlistId = `waitlist-${window.crypto?.randomUUID?.() ?? Date.now()}`;
+    try {
+      setIsWaitlistSaving(true);
+      setWaitlistFeedback(null);
+      await runAppointmentOperation(
+        "join_waitlist",
+        {
+          waitlistEntry: {
+            id: waitlistId,
+            barberId: activeBarberId,
+            serviceId: selectedService.id,
+            clientName: waitlistDraft.clientName.trim(),
+            phone: waitlistDraft.phone,
+            dateFrom: waitlistDraft.dateFrom,
+            dateTo: waitlistDraft.dateTo,
+            timePreference: waitlistDraft.timePreference,
+          },
+        },
+        {
+          key: `join_waitlist:${activeBarberId}:${selectedService.id}`,
+          expectedVersion: 0,
+        },
+      );
+      setForm((current) => ({
+        fullName: current.fullName || waitlistDraft.clientName.trim(),
+        phone: current.phone || waitlistDraft.phone,
+      }));
+      setWaitlistDialogOpen(false);
+      setWaitlistFeedback({
+        kind: "success",
+        message: "Gotowe. Powiadomimy Cię, gdy zwolni się pasujący termin.",
+      });
+      if (!pushDeviceEnabled && pushDeviceStatus !== "unsupported") {
+        void registerCurrentPushDevice();
+      }
+    } catch (error) {
+      setWaitlistFeedback({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Nie udało się zapisać na listę.",
+      });
+    } finally {
+      setIsWaitlistSaving(false);
+    }
+  };
+
+  const leaveClientWaitlist = async (entry: WaitlistEntry) => {
+    if (isWaitlistSaving) return;
+    try {
+      setIsWaitlistSaving(true);
+      setWaitlistFeedback(null);
+      await runAppointmentOperation(
+        "leave_waitlist",
+        { waitlistId: entry.id },
+        { key: `leave_waitlist:${entry.id}`, expectedVersion: entry.version },
+      );
+      setWaitlistFeedback({ kind: "success", message: "Usunięto zapis z listy rezerwowej." });
+    } catch (error) {
+      setWaitlistFeedback({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Nie udało się usunąć zapisu.",
+      });
+    } finally {
+      setIsWaitlistSaving(false);
+    }
+  };
+
+  const removeAdminWaitlistEntry = async (entry: WaitlistEntry) => {
+    if (isWaitlistSaving) return;
+    try {
+      setIsWaitlistSaving(true);
+      setBookingError("");
+      await runAppointmentOperation(
+        "remove_waitlist_admin",
+        { waitlistId: entry.id },
+        { key: `remove_waitlist_admin:${entry.id}`, expectedVersion: entry.version },
+      );
+    } catch (error) {
+      setBookingError(error instanceof Error ? error.message : "Nie udało się usunąć zapisu.");
+    } finally {
+      setIsWaitlistSaving(false);
+    }
+  };
+
+  const acceptWaitlistOffer = (entry: WaitlistEntry) => {
+    if (!entry.offer) return;
+    setPendingWaitlistSelection({
+      waitlistId: entry.id,
+      barberId: entry.barberId,
+      serviceId: entry.serviceId,
+      dateKey: entry.offer.dateKey,
+      startTime: entry.offer.startTime,
+    });
+    setStep("booking");
+    setWaitlistFeedback({
+      kind: "success",
+      message: "Termin czeka na Ciebie. Sprawdź wybór i potwierdź rezerwację.",
+    });
   };
 
   const beginClientReschedule = (appointment: AdminAppointment) => {
@@ -4803,6 +5120,91 @@ export function BookingHome() {
                   </div>
                 )}
               </div>
+
+              <section className="admin-waitlist" aria-labelledby="admin-waitlist-title">
+                <header>
+                  <span className="admin-waitlist-icon" aria-hidden="true">
+                    <BellRing />
+                  </span>
+                  <div>
+                    <p className="eyebrow">Automatyczne uzupełnianie luk</p>
+                    <h3 id="admin-waitlist-title">Lista rezerwowa</h3>
+                  </div>
+                  <strong>{adminWaitlistEntries.length}</strong>
+                </header>
+                {adminWaitlistEntries.length > 0 ? (
+                  <div className="admin-waitlist-list">
+                    {adminWaitlistEntries.map((entry) => {
+                      const phoneDigits = getPhoneDigits(entry.phone);
+                      const offerMinutes = entry.offer
+                        ? Math.max(
+                            0,
+                            Math.ceil(
+                              (Number(entry.offer.expiresAt) - currentDate.getTime()) / 60000,
+                            ),
+                          )
+                        : 0;
+                      return (
+                        <article
+                          className={`admin-waitlist-row ${entry.status}`}
+                          key={entry.id}
+                        >
+                          <ProfileAvatar
+                            className="admin-waitlist-avatar"
+                            name={entry.clientName}
+                          />
+                          <div className="admin-waitlist-main">
+                            <span>
+                              <strong>{entry.clientName}</strong>
+                              <em>{entry.status === "offered" ? "Oferta wysłana" : "Oczekuje"}</em>
+                            </span>
+                            <small>{entry.serviceName}</small>
+                            <p>
+                              {entry.dateFrom === entry.dateTo
+                                ? adminClientDateFormatter.format(dateFromKey(entry.dateFrom))
+                                : `${dayFormatter.format(dateFromKey(entry.dateFrom))} – ${dayFormatter.format(
+                                    dateFromKey(entry.dateTo),
+                                  )}`}
+                              {" · "}
+                              {waitlistTimePreferenceLabels[entry.timePreference]}
+                            </p>
+                            {entry.offer ? (
+                              <b>
+                                {entry.offer.dateKey}, {entry.offer.startTime} · jeszcze {offerMinutes} min
+                              </b>
+                            ) : null}
+                          </div>
+                          <div className="admin-waitlist-actions">
+                            {phoneDigits.length === 9 ? (
+                              <>
+                                <a href={`tel:+48${phoneDigits}`} aria-label={`Zadzwoń do ${entry.clientName}`}>
+                                  <Phone aria-hidden="true" />
+                                </a>
+                                <a href={`sms:+48${phoneDigits}`} aria-label={`Napisz SMS do ${entry.clientName}`}>
+                                  <MessageSquare aria-hidden="true" />
+                                </a>
+                              </>
+                            ) : null}
+                            <button
+                              type="button"
+                              disabled={isWaitlistSaving}
+                              onClick={() => void removeAdminWaitlistEntry(entry)}
+                              aria-label={`Usuń ${entry.clientName} z listy rezerwowej`}
+                            >
+                              <Trash2 aria-hidden="true" />
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="admin-waitlist-empty">
+                    <strong>Nikt teraz nie oczekuje</strong>
+                    <span>Nowe zgłoszenia klientów pojawią się tutaj automatycznie.</span>
+                  </div>
+                )}
+              </section>
             </div>
 
             <div
@@ -6729,6 +7131,79 @@ export function BookingHome() {
                 )}
               </div>
             </div>
+
+            <div className={`waitlist-callout ${activeClientWaitlistEntry?.status ?? "available"}`}>
+              <span className="waitlist-callout-icon" aria-hidden="true">
+                {activeClientWaitlistEntry?.status === "offered" ? (
+                  <CalendarClock />
+                ) : (
+                  <BellRing />
+                )}
+              </span>
+              {activeClientWaitlistEntry ? (
+                <div className="waitlist-callout-copy">
+                  <small>
+                    {activeClientWaitlistEntry.status === "offered"
+                      ? "Termin czeka na Ciebie"
+                      : "Jesteś na liście rezerwowej"}
+                  </small>
+                  <strong>
+                    {activeClientWaitlistEntry.offer
+                      ? `${dayFormatter.format(
+                          dateFromKey(activeClientWaitlistEntry.offer.dateKey),
+                        )}, ${activeClientWaitlistEntry.offer.startTime}`
+                      : `${dayFormatter.format(
+                          dateFromKey(activeClientWaitlistEntry.dateFrom),
+                        )} – ${dayFormatter.format(
+                          dateFromKey(activeClientWaitlistEntry.dateTo),
+                        )}`}
+                  </strong>
+                  <span>
+                    {activeClientWaitlistEntry.offer
+                      ? `Masz jeszcze ${Math.max(
+                          0,
+                          Math.ceil(
+                            (Number(activeClientWaitlistEntry.offer.expiresAt) -
+                              currentDate.getTime()) /
+                              60000,
+                          ),
+                        )} min na rezerwację.`
+                      : waitlistTimePreferenceLabels[activeClientWaitlistEntry.timePreference]}
+                  </span>
+                </div>
+              ) : (
+                <div className="waitlist-callout-copy">
+                  <small>Nie pasują dostępne godziny?</small>
+                  <strong>Powiadom mnie o wolnym terminie</strong>
+                  <span>Gdy ktoś odwoła wizytę, dostaniesz pierwszeństwo rezerwacji.</span>
+                </div>
+              )}
+              <div className="waitlist-callout-actions">
+                {activeClientWaitlistEntry?.status === "offered" ? (
+                  <button type="button" onClick={() => acceptWaitlistOffer(activeClientWaitlistEntry)}>
+                    Rezerwuję
+                  </button>
+                ) : activeClientWaitlistEntry ? (
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={isWaitlistSaving}
+                    onClick={() => void leaveClientWaitlist(activeClientWaitlistEntry)}
+                  >
+                    Wypisz mnie
+                  </button>
+                ) : (
+                  <button type="button" onClick={openWaitlistDialog}>
+                    Dołącz
+                  </button>
+                )}
+              </div>
+            </div>
+            {waitlistFeedback ? (
+              <p className={`waitlist-feedback ${waitlistFeedback.kind}`} role="status">
+                {waitlistFeedback.message}
+              </p>
+            ) : null}
               </>
             ) : (
               <div className="day-summary-empty">
@@ -7834,6 +8309,170 @@ export function BookingHome() {
                 </div>
               </>
             )}
+          </section>
+        </div>
+      ) : null}
+
+      {waitlistDialogOpen && selectedBarber && visibleStep === "booking" ? (
+        <div
+          className="client-modal-backdrop waitlist-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setWaitlistDialogOpen(false);
+          }}
+        >
+          <section
+            className="client-appointment-modal client-bottom-sheet waitlist-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="waitlist-modal-title"
+          >
+            <div className="sheet-grabber" aria-hidden="true" />
+            <button
+              className="modal-close-button"
+              type="button"
+              onClick={() => setWaitlistDialogOpen(false)}
+              aria-label="Zamknij listę rezerwową"
+            >
+              <X aria-hidden="true" />
+            </button>
+            <div className="waitlist-modal-heading">
+              <span aria-hidden="true">
+                <BellRing />
+              </span>
+              <div>
+                <p className="eyebrow">Lista rezerwowa</p>
+                <h2 id="waitlist-modal-title">Powiadom mnie o terminie</h2>
+              </div>
+            </div>
+            <div className="waitlist-modal-summary">
+              <ProfileAvatar
+                className={`waitlist-modal-avatar ${activeClientBarber.accent}`}
+                name={activeBarberName}
+                photoUrl={activeBarberProfile.photoUrl}
+              />
+              <span>
+                <small>{activeBarberName}</small>
+                <strong>{selectedService.name}</strong>
+                <em>{formatDuration(selectedService.durationMinutes)}</em>
+              </span>
+              <b>{selectedService.price}</b>
+            </div>
+            <form
+              className="waitlist-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void joinClientWaitlist();
+              }}
+            >
+              <div className="waitlist-date-fields">
+                <label>
+                  Od dnia
+                  <input
+                    type="date"
+                    min={dayKey(today)}
+                    max={shiftDateKey(dayKey(today), 60)}
+                    value={waitlistDraft.dateFrom}
+                    onChange={(event) =>
+                      setWaitlistDraft((current) => ({
+                        ...current,
+                        dateFrom: event.target.value,
+                        dateTo:
+                          current.dateTo < event.target.value
+                            ? event.target.value
+                            : current.dateTo,
+                      }))
+                    }
+                    required
+                  />
+                </label>
+                <label>
+                  Do dnia
+                  <input
+                    type="date"
+                    min={waitlistDraft.dateFrom}
+                    max={shiftDateKey(waitlistDraft.dateFrom, 60)}
+                    value={waitlistDraft.dateTo}
+                    onChange={(event) =>
+                      setWaitlistDraft((current) => ({ ...current, dateTo: event.target.value }))
+                    }
+                    required
+                  />
+                </label>
+              </div>
+              <fieldset className="waitlist-time-picker">
+                <legend>Kiedy najbardziej Ci pasuje?</legend>
+                <div>
+                  {(Object.keys(waitlistTimePreferenceLabels) as WaitlistTimePreference[]).map(
+                    (preference) => (
+                      <button
+                        className={waitlistDraft.timePreference === preference ? "active" : ""}
+                        type="button"
+                        key={preference}
+                        onClick={() =>
+                          setWaitlistDraft((current) => ({
+                            ...current,
+                            timePreference: preference,
+                          }))
+                        }
+                        aria-pressed={waitlistDraft.timePreference === preference}
+                      >
+                        {waitlistTimePreferenceLabels[preference]}
+                      </button>
+                    ),
+                  )}
+                </div>
+              </fieldset>
+              <div className="waitlist-contact-fields">
+                <label>
+                  Imię i nazwisko
+                  <input
+                    type="text"
+                    autoComplete="name"
+                    value={waitlistDraft.clientName}
+                    onChange={(event) =>
+                      setWaitlistDraft((current) => ({
+                        ...current,
+                        clientName: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </label>
+                <label>
+                  Numer telefonu
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={waitlistDraft.phone}
+                    onChange={(event) =>
+                      setWaitlistDraft((current) => ({ ...current, phone: event.target.value }))
+                    }
+                    required
+                  />
+                </label>
+              </div>
+              {waitlistFeedback?.kind === "error" ? (
+                <p className="waitlist-form-error" role="alert">
+                  {waitlistFeedback.message}
+                </p>
+              ) : null}
+              <div className="waitlist-form-actions">
+                <button
+                  className="secondary"
+                  type="button"
+                  disabled={isWaitlistSaving}
+                  onClick={() => setWaitlistDialogOpen(false)}
+                >
+                  Wróć
+                </button>
+                <button type="submit" disabled={!canJoinWaitlist || isWaitlistSaving}>
+                  <BellRing aria-hidden="true" />
+                  {isWaitlistSaving ? "Zapisywanie..." : "Powiadom mnie"}
+                </button>
+              </div>
+            </form>
           </section>
         </div>
       ) : null}

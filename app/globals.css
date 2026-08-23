@@ -3380,6 +3380,563 @@ h2 {
   line-height: 1.5;
 }
 
+.admin-waitlist {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  background:
+    linear-gradient(145deg, rgba(76, 141, 255, 0.08), transparent 48%),
+    rgba(255, 255, 255, 0.025);
+}
+
+.admin-waitlist > header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.admin-waitlist-icon {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.8rem;
+  background: rgba(76, 141, 255, 0.15);
+  color: #9bc0ff;
+}
+
+.admin-waitlist-icon svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.admin-waitlist > header > div {
+  display: grid;
+  gap: 0.08rem;
+}
+
+.admin-waitlist > header .eyebrow {
+  margin: 0;
+  font-size: 0.62rem;
+}
+
+.admin-waitlist > header h3 {
+  margin: 0;
+  color: #f1f3f7;
+  font-size: 1rem;
+}
+
+.admin-waitlist > header > strong {
+  display: grid;
+  place-items: center;
+  min-width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #dfe5ef;
+  font-size: 0.75rem;
+}
+
+.admin-waitlist-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.admin-waitlist-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 4.6rem;
+  padding: 0.62rem;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.admin-waitlist-row.offered {
+  border-color: rgba(48, 209, 88, 0.23);
+  background: rgba(48, 209, 88, 0.065);
+}
+
+.admin-waitlist-avatar {
+  display: grid;
+  place-items: center;
+  width: 2.8rem;
+  height: 2.8rem;
+  overflow: hidden;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4c8dff, #77a9ff);
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.admin-waitlist-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-waitlist-main {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.admin-waitlist-main > span {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.admin-waitlist-main strong {
+  overflow: hidden;
+  color: #edf0f6;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-waitlist-main em {
+  flex: 0 0 auto;
+  padding: 0.16rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #9ba4b3;
+  font-size: 0.58rem;
+  font-style: normal;
+  font-weight: 780;
+}
+
+.admin-waitlist-row.offered .admin-waitlist-main em {
+  background: rgba(48, 209, 88, 0.14);
+  color: #8ce9a2;
+}
+
+.admin-waitlist-main small,
+.admin-waitlist-main p,
+.admin-waitlist-main b {
+  overflow: hidden;
+  margin: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-waitlist-main small {
+  color: #c5cbd6;
+  font-size: 0.7rem;
+  font-weight: 740;
+}
+
+.admin-waitlist-main p {
+  color: #858e9d;
+  font-size: 0.65rem;
+  font-weight: 650;
+}
+
+.admin-waitlist-main b {
+  color: #78df91;
+  font-size: 0.64rem;
+}
+
+.admin-waitlist-actions {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.admin-waitlist-actions a,
+.admin-waitlist-actions button {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(76, 141, 255, 0.12);
+  color: #a9c7ff;
+  cursor: pointer;
+}
+
+.admin-waitlist-actions button {
+  background: rgba(255, 69, 58, 0.1);
+  color: #ffaaa4;
+}
+
+.admin-waitlist-actions button:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+.admin-waitlist-actions svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.admin-waitlist-empty {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.8rem;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 0.9rem;
+  color: #cbd1dc;
+  text-align: center;
+}
+
+.admin-waitlist-empty strong {
+  font-size: 0.78rem;
+}
+
+.admin-waitlist-empty span {
+  color: #818a99;
+  font-size: 0.66rem;
+}
+
+.waitlist-callout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.65rem;
+  margin-top: 0.8rem;
+  padding: 0.72rem;
+  border: 1px solid rgba(76, 141, 255, 0.2);
+  border-radius: 1.05rem;
+  background:
+    linear-gradient(145deg, rgba(76, 141, 255, 0.11), rgba(76, 141, 255, 0.025)),
+    rgba(255, 255, 255, 0.025);
+}
+
+.waitlist-callout.offered {
+  border-color: rgba(48, 209, 88, 0.3);
+  background:
+    linear-gradient(145deg, rgba(48, 209, 88, 0.14), rgba(48, 209, 88, 0.025)),
+    rgba(255, 255, 255, 0.025);
+}
+
+.waitlist-callout-icon {
+  display: grid;
+  place-items: center;
+  width: 2.55rem;
+  height: 2.55rem;
+  border-radius: 0.85rem;
+  background: rgba(76, 141, 255, 0.15);
+  color: #a8c8ff;
+}
+
+.waitlist-callout.offered .waitlist-callout-icon {
+  background: rgba(48, 209, 88, 0.14);
+  color: #78df91;
+}
+
+.waitlist-callout-icon svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.waitlist-callout-copy {
+  display: grid;
+  gap: 0.14rem;
+  min-width: 0;
+}
+
+.waitlist-callout-copy small {
+  color: #8db7ff;
+  font-size: 0.62rem;
+  font-weight: 790;
+}
+
+.waitlist-callout.offered .waitlist-callout-copy small {
+  color: #78df91;
+}
+
+.waitlist-callout-copy strong {
+  overflow: hidden;
+  color: #eef1f7;
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.waitlist-callout-copy span {
+  color: #8f98a7;
+  font-size: 0.68rem;
+  font-weight: 620;
+  line-height: 1.35;
+}
+
+.waitlist-callout-actions {
+  grid-column: 1 / -1;
+  display: flex;
+}
+
+.waitlist-callout-actions button {
+  width: 100%;
+  min-height: 2.45rem;
+  border: 0;
+  border-radius: 0.8rem;
+  background: #edf3ff;
+  color: #17233a;
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 820;
+}
+
+.waitlist-callout-actions button.secondary {
+  background: rgba(255, 255, 255, 0.07);
+  color: #cbd1dc;
+}
+
+.waitlist-callout-actions button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.waitlist-feedback {
+  margin: 0.55rem 0 0;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid rgba(48, 209, 88, 0.22);
+  border-radius: 0.8rem;
+  background: rgba(48, 209, 88, 0.08);
+  color: #8de5a2;
+  font-size: 0.68rem;
+  font-weight: 720;
+  line-height: 1.4;
+}
+
+.waitlist-feedback.error {
+  border-color: rgba(255, 69, 58, 0.25);
+  background: rgba(255, 69, 58, 0.08);
+  color: #ffaaa4;
+}
+
+.waitlist-modal {
+  width: min(100%, 34rem);
+  padding: 1rem;
+}
+
+.waitlist-modal .modal-close-button svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.waitlist-modal-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-right: 3rem;
+}
+
+.waitlist-modal-heading > span {
+  display: grid;
+  place-items: center;
+  width: 2.9rem;
+  height: 2.9rem;
+  border-radius: 0.95rem;
+  background: rgba(76, 141, 255, 0.14);
+  color: #9fc2ff;
+}
+
+.waitlist-modal-heading > span svg {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.waitlist-modal-heading .eyebrow,
+.waitlist-modal-heading h2 {
+  margin: 0;
+}
+
+.waitlist-modal-heading h2 {
+  margin-top: 0.18rem;
+  font-size: 1.25rem;
+}
+
+.waitlist-modal-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.9rem;
+  padding: 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.waitlist-modal-avatar {
+  display: grid;
+  place-items: center;
+  width: 2.8rem;
+  height: 2.8rem;
+  overflow: hidden;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4c8dff, #76a8ff);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.waitlist-modal-avatar.mint {
+  background: linear-gradient(135deg, #35b99b, #7ae4d6);
+}
+
+.waitlist-modal-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.waitlist-modal-summary > span {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.waitlist-modal-summary small,
+.waitlist-modal-summary em {
+  color: #8f98a7;
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 680;
+}
+
+.waitlist-modal-summary strong {
+  overflow: hidden;
+  color: #edf0f6;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.waitlist-modal-summary b {
+  color: #f3f5f9;
+  font-size: 0.8rem;
+}
+
+.waitlist-form {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 0.9rem;
+}
+
+.waitlist-date-fields,
+.waitlist-contact-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.waitlist-form label {
+  display: grid;
+  gap: 0.35rem;
+  color: #a9b0bd;
+  font-size: 0.69rem;
+  font-weight: 720;
+}
+
+.waitlist-form input {
+  min-width: 0;
+  height: 2.85rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.82rem;
+  outline: 0;
+  background: rgba(255, 255, 255, 0.045);
+  color: #f1f3f7;
+  font-size: 0.78rem;
+  font-weight: 690;
+}
+
+.waitlist-form input:focus {
+  border-color: rgba(76, 141, 255, 0.58);
+  box-shadow: 0 0 0 3px rgba(76, 141, 255, 0.11);
+}
+
+.waitlist-time-picker {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.waitlist-time-picker legend {
+  margin-bottom: 0.45rem;
+  color: #a9b0bd;
+  font-size: 0.69rem;
+  font-weight: 720;
+}
+
+.waitlist-time-picker > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.42rem;
+}
+
+.waitlist-time-picker button {
+  min-height: 2.45rem;
+  padding: 0 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.035);
+  color: #969eac;
+  cursor: pointer;
+  font-size: 0.66rem;
+  font-weight: 720;
+}
+
+.waitlist-time-picker button.active {
+  border-color: rgba(76, 141, 255, 0.42);
+  background: rgba(76, 141, 255, 0.14);
+  color: #dce8ff;
+}
+
+.waitlist-form-error {
+  margin: 0;
+  color: #ffaaa4;
+  font-size: 0.7rem;
+  font-weight: 720;
+}
+
+.waitlist-form-actions {
+  display: grid;
+  grid-template-columns: 0.7fr 1.3fr;
+  gap: 0.55rem;
+}
+
+.waitlist-form-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.42rem;
+  min-height: 3rem;
+  border: 0;
+  border-radius: 0.9rem;
+  background: #edf3ff;
+  color: #17233a;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 820;
+}
+
+.waitlist-form-actions button.secondary {
+  background: rgba(255, 255, 255, 0.065);
+  color: #cdd3dd;
+}
+
+.waitlist-form-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.waitlist-form-actions svg {
+  width: 1rem;
+  height: 1rem;
+}
+
 .workspace-empty-icon {
   position: relative;
   width: 2.7rem;
@@ -9675,6 +10232,33 @@ h2 {
   .client-save-mode button {
     padding-inline: 0.35rem;
     font-size: 0.69rem;
+  }
+}
+
+@media (max-width: 560px) {
+  .waitlist-modal-backdrop {
+    padding: 0;
+  }
+
+  .waitlist-modal {
+    max-height: calc(100svh - 0.5rem);
+    border-radius: 1.6rem 1.6rem 0 0;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+
+  .waitlist-contact-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-waitlist-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .admin-waitlist-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    padding-top: 0.45rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.065);
   }
 }
 

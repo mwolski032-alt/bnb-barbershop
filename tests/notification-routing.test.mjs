@@ -354,6 +354,36 @@ test("admin changes reach every active client device and link to the exact appoi
   }
 });
 
+test("waitlist notification links directly to the offered barber, service, date and time", async () => {
+  reset();
+  const { operationId } = seedJob("waitlist_slot_open", "notify_waitlist", {
+    id: "waitlist-entry-link",
+    waitlistId: "waitlist-entry-link",
+    serviceId: "cut",
+    dateKey: "2099-01-10",
+    startTime: "15:00",
+    offerExpiresAt: Date.now() + 10 * 60 * 1000,
+  });
+  const result = await notificationService.processNotificationJob(operationId, {
+    force: true,
+    siteUrl: "https://bnb.example",
+  });
+
+  assert.equal(result.state, "delivered");
+  assert.deepEqual(sentPushes.map(({ message }) => message.token), [
+    "client-phone-token",
+    "client-tablet-token",
+  ]);
+  const link = new URL(sentPushes[0].message.data.link);
+  assert.equal(link.searchParams.get("waitlist"), "waitlist-entry-link");
+  assert.equal(link.searchParams.get("barber"), "mateusz");
+  assert.equal(link.searchParams.get("service"), "cut");
+  assert.equal(link.searchParams.get("date"), "2099-01-10");
+  assert.equal(link.searchParams.get("time"), "15:00");
+  assert.equal(link.searchParams.get("appointment"), null);
+  assert.equal(sentEmails.some(({ html }) => html.includes("Zarezerwuj termin")), true);
+});
+
 test("confirmation actions have distinct backend events for the proper audience", async () => {
   reset();
   const clientConfirmation = seedJob("client_confirmed", "confirm_client", { id: "client-confirmed" });

@@ -152,6 +152,28 @@ test("keeps the professional admin client directory and SMS workflow", async () 
   assert.match(styles, /\.sms-template-picker/);
 });
 
+test("keeps the client and admin waitlist workflow visible and actionable", async () => {
+  const [bookingHome, styles, appointmentsApi, notificationService, worker] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/_notification-service.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/notification-worker.mjs", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /Powiadom mnie o wolnym terminie/);
+  assert.match(bookingHome, /Powiadom mnie o terminie/);
+  assert.match(bookingHome, /Lista rezerwowa/);
+  assert.match(bookingHome, /acceptWaitlistOffer/);
+  assert.match(appointmentsApi, /"join_waitlist"/);
+  assert.match(appointmentsApi, /hasBlockingWaitlistOffer/);
+  assert.match(notificationService, /waitlist_slot_open/);
+  assert.match(worker, /advanceExpiredWaitlistOffers/);
+  assert.match(styles, /\.waitlist-callout/);
+  assert.match(styles, /\.admin-waitlist-row/);
+  assert.match(styles, /\.waitlist-modal/);
+});
+
 test("keeps the persistent client base and manual admin booking workflow", async () => {
   const [bookingHome, styles] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),

@@ -15,7 +15,10 @@ export type AppointmentMutationAction =
   | "mark_no_show_admin"
   | "upsert_admin_client"
   | "hide_admin_client"
-  | "delete_admin_client";
+  | "delete_admin_client"
+  | "join_waitlist"
+  | "leave_waitlist"
+  | "remove_waitlist_admin";
 
 export type AppointmentApiResult<T> = {
   ok: boolean;
@@ -27,6 +30,7 @@ export type AppointmentApiResult<T> = {
   appointment?: T;
   currentAppointment?: T;
   client?: unknown;
+  waitlistEntry?: unknown;
   occupancy?: Array<{
     id: string;
     barberId: string;
@@ -37,6 +41,8 @@ export type AppointmentApiResult<T> = {
   clientAppointments?: T[];
   adminAppointments?: T[];
   adminClients?: unknown[];
+  clientWaitlist?: unknown[];
+  adminWaitlist?: unknown[];
   teamMembers?: unknown[];
   context?: {
     role: "owner" | "barber" | "client";

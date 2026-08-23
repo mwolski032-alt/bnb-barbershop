@@ -72,6 +72,99 @@ test("E2E client directory: each barber receives only assigned clients while own
   assert.deepEqual(owner.adminClients.map(({ id }) => id).sort(), [clientAUid, clientBUid]);
 });
 
+test("E2E waitlist: clients see only their entries and barbers see only their own queue", async () => {
+  fixture.reset();
+  const join = await request(tokens.clientB, "POST", {
+    action: "join_waitlist",
+    waitlistEntry: {
+      id: "waitlist-client-b",
+      barberId: "mateusz",
+      serviceId: "cut",
+      clientName: "Klient B",
+      phone: "600700800",
+      dateFrom: "2099-01-10",
+      dateTo: "2099-01-20",
+      timePreference: "morning",
+    },
+  });
+  assert.equal(join.status, 200, await join.text());
+
+  const [clientAResponse, clientBResponse, mateuszResponse, kacperResponse] = await Promise.all([
+    request(tokens.clientA, "GET"),
+    request(tokens.clientB, "GET"),
+    request(tokens.mateusz, "GET"),
+    request(tokens.kacper, "GET"),
+  ]);
+  const [clientA, clientB, mateusz, kacper] = await Promise.all([
+    clientAResponse.json(),
+    clientBResponse.json(),
+    mateuszResponse.json(),
+    kacperResponse.json(),
+  ]);
+
+  assert.deepEqual(clientA.clientWaitlist, []);
+  assert.deepEqual(clientB.clientWaitlist.map(({ id }) => id), ["waitlist-client-b"]);
+  assert.deepEqual(mateusz.adminWaitlist.map(({ id }) => id), ["waitlist-client-b"]);
+  assert.deepEqual(kacper.adminWaitlist, []);
+});
+
+test("E2E waitlist: cancellation offers and holds the slot for the oldest matching client", async () => {
+  fixture.reset();
+  const join = await request(tokens.clientB, "POST", {
+    action: "join_waitlist",
+    waitlistEntry: {
+      id: "waitlist-held-slot",
+      barberId: "mateusz",
+      serviceId: "cut",
+      clientName: "Klient B",
+      phone: "600700800",
+      dateFrom: "2099-01-10",
+      dateTo: "2099-01-10",
+      timePreference: "morning",
+    },
+  });
+  assert.equal(join.status, 200, await join.text());
+
+  const cancel = await request(tokens.clientA, "POST", {
+    action: "cancel_client",
+    appointmentId: "mateusz-upcoming",
+  });
+  assert.equal(cancel.status, 200, await cancel.text());
+  const offered = fixture.database.waitlistEntries["waitlist-held-slot"];
+  assert.equal(offered.status, "offered");
+  assert.equal(offered.offer.startTime, "09:00");
+  const waitlistJob = Object.values(fixture.database.notificationOutbox).find(
+    (job) => job.event === "waitlist_slot_open",
+  );
+  assert.equal(waitlistJob.userId, clientBUid);
+
+  const blockedAppointment = createClientAppointment({
+    id: "blocked-by-waitlist",
+    userId: clientAUid,
+    startTime: "09:00",
+  });
+  const blocked = await request(tokens.clientA, "POST", {
+    action: "create_client",
+    appointment: blockedAppointment,
+    client: { firstName: "Klient", lastName: "A", phone: "500600700" },
+  });
+  assert.equal(blocked.status, 409);
+
+  const acceptedAppointment = createClientAppointment({
+    id: "accepted-waitlist-slot",
+    userId: clientBUid,
+    startTime: "09:00",
+  });
+  const accepted = await request(tokens.clientB, "POST", {
+    action: "create_client",
+    appointment: acceptedAppointment,
+    client: { firstName: "Klient", lastName: "B", phone: "600700800" },
+  });
+  assert.equal(accepted.status, 200, await accepted.text());
+  assert.equal(fixture.database.waitlistEntries["waitlist-held-slot"], undefined);
+  assert.equal(fixture.database.appointments[acceptedAppointment.id].userId, clientBUid);
+});
+
 test("E2E client flow: booking, client reschedule, barber confirmation and cancellation", async () => {
   fixture.reset();
   const appointment = createClientAppointment({ id: "client-lifecycle" });
