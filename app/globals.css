@@ -218,6 +218,462 @@ input:focus-visible {
   font-weight: 860;
 }
 
+.install-guide-trigger {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  min-height: 3rem;
+  margin-top: 0.75rem;
+  padding: 0.55rem 0.68rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #f3f5f9;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.install-guide-trigger:hover {
+  border-color: rgba(141, 183, 255, 0.3);
+  background: rgba(76, 141, 255, 0.075);
+  transform: translateY(-1px);
+}
+
+.install-guide-trigger-icon {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 10px;
+  background: rgba(76, 141, 255, 0.13);
+  color: #9dc0ff;
+}
+
+.install-guide-trigger-icon svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.install-guide-trigger-copy {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.install-guide-trigger-copy strong {
+  overflow: hidden;
+  font-size: 0.82rem;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.install-guide-trigger-copy small {
+  overflow: hidden;
+  color: #8f96a4;
+  font-size: 0.67rem;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.install-guide-trigger-browsers {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.install-guide-trigger-browsers svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.install-guide-trigger-browsers > svg:first-child {
+  color: #59a8ff;
+}
+
+.install-guide-trigger-chevron {
+  width: 1rem;
+  height: 1rem;
+  color: #707887;
+}
+
+.install-guide-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  align-items: end;
+  padding: 0.75rem;
+  background: rgba(2, 3, 6, 0.68);
+  backdrop-filter: blur(18px) saturate(125%);
+  animation: install-backdrop-in 180ms ease-out both;
+}
+
+.install-guide-dialog {
+  position: relative;
+  width: min(100%, 31rem);
+  max-height: calc(100svh - 1.5rem);
+  margin: 0 auto;
+  overflow-y: auto;
+  padding: 1.2rem 1.15rem calc(1.2rem + env(safe-area-inset-bottom));
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at 12% 0, rgba(76, 141, 255, 0.16), transparent 14rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), transparent 36%),
+    #11131a;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.58);
+  animation: install-sheet-in 220ms cubic-bezier(0.2, 0.78, 0.25, 1) both;
+}
+
+.install-guide-grabber {
+  width: 2.6rem;
+  height: 0.25rem;
+  margin: -0.35rem auto 1.05rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.17);
+}
+
+.install-guide-close {
+  position: absolute;
+  top: 0.9rem;
+  right: 0.9rem;
+  display: grid;
+  place-items: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.065);
+  color: #e9ecf2;
+  cursor: pointer;
+}
+
+.install-guide-close svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.install-guide-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding-right: 2.6rem;
+}
+
+.install-guide-heading-icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 3.15rem;
+  height: 3.15rem;
+  border: 1px solid rgba(141, 183, 255, 0.2);
+  border-radius: 17px;
+  background: rgba(76, 141, 255, 0.13);
+  color: #a7c6ff;
+}
+
+.install-guide-heading-icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.install-guide-heading .eyebrow {
+  margin: 0 0 0.2rem;
+  color: #8db7ff;
+  font-size: 0.67rem;
+}
+
+.install-guide-heading h2,
+.install-guide-step h2 {
+  margin: 0;
+  color: #f5f6fa;
+  font-size: 1.38rem;
+  line-height: 1.12;
+}
+
+.install-guide-lead {
+  margin: 1rem 0 0;
+  color: #9da4b2;
+  font-size: 0.86rem;
+  line-height: 1.48;
+}
+
+.install-platform-list {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1.1rem;
+}
+
+.install-platform-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 4.65rem;
+  padding: 0.72rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 19px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #f5f6fa;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.install-platform-option:hover {
+  border-color: rgba(141, 183, 255, 0.28);
+  background: rgba(255, 255, 255, 0.06);
+  transform: translateY(-1px);
+}
+
+.install-platform-logo {
+  display: grid;
+  place-items: center;
+  width: 3.05rem;
+  height: 3.05rem;
+  border-radius: 15px;
+}
+
+.install-platform-logo.ios {
+  background: #f0f1f4;
+  color: #111319;
+}
+
+.install-platform-logo.android {
+  background: rgba(52, 168, 83, 0.16);
+  color: #63d781;
+}
+
+.install-platform-logo svg {
+  width: 1.48rem;
+  height: 1.48rem;
+}
+
+.install-platform-copy {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.install-platform-copy strong {
+  font-size: 0.91rem;
+  font-weight: 790;
+}
+
+.install-platform-copy small {
+  color: #929aa8;
+  font-size: 0.71rem;
+  font-weight: 650;
+}
+
+.install-platform-browser {
+  display: grid;
+  place-items: center;
+  width: 1.65rem;
+  height: 1.65rem;
+}
+
+.install-platform-browser svg {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.install-platform-browser.safari {
+  border-radius: 50%;
+  background: linear-gradient(150deg, #5bb8ff, #147ee8);
+  color: #ffffff;
+}
+
+.install-platform-browser.safari svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.install-platform-chevron {
+  width: 1rem;
+  height: 1rem;
+  color: #707887;
+}
+
+.install-guide-step {
+  display: grid;
+  justify-items: center;
+  min-height: 24rem;
+  text-align: center;
+}
+
+.install-guide-step-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding-right: 2.8rem;
+}
+
+.install-guide-step-topline > span {
+  color: #818998;
+  font-size: 0.69rem;
+  font-weight: 720;
+}
+
+.install-guide-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.2rem;
+  padding: 0 0.65rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #d7dbe3;
+  cursor: pointer;
+  font-size: 0.73rem;
+  font-weight: 720;
+}
+
+.install-guide-back svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.install-guide-progress {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.3rem;
+  width: min(15rem, 72%);
+  margin-top: 1.1rem;
+}
+
+.install-guide-progress span {
+  height: 0.24rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  transition: background 180ms ease;
+}
+
+.install-guide-progress span.active {
+  background: #70a3ff;
+}
+
+.install-guide-step-icon {
+  display: grid;
+  place-items: center;
+  width: 5.1rem;
+  height: 5.1rem;
+  margin-top: 1.5rem;
+  border: 1px solid rgba(141, 183, 255, 0.22);
+  border-radius: 25px;
+  background:
+    linear-gradient(145deg, rgba(76, 141, 255, 0.21), rgba(76, 141, 255, 0.07)),
+    rgba(255, 255, 255, 0.035);
+  color: #a8c7ff;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.26);
+}
+
+.install-guide-step-icon.done {
+  border-color: rgba(48, 209, 88, 0.24);
+  background: rgba(48, 209, 88, 0.12);
+  color: #67dc84;
+}
+
+.install-guide-step-icon.chrome {
+  border-color: rgba(255, 255, 255, 0.11);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.install-guide-step-icon svg {
+  width: 2.35rem;
+  height: 2.35rem;
+}
+
+.install-guide-step-icon .install-guide-step-svg {
+  width: 2.85rem;
+  height: 2.85rem;
+}
+
+.install-guide-step-counter {
+  margin: 1.25rem 0 0.42rem;
+  color: #7fa9f5;
+  font-size: 0.67rem;
+  font-weight: 790;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.install-guide-step h2 {
+  max-width: 18ch;
+}
+
+.install-guide-step-description {
+  max-width: 25rem;
+  margin: 0.72rem 0 0;
+  color: #9aa2b0;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.install-guide-actions {
+  align-self: end;
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 0.6rem;
+  width: 100%;
+  margin-top: 1.45rem;
+}
+
+.install-guide-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 3rem;
+  border: 0;
+  border-radius: 15px;
+  cursor: pointer;
+  font-size: 0.83rem;
+  font-weight: 790;
+}
+
+.install-guide-secondary {
+  background: rgba(255, 255, 255, 0.065);
+  color: #d7dbe4;
+}
+
+.install-guide-primary {
+  background: #edf3ff;
+  color: #13203a;
+}
+
+.install-guide-primary svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+@keyframes install-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes install-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(1rem) scale(0.985);
+  }
+}
+
 .auth-error {
   margin-top: 0.9rem;
   color: #ffb4ae;
@@ -265,12 +721,17 @@ input:focus-visible {
   }
 
   .auth-card:has(.auth-benefits) .google-login-button,
+  .auth-card:has(.auth-benefits) .install-guide-trigger,
   .auth-card:has(.auth-benefits) .auth-error {
     grid-column: 2;
   }
 
   .auth-card:has(.auth-benefits) .google-login-button {
     margin-top: 0;
+  }
+
+  .auth-card:has(.auth-benefits) .install-guide-trigger {
+    margin-top: -0.55rem;
   }
 
   .app-shell .topbar {
@@ -8261,6 +8722,10 @@ h2 {
   .client-modal-backdrop {
     align-items: center;
   }
+
+  .install-guide-backdrop {
+    align-items: center;
+  }
 }
 
 @media (max-width: 560px) {
@@ -9225,6 +9690,14 @@ h2 {
 }
 
 @media (max-width: 380px) {
+  .install-guide-trigger-browsers {
+    display: none;
+  }
+
+  .install-guide-trigger {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
   .availability-maker .work-time-controls,
   .work-time-controls.pro {
     grid-template-columns: 1fr;

@@ -89,6 +89,17 @@ test("keeps the client-focused sign-in experience concise", async () => {
   assert.match(bookingHome, /Twój następny termin/);
   assert.match(bookingHome, /Rezerwacja w mniej niż minutę/);
   assert.match(bookingHome, /Przypomnienie przed wizytą/);
+  assert.match(bookingHome, /className="install-guide-trigger"/);
+  assert.match(bookingHome, /Zainstaluj aplikację/);
+  assert.match(bookingHome, /Wybierz swój telefon/);
+  assert.match(bookingHome, /iPhone lub iPad/);
+  assert.match(bookingHome, /Telefon z Androidem/);
+  assert.match(bookingHome, /Instrukcja dla Safari/);
+  assert.match(bookingHome, /Instrukcja dla Chrome/);
+  assert.match(bookingHome, /Naciśnij Udostępnij/);
+  assert.match(bookingHome, /Dodaj do ekranu początkowego/);
+  assert.match(bookingHome, /Otwórz menu Chrome/);
+  assert.match(bookingHome, /function ChromeBrandIcon/);
   assert.doesNotMatch(bookingHome, /Bez podglądu cudzych rezerwacji/);
   assert.doesNotMatch(bookingHome, /Łatwiejsze przesunięcie wizyty/);
   assert.match(bookingHome, /shouldUseRedirectSignIn\(window\.navigator\)/);
@@ -99,6 +110,10 @@ test("keeps the client-focused sign-in experience concise", async () => {
   assert.match(netlifyConfig, /status = 200/);
   assert.match(firebaseConfig, /https:\/\/bnbbarber\.netlify\.app\/__\/auth\/handler/);
   assert.match(styles, /\.auth-benefits span::before/);
+  assert.match(styles, /\.install-guide-backdrop/);
+  assert.match(styles, /\.install-platform-option/);
+  assert.match(styles, /\.install-guide-step-icon/);
+  assert.match(styles, /@keyframes install-sheet-in/);
 });
 
 test("keeps the mobile booking gestures and bottom-sheet interactions", async () => {
