@@ -1,4 +1,4 @@
-const appointmentStatuses = new Set(["confirmed", "rescheduled", "cancelled", "completed"]);
+const appointmentStatuses = new Set(["confirmed", "rescheduled", "cancelled", "completed", "no_show"]);
 const appointmentColors = new Set(["blue", "mint", "pink", "violet", "amber", "coral", "sky", "lime"]);
 const firebaseKeyPattern = /[.#$\[\]/]/;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;

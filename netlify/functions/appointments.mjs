@@ -32,6 +32,7 @@ const allowedActions = new Set([
   "reschedule_admin",
   "cancel_admin",
   "settle_admin",
+  "mark_no_show_admin",
   "upsert_admin_client",
   "hide_admin_client",
 ]);
@@ -41,6 +42,7 @@ const scheduleAdminActions = new Set([
   "confirm_admin",
   "cancel_admin",
   "settle_admin",
+  "mark_no_show_admin",
 ]);
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -225,8 +227,8 @@ const enqueueAppointmentNotification = (database, event, appointment, operationI
   };
 };
 
-const isSettlementAvailable = (appointment, now = new Date()) => {
-  const parts = Object.fromEntries(
+const getWarsawDateTimeParts = (now = new Date()) =>
+  Object.fromEntries(
     new Intl.DateTimeFormat("sv-SE", {
       timeZone: "Europe/Warsaw",
       year: "numeric",
@@ -238,12 +240,25 @@ const isSettlementAvailable = (appointment, now = new Date()) => {
     })
       .formatToParts(now)
       .filter((part) => part.type !== "literal")
-      .map((part) => [part.type, part.value]),
-  );
+      .map((part) => [part.type, part.value]));
+
+const isSettlementAvailable = (appointment, now = new Date()) => {
+  const parts = getWarsawDateTimeParts(now);
   const todayKey = `${parts.year}-${parts.month}-${parts.day}`;
   if (appointment.dateKey < todayKey) return true;
   if (appointment.dateKey > todayKey) return false;
   return timeToMinutes(`${parts.hour}:${parts.minute}`) >= timeToMinutes(appointment.startTime) + 1;
+};
+
+const isNoShowAvailable = (appointment, now = new Date()) => {
+  const parts = getWarsawDateTimeParts(now);
+  const todayKey = `${parts.year}-${parts.month}-${parts.day}`;
+  if (appointment.dateKey < todayKey) return true;
+  if (appointment.dateKey > todayKey) return false;
+  return (
+    timeToMinutes(`${parts.hour}:${parts.minute}`) >=
+    timeToMinutes(appointment.startTime) + appointment.durationMinutes
+  );
 };
 
 const readOperation = (body) => {
@@ -378,6 +393,7 @@ const getAppointmentData = async (user, admin, accessToken) => {
     if (
       appointment.status !== "cancelled" &&
       appointment.status !== "completed" &&
+      appointment.status !== "no_show" &&
       appointment.dateKey >= todayKey
     ) {
       occupancy.push({
@@ -498,6 +514,9 @@ const upsertAdminClient = async (body, admin, user, accessToken, operation, requ
     : null;
 
   if (proposed) {
+    if (!canAdminAccess(admin, "schedule")) {
+      return jsonResponse({ ok: false, error: "Brak uprawnień do umawiania wizyt." }, 403);
+    }
     proposed.clientId = clientId;
     if (!canAdminManageAppointment(admin, proposed) || proposed.barberId !== barberId) {
       return jsonResponse({ ok: false, error: "Brak uprawnień do tego terminarza." }, 403);
@@ -766,8 +785,8 @@ const handler = async (request) => {
       }
       const versionError = requireCurrentVersion(operation, current);
       if (versionError) return versionError;
-      if (current.status === "cancelled" || current.status === "completed") {
-        return { error: "Zakończonej lub anulowanej wizyty nie można już zmieniać.", status: 409 };
+      if (["cancelled", "completed", "no_show"].includes(current.status)) {
+        return { error: "Zamkniętej wizyty nie można już zmieniać.", status: 409 };
       }
       if (
         (action === "confirm_client" || action === "confirm_admin") &&
@@ -807,6 +826,13 @@ const handler = async (request) => {
         const settledAt = Date.now();
         next.status = "completed";
         next.settlement = { barberId: next.barberId, settledAt, amount };
+      } else if (action === "mark_no_show_admin") {
+        if (!isNoShowAvailable(next)) {
+          return { error: "Nieobecność można oznaczyć dopiero po zakończeniu wizyty.", status: 409 };
+        }
+        next.status = "no_show";
+        next.noShowAt = Date.now();
+        next.noShowBy = "admin";
       }
 
       next = updateAppointmentVersion(next, operation.operationId);

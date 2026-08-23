@@ -43,19 +43,24 @@ import {
   resolveActiveBarberId,
   shouldApplyAppointmentSnapshot,
 } from "../shared/appointment-sync.mjs";
+import {
+  formatNearestAppointmentLabel,
+  selectNearestAppointments,
+} from "../shared/appointment-label.mjs";
 import { isBookableStartTime } from "../shared/booking-time.mjs";
 
 type Availability = "high" | "medium" | "low" | "none";
 type Step = "booking" | "confirm" | "success" | "admin";
-type AdminSection =
+type BarberAdminSection =
   | "schedule"
   | "clients"
   | "analytics"
   | "work"
   | "services"
-  | "profile"
-  | "team";
-type BarberAdminSection = Exclude<AdminSection, "team">;
+  | "profile";
+type AdminSection = Exclude<BarberAdminSection, "clients"> | "team";
+type StandaloneAdminSection = Exclude<BarberAdminSection, "schedule" | "clients">;
+type AdminWorkspaceTab = "upcoming" | "schedule" | "clients";
 
 type Service = {
   id: string;
@@ -103,7 +108,7 @@ type AdminEditDraft = {
   startTime: string;
 };
 
-type AppointmentStatus = "confirmed" | "rescheduled" | "cancelled" | "completed";
+type AppointmentStatus = "confirmed" | "rescheduled" | "cancelled" | "completed" | "no_show";
 type AppointmentColor = "blue" | "mint" | "pink" | "violet" | "amber" | "coral" | "sky" | "lime";
 
 type BookingSummary = {
@@ -135,6 +140,8 @@ type AdminAppointment = Appointment & {
   rescheduledBy?: "client" | "admin";
   confirmedAt?: number;
   confirmedBy?: "client" | "admin";
+  noShowAt?: number;
+  noShowBy?: "admin";
   settlement?: {
     barberId: string;
     settledAt: number;
@@ -273,6 +280,7 @@ const barberAdminSections: BarberAdminSection[] = [
   "services",
   "profile",
 ];
+const standaloneAdminSections: StandaloneAdminSection[] = ["analytics", "work", "services", "profile"];
 const fullBarberAccess: Record<BarberAdminSection, boolean> = {
   schedule: true,
   clients: true,
@@ -360,11 +368,11 @@ const appointmentStatusLabels: Record<AppointmentStatus, string> = {
   rescheduled: "Przesunięta",
   cancelled: "Odwołana",
   completed: "Rozliczona",
+  no_show: "Nieobecność",
 };
 
 const adminSectionLabels: Record<AdminSection, string> = {
-  schedule: "Terminarz",
-  clients: "Baza klientów",
+  schedule: "Terminy",
   analytics: "Analiza",
   work: "Praca",
   services: "Usługi",
@@ -382,8 +390,7 @@ const teamAccessLabels: Record<BarberAdminSection, string> = {
 };
 
 const adminNavigationLabels: Record<AdminSection, string> = {
-  schedule: "Terminarz",
-  clients: "Baza",
+  schedule: "Terminy",
   analytics: "Analiza",
   work: "Praca",
   services: "Usługi",
@@ -421,9 +428,12 @@ const appointmentColorPalette: AppointmentColor[] = [
 ];
 
 const normalizeAppointmentStatus = (status?: string): AppointmentStatus =>
-  status === "rescheduled" || status === "cancelled" || status === "completed"
+  status === "rescheduled" || status === "cancelled" || status === "completed" || status === "no_show"
     ? status
     : "confirmed";
+
+const isClosedAppointmentStatus = (status?: string) =>
+  ["cancelled", "completed", "no_show"].includes(normalizeAppointmentStatus(status));
 
 const normalizeAppointmentColor = (color?: string): AppointmentColor =>
   appointmentColorPalette.includes(color as AppointmentColor)
@@ -630,7 +640,7 @@ const getAppointmentEndDateTime = (
 };
 
 const canSettleAppointment = (appointment: AdminAppointment, now: Date) => {
-  if (["completed", "cancelled"].includes(normalizeAppointmentStatus(appointment.status))) {
+  if (isClosedAppointmentStatus(appointment.status)) {
     return false;
   }
   const settlementAvailableAt = getAppointmentDateTime(appointment);
@@ -639,8 +649,24 @@ const canSettleAppointment = (appointment: AdminAppointment, now: Date) => {
 };
 
 const isPotentialNoShow = (appointment: AdminAppointment, now: Date) =>
-  !["completed", "cancelled"].includes(normalizeAppointmentStatus(appointment.status)) &&
+  !isClosedAppointmentStatus(appointment.status) &&
   now.getTime() > getAppointmentEndDateTime(appointment).getTime();
+
+const getCalendarAppointmentState = (appointment: AdminAppointment, now: Date) => {
+  const status = normalizeAppointmentStatus(appointment.status);
+  if (status === "no_show") return { className: "no-show", label: "Nieobecność" };
+  if (status === "completed") return { className: "completed", label: "Rozliczona" };
+  if (isPotentialNoShow(appointment, now)) {
+    return { className: "missed", label: "Nierozliczona" };
+  }
+  if (status === "rescheduled" && appointment.rescheduledBy !== "admin") {
+    return { className: "settlement-due", label: "Do potwierdzenia" };
+  }
+  if (canSettleAppointment(appointment, now)) {
+    return { className: "settlement-due", label: "Do rozliczenia" };
+  }
+  return { className: status, label: appointmentStatusLabels[status] };
+};
 
 const smsTemplates: SmsTemplate[] = ["confirmation", "reschedule", "reminder", "custom"];
 
@@ -1012,6 +1038,8 @@ export function BookingHome() {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [step, setStep] = useState<Step>("booking");
   const [adminSection, setAdminSection] = useState<AdminSection>("schedule");
+  const [adminWorkspaceTab, setAdminWorkspaceTab] =
+    useState<AdminWorkspaceTab>("upcoming");
   const [visibleMonth, setVisibleMonth] = useState(
     () => new Date(today.getFullYear(), today.getMonth(), 1),
   );
@@ -1057,6 +1085,8 @@ export function BookingHome() {
   const [isSaving, setIsSaving] = useState(false);
   const [pendingNotificationAppointmentId, setPendingNotificationAppointmentId] = useState("");
   const [clientSearch, setClientSearch] = useState("");
+  const [calendarClientSearch, setCalendarClientSearch] = useState("");
+  const [calendarClientPickerOpen, setCalendarClientPickerOpen] = useState(false);
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
   const [clientWorkspaceTab, setClientWorkspaceTab] = useState<ClientWorkspaceTab>("appointments");
   const [pendingClientRemovalId, setPendingClientRemovalId] = useState<string | null>(null);
@@ -1136,11 +1166,17 @@ export function BookingHome() {
   const pushDeviceEnabled = pushDeviceStatus === "enabled";
   const pushDeviceLabel = pushDeviceStatusLabel[pushDeviceStatus];
   const signedInBarberAccess = sessionContext?.access ?? fullBarberAccess;
+  const canAccessAdminSchedule =
+    Boolean(isOwner) || Boolean(isBarber && signedInBarberAccess.schedule);
+  const canAccessAdminClients =
+    Boolean(isOwner) || Boolean(isBarber && signedInBarberAccess.clients);
+  const canAccessAdminWorkspace = canAccessAdminSchedule || canAccessAdminClients;
   const canAccessAdminSection = (section: AdminSection) =>
     isOwner ||
     (isBarber && section !== "team" && signedInBarberAccess[section as BarberAdminSection]);
   const visibleAdminSections: AdminSection[] = [
-    ...barberAdminSections.filter((section) => canAccessAdminSection(section)),
+    ...(canAccessAdminWorkspace ? (["schedule"] as AdminSection[]) : []),
+    ...standaloneAdminSections.filter((section) => canAccessAdminSection(section)),
     ...(isOwner ? (["team"] as AdminSection[]) : []),
   ];
   const activeAdminNavIndex = Math.max(0, visibleAdminSections.indexOf(adminSection));
@@ -1222,7 +1258,7 @@ export function BookingHome() {
         const upcomingAppointments = barberAppointments
           .filter(
             (appointment) =>
-              normalizeAppointmentStatus(appointment.status) !== "completed" &&
+              !isClosedAppointmentStatus(appointment.status) &&
               getAppointmentEndDateTime(appointment).getTime() > currentDate.getTime(),
           )
           .sort((first, second) =>
@@ -1283,6 +1319,20 @@ export function BookingHome() {
         .sort((first, second) => timeToMinutes(first.startTime) - timeToMinutes(second.startTime)),
     [adminAppointments, adminSelectedKey],
   );
+  const upcomingAdminAppointments = useMemo(
+    () =>
+      adminAppointments
+        .filter(
+          (appointment) =>
+            !isClosedAppointmentStatus(appointment.status) &&
+            getAppointmentEndDateTime(appointment).getTime() > currentDate.getTime(),
+        )
+        .sort((first, second) =>
+          getAppointmentSortValue(first).localeCompare(getAppointmentSortValue(second)),
+        ),
+    [adminAppointments, currentDate],
+  );
+  const nearestAdminAppointments = selectNearestAppointments(upcomingAdminAppointments, 4) as AdminAppointment[];
   const adminDayAvailability = getAvailabilityForDate(adminSelectedKey, workSettings);
   const adminScheduleStartMinutes = adminDayAvailability
     ? Math.floor(timeToMinutes(adminDayAvailability.startTime) / 60) * 60
@@ -1357,8 +1407,7 @@ export function BookingHome() {
         const nextAppointment =
           sortedAppointments.find(
             (appointment) =>
-              normalizeAppointmentStatus(appointment.status) !== "completed" &&
-              normalizeAppointmentStatus(appointment.status) !== "cancelled" &&
+              !isClosedAppointmentStatus(appointment.status) &&
               getAppointmentEndDateTime(appointment).getTime() > currentDate.getTime(),
           ) ?? null;
         const lastAppointment =
@@ -1435,6 +1484,18 @@ export function BookingHome() {
       return true;
     });
   }, [clientFilter, clientSearch, clientWorkspaceProfiles]);
+  const calendarBookingClients = useMemo(() => {
+    const query = calendarClientSearch.trim().toLocaleLowerCase("pl");
+
+    return adminClientProfiles.filter((client) =>
+      !query
+        ? true
+        : [client.name, client.email, client.phone, getPhoneDigits(client.phone)]
+            .join(" ")
+            .toLocaleLowerCase("pl")
+            .includes(query),
+    );
+  }, [adminClientProfiles, calendarClientSearch]);
   const analytics = useMemo(() => {
     const range = getAnalyticsRange(analyticsPeriod, currentDate);
     const isWithin = (appointment: AdminAppointment, start: Date, end: Date) => {
@@ -1458,7 +1519,7 @@ export function BookingHome() {
     );
     const upcomingAppointments = adminAppointments.filter(
       (appointment) =>
-        normalizeAppointmentStatus(appointment.status) !== "completed" &&
+        !isClosedAppointmentStatus(appointment.status) &&
         getAppointmentDateTime(appointment).getTime() > currentDate.getTime() &&
         isWithin(appointment, range.start, range.end),
     );
@@ -1631,8 +1692,7 @@ export function BookingHome() {
             .filter(
               (appointment) =>
                 appointment.userId === activeUser.uid &&
-                normalizeAppointmentStatus(appointment.status) !== "completed" &&
-                normalizeAppointmentStatus(appointment.status) !== "cancelled" &&
+                !isClosedAppointmentStatus(appointment.status) &&
                 getAppointmentEndDateTime(appointment).getTime() > currentDate.getTime(),
             )
             .sort((first, second) => {
@@ -1661,9 +1721,7 @@ export function BookingHome() {
     null;
   const selectedClientAppointmentIsClosed = Boolean(
     selectedClientAppointment &&
-      ["cancelled", "completed"].includes(
-        normalizeAppointmentStatus(selectedClientAppointment.status),
-      ),
+      isClosedAppointmentStatus(selectedClientAppointment.status),
   );
   const selectedClientAppointmentIsRescheduled = Boolean(
     selectedClientAppointment &&
@@ -1688,9 +1746,7 @@ export function BookingHome() {
     null;
   const selectedAdminEditAppointmentIsClosed = Boolean(
     selectedAdminEditAppointment &&
-      ["cancelled", "completed"].includes(
-        normalizeAppointmentStatus(selectedAdminEditAppointment.status),
-      ),
+      isClosedAppointmentStatus(selectedAdminEditAppointment.status),
   );
   const selectedAdminClient =
     adminClientProfiles.find((client) => client.id === selectedAdminClientId) ?? null;
@@ -2321,6 +2377,7 @@ export function BookingHome() {
     if (isAdmin && adminAppointment) {
       setSelectedBarberId(appointment.barberId);
       setAdminSection("schedule");
+      setAdminWorkspaceTab("schedule");
       setAdminSelectedKey(appointment.dateKey);
       setAdminEditDraft({ dateKey: appointment.dateKey, startTime: appointment.startTime });
       setAdminEditAppointmentId(appointment.id);
@@ -2435,17 +2492,42 @@ export function BookingHome() {
 
   useEffect(() => {
     if (step !== "admin" || isOwner || !isBarber) return;
-    if (adminSection !== "team" && signedInBarberAccess[adminSection]) return;
+    if (adminSection === "schedule" && canAccessAdminWorkspace) {
+      if (adminWorkspaceTab === "schedule" && !canAccessAdminSchedule) {
+        setAdminWorkspaceTab("upcoming");
+      } else if (adminWorkspaceTab === "clients" && !canAccessAdminClients) {
+        setAdminWorkspaceTab("upcoming");
+      }
+      return;
+    }
+    if (
+      adminSection !== "team" &&
+      adminSection !== "schedule" &&
+      signedInBarberAccess[adminSection]
+    ) {
+      return;
+    }
 
-    const firstAllowedSection = barberAdminSections.find(
-      (section) => signedInBarberAccess[section],
-    );
+    const firstAllowedSection: AdminSection | undefined = canAccessAdminWorkspace
+      ? "schedule"
+      : standaloneAdminSections.find((section) => signedInBarberAccess[section]);
     if (firstAllowedSection) {
       setAdminSection(firstAllowedSection);
+      if (firstAllowedSection === "schedule") setAdminWorkspaceTab("upcoming");
     } else {
       setStep("booking");
     }
-  }, [adminSection, isBarber, isOwner, signedInBarberAccess, step]);
+  }, [
+    adminSection,
+    adminWorkspaceTab,
+    canAccessAdminClients,
+    canAccessAdminSchedule,
+    canAccessAdminWorkspace,
+    isBarber,
+    isOwner,
+    signedInBarberAccess,
+    step,
+  ]);
 
   useEffect(() => {
     if (visibleStep !== "success") return undefined;
@@ -2580,7 +2662,7 @@ export function BookingHome() {
   useEffect(() => {
     if (visibleStep !== "admin") return;
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" }));
-  }, [adminSection, visibleStep]);
+  }, [adminSection, adminWorkspaceTab, visibleStep]);
 
   const shiftMonth = (direction: -1 | 1) => {
     if (direction === -1 && !canShiftToPreviousMonth) return;
@@ -2968,6 +3050,9 @@ export function BookingHome() {
   ) => {
     setSelectedBarberId(barberId);
     setAdminSection(section);
+    if (section === "schedule") {
+      setAdminWorkspaceTab("upcoming");
+    }
     setAdminSelectedKey(dayKey(today));
     setClientSearch("");
     setClientFilter("all");
@@ -3565,15 +3650,26 @@ export function BookingHome() {
     });
   };
 
-  const openClientCreator = () => {
+  const openClientCreator = (saveMode: ClientSaveMode = "record") => {
     setClientDraft({ firstName: "", lastName: "", email: "", phone: "" });
-    setClientSaveMode("record");
+    setClientSaveMode(saveMode);
     setClientFeedback(null);
     resetManualBookingDraft();
     setClientDialog({ mode: "create" });
   };
 
+  const openCalendarAppointmentCreator = () => {
+    setCalendarClientSearch("");
+    setCalendarClientPickerOpen(true);
+  };
+
+  const openNewCalendarClientBooking = () => {
+    setCalendarClientPickerOpen(false);
+    openClientCreator("booking");
+  };
+
   const openManualClientBooking = (client: AdminClientProfile) => {
+    setCalendarClientPickerOpen(false);
     setSelectedAdminClientId(null);
     setClientFeedback(null);
     resetManualBookingDraft();
@@ -3585,6 +3681,13 @@ export function BookingHome() {
 
     const isCreating = clientDialog.mode === "create";
     const shouldBook = clientDialog.mode === "book" || clientSaveMode === "booking";
+    if (isCreating && !canAccessAdminClients) {
+      setClientFeedback({
+        kind: "error",
+        message: "Nie masz uprawnień do tworzenia nowych kart klientów.",
+      });
+      return;
+    }
     const phoneDigits = getPhoneDigits(isCreating ? clientDraft.phone : manualBookingClient?.phone ?? "");
     const email = (isCreating ? clientDraft.email : manualBookingClient?.email ?? "").trim().toLowerCase();
     const fullName = isCreating
@@ -3715,16 +3818,23 @@ export function BookingHome() {
 
     try {
       setIsClientSaving(true);
-      const result = await runAppointmentOperation(
-        "upsert_admin_client",
-        {
-          barberId: activeBarberId,
-          client: clientRecord,
-          appointmentIds,
-          ...(manualAppointment ? { appointment: manualAppointment } : {}),
-        },
-        { key: `upsert_admin_client:${clientId}`, expectedVersion: 0 },
-      );
+      const result =
+        !canAccessAdminClients && manualAppointment
+          ? await runAppointmentOperation(
+              "create_admin",
+              { appointment: manualAppointment },
+              { key: `create_admin:${manualAppointment.id}`, expectedVersion: 0 },
+            )
+          : await runAppointmentOperation(
+              "upsert_admin_client",
+              {
+                barberId: activeBarberId,
+                client: clientRecord,
+                appointmentIds,
+                ...(manualAppointment ? { appointment: manualAppointment } : {}),
+              },
+              { key: `upsert_admin_client:${clientId}`, expectedVersion: 0 },
+            );
       if (manualAppointment) {
         const savedAppointment = result.appointment ?? manualAppointment;
         setAdminSelectedKey(savedAppointment.dateKey);
@@ -3733,15 +3843,18 @@ export function BookingHome() {
       setClientFeedback({
         kind: "success",
         message: manualAppointment
-          ? `Klient zapisany. Wizyta: ${adminClientDateFormatter.format(
+          ? `Wizyta zapisana: ${adminClientDateFormatter.format(
               dateFromKey(manualAppointment.dateKey),
             )}, ${manualAppointment.startTime}.`
           : matchingClient
             ? "Dane klienta zostały połączone z istniejącą kartą."
             : "Klient został dodany do bazy.",
       });
-    } catch {
-      setClientFeedback({ kind: "error", message: "Nie udało się zapisać klienta. Spróbuj ponownie." });
+    } catch (error) {
+      setClientFeedback({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Nie udało się zapisać wizyty.",
+      });
     } finally {
       setIsClientSaving(false);
     }
@@ -3761,7 +3874,7 @@ export function BookingHome() {
       setSelectedAdminClientId(null);
       setClientFeedback({
         kind: "success",
-        message: "Klient został usunięty z kartoteki. Historia wizyt pozostała bez zmian.",
+        message: "Klient został ukryty w bazie. Historia wizyt pozostała bez zmian.",
       });
     } catch {
       setClientFeedback({ kind: "error", message: "Nie udało się usunąć klienta z kartoteki." });
@@ -3794,6 +3907,112 @@ export function BookingHome() {
       setSettlingAppointmentId(null);
     }
   };
+
+  const markAdminAppointmentNoShow = async (appointment: AdminAppointment) => {
+    if (!isAdmin || isSaving || !isPotentialNoShow(appointment, currentDate)) return;
+    if (!window.confirm(`Oznaczyć nieobecność klienta ${appointment.clientName}?`)) return;
+
+    try {
+      setIsSaving(true);
+      await runAppointmentOperation(
+        "mark_no_show_admin",
+        { appointmentId: appointment.id },
+        {
+          key: `mark_no_show_admin:${appointment.id}`,
+          expectedVersion: appointment.version ?? 1,
+        },
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const renderCalendarAppointmentActions = (appointment: AdminAppointment, mobile = false) => {
+    const status = normalizeAppointmentStatus(appointment.status);
+    const isClosed = isClosedAppointmentStatus(status);
+    const potentialNoShow = isPotentialNoShow(appointment, currentDate);
+    const settlementAvailable = canSettleAppointment(appointment, currentDate);
+    const awaitsAdminConfirmation =
+      status === "rescheduled" && appointment.rescheduledBy !== "admin";
+    const canEdit = !isClosed && !potentialNoShow;
+
+    if (isClosed) return null;
+
+    return (
+      <div className={mobile ? "mobile-agenda-actions" : "appointment-actions"}>
+        {awaitsAdminConfirmation ? (
+          <button
+            className="confirm"
+            type="button"
+            disabled={isSaving}
+            onClick={() => void confirmClientRescheduledAppointment(appointment.id)}
+          >
+            Potwierdź
+          </button>
+        ) : null}
+        {settlementAvailable ? (
+          <button
+            className="settle"
+            type="button"
+            disabled={Boolean(settlingAppointmentId)}
+            onClick={() => void settleAdminAppointment(appointment)}
+          >
+            {settlingAppointmentId === appointment.id ? "Zapis..." : "Rozlicz"}
+          </button>
+        ) : null}
+        {potentialNoShow ? (
+          <button
+            className="no-show"
+            type="button"
+            disabled={isSaving}
+            onClick={() => void markAdminAppointmentNoShow(appointment)}
+          >
+            Nieobecność
+          </button>
+        ) : null}
+        {canEdit ? (
+          <>
+            <button
+              type="button"
+              onClick={() => shiftAdminAppointment(appointment.id, -15)}
+              disabled={
+                !canMoveAdminAppointment(
+                  appointment,
+                  minutesToTime(timeToMinutes(appointment.startTime) - 15),
+                )
+              }
+              aria-label={`Cofnij wizytę ${appointment.clientName} o 15 minut`}
+            >
+              -15
+            </button>
+            <button
+              type="button"
+              onClick={() => shiftAdminAppointment(appointment.id, 15)}
+              disabled={
+                !canMoveAdminAppointment(
+                  appointment,
+                  minutesToTime(timeToMinutes(appointment.startTime) + 15),
+                )
+              }
+              aria-label={`Przesuń wizytę ${appointment.clientName} o 15 minut`}
+            >
+              +15
+            </button>
+            <button type="button" onClick={() => openAdminAppointmentEdit(appointment)}>
+              Edytuj
+            </button>
+            <button
+              className={mobile ? "decline" : "decline-button"}
+              type="button"
+              onClick={() => declineAdminAppointment(appointment.id)}
+            >
+              Anuluj
+            </button>
+          </>
+        ) : null}
+      </div>
+    );
+  };
   const selectSmsTemplate = (template: SmsTemplate) => {
     if (!smsAppointment) return;
 
@@ -3824,6 +4043,45 @@ export function BookingHome() {
         : current,
     );
   };
+  const renderAdminWorkspaceTabs = () => (
+    <nav className="admin-workspace-tabs" role="tablist" aria-label="Widok terminów i klientów">
+      <button
+        className={adminWorkspaceTab === "upcoming" ? "active" : ""}
+        type="button"
+        role="tab"
+        aria-selected={adminWorkspaceTab === "upcoming"}
+        onClick={() => setAdminWorkspaceTab("upcoming")}
+      >
+        <span className="workspace-tab-icon upcoming" aria-hidden="true" />
+        <span>Najbliższe</span>
+        <small>{Math.min(4, upcomingAdminAppointments.length)}</small>
+      </button>
+      {canAccessAdminSchedule ? (
+        <button
+          className={adminWorkspaceTab === "schedule" ? "active" : ""}
+          type="button"
+          role="tab"
+          aria-selected={adminWorkspaceTab === "schedule"}
+          onClick={() => setAdminWorkspaceTab("schedule")}
+        >
+          <span className="workspace-tab-icon schedule" aria-hidden="true" />
+          <span>Kalendarz</span>
+        </button>
+      ) : null}
+      {canAccessAdminClients ? (
+        <button
+          className={adminWorkspaceTab === "clients" ? "active" : ""}
+          type="button"
+          role="tab"
+          aria-selected={adminWorkspaceTab === "clients"}
+          onClick={() => setAdminWorkspaceTab("clients")}
+        >
+          <span className="workspace-tab-icon clients" aria-hidden="true" />
+          <span>Klienci</span>
+        </button>
+      ) : null}
+    </nav>
+  );
   if (!authReady || (activeUser && !sessionReady)) {
     return (
       <main className="auth-shell" aria-label="Ładowanie logowania">
@@ -3904,6 +4162,7 @@ export function BookingHome() {
                 if (isOwner && selectedBarber) {
                   setSelectedBarberId(null);
                   setAdminSection("schedule");
+                  setAdminWorkspaceTab("upcoming");
                 } else {
                   setStep("booking");
                 }
@@ -3923,7 +4182,7 @@ export function BookingHome() {
               <header className="owner-barber-heading">
                 <p className="eyebrow">Panel zespołu</p>
                 <h2>Czyj panel chcesz otworzyć?</h2>
-                <span>Każdy barber ma osobny terminarz, klientów, analizę, pracę, usługi i profil.</span>
+                <span>Każdy barber ma osobne terminy, analizę, pracę, usługi i profil.</span>
                 <button
                   className="owner-team-button"
                   type="button"
@@ -4002,11 +4261,195 @@ export function BookingHome() {
               ) : null}
 
               <div className="admin-content-frame">
-            <div className={`admin-tab-panel ${adminSection === "schedule" ? "active" : ""}`}>
-              <div className="admin-section-header schedule-section-header">
+            <div
+              className={`admin-tab-panel admin-workspace-panel nearest-workspace-panel ${
+                adminSection === "schedule" && adminWorkspaceTab === "upcoming" ? "active" : ""
+              }`}
+            >
+              {renderAdminWorkspaceTabs()}
+              <div className="admin-section-header nearest-section-header">
                 <div>
+                  <p className="eyebrow">Pierwszy rzut oka</p>
+                  <h2>4 najbliższe wizyty</h2>
+                </div>
+                <div className="admin-section-stats" aria-label="Podsumowanie najbliższych wizyt">
+                  <span>
+                    <strong>{upcomingAdminAppointments.length}</strong>
+                    nadchodzących
+                  </span>
+                  <span>
+                    <strong>
+                      {
+                        upcomingAdminAppointments.filter(
+                          (appointment) => appointment.dateKey === dayKey(today),
+                        ).length
+                      }
+                    </strong>
+                    dzisiaj
+                  </span>
+                </div>
+              </div>
+
+              <div className="nearest-appointments-view">
+                {nearestAdminAppointments.length > 0 ? (
+                  <div className="nearest-appointments-list">
+                    {nearestAdminAppointments.map((appointment, index) => {
+                      const client = adminClientProfiles.find((profile) =>
+                        profile.appointments.some((item) => item.id === appointment.id),
+                      );
+                      const appointmentStart = getAppointmentDateTime(appointment);
+                      const appointmentEnd = getAppointmentEndDateTime(appointment);
+                      const isInProgress =
+                        appointmentStart.getTime() <= currentDate.getTime() &&
+                        appointmentEnd.getTime() > currentDate.getTime();
+                      const nearestAppointmentLabel =
+                        index === 0
+                          ? formatNearestAppointmentLabel({
+                              distanceLabel: getAppointmentDistanceLabel(
+                                appointment.dateKey,
+                                today,
+                              ),
+                              startTime: appointment.startTime,
+                              startTimestamp: appointmentStart.getTime(),
+                              nowTimestamp: currentDate.getTime(),
+                            })
+                          : "";
+                      const settlementAvailable = canSettleAppointment(appointment, currentDate);
+                      const hasPhone = getPhoneDigits(client?.phone ?? appointment.phone ?? "").length === 9;
+
+                      return (
+                        <article
+                          className={`nearest-appointment-card ${appointment.color} ${
+                            index === 0 ? "primary" : ""
+                          }`}
+                          key={appointment.id}
+                        >
+                          <div
+                            className={`nearest-appointment-order ${
+                              index === 0 ? "primary-label" : ""
+                            }`}
+                          >
+                            {index === 0 ? (
+                              <strong>{nearestAppointmentLabel}</strong>
+                            ) : (
+                              <>
+                                <span>{index + 1}</span>
+                                <small>
+                                  {getAppointmentDistanceLabel(appointment.dateKey, today)}
+                                </small>
+                              </>
+                            )}
+                          </div>
+                          <div className="nearest-appointment-time">
+                            <strong>{appointment.startTime}</strong>
+                            <span>
+                              do {addMinutesToTime(appointment.startTime, appointment.durationMinutes)}
+                            </span>
+                          </div>
+                          <ProfileAvatar
+                            className="nearest-appointment-avatar"
+                            name={appointment.clientName}
+                            photoUrl={appointment.clientPhotoUrl}
+                          />
+                          <div className="nearest-appointment-main">
+                            <small>
+                              {adminClientDateFormatter.format(dateFromKey(appointment.dateKey))}
+                            </small>
+                            <h3>{appointment.clientName}</h3>
+                            <span>{appointment.serviceName} · {appointment.price}</span>
+                          </div>
+                          <div className="nearest-appointment-state">
+                            {isInProgress ? <strong>W trakcie</strong> : null}
+                            <em
+                              className={`appointment-status ${normalizeAppointmentStatus(
+                                appointment.status,
+                              )}`}
+                            >
+                              {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
+                            </em>
+                          </div>
+                          <div className="nearest-appointment-actions">
+                            {canAccessAdminSchedule && settlementAvailable ? (
+                              <button
+                                className="settle"
+                                type="button"
+                                disabled={Boolean(settlingAppointmentId)}
+                                onClick={() => void settleAdminAppointment(appointment)}
+                              >
+                                {settlingAppointmentId === appointment.id ? "Zapisywanie..." : "Rozlicz"}
+                              </button>
+                            ) : null}
+                            {canAccessAdminSchedule ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAdminSelectedKey(appointment.dateKey);
+                                  setAdminWorkspaceTab("schedule");
+                                  openAdminAppointmentEdit(appointment);
+                                }}
+                              >
+                                Edytuj
+                              </button>
+                            ) : null}
+                            {canAccessAdminClients && client ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedAdminClientId(client.id)}
+                              >
+                                Karta
+                              </button>
+                            ) : null}
+                            {canAccessAdminClients && client && hasPhone ? (
+                              <button
+                                className="sms"
+                                type="button"
+                                onClick={() => openSmsComposer(client, appointment)}
+                              >
+                                SMS
+                              </button>
+                            ) : null}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="nearest-appointments-empty">
+                    <span className="workspace-empty-icon" aria-hidden="true" />
+                    <strong>Brak nadchodzących wizyt</strong>
+                    <p>Nowe rezerwacje pojawią się tutaj automatycznie.</p>
+                    {canAccessAdminClients ? (
+                      <button type="button" onClick={() => setAdminWorkspaceTab("clients")}>
+                        Przejdź do klientów
+                      </button>
+                    ) : canAccessAdminSchedule ? (
+                      <button type="button" onClick={() => setAdminWorkspaceTab("schedule")}>
+                        Otwórz kalendarz
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div
+              className={`admin-tab-panel admin-workspace-panel ${
+                adminSection === "schedule" && adminWorkspaceTab === "schedule" ? "active" : ""
+              }`}
+            >
+              {renderAdminWorkspaceTabs()}
+              <div className="admin-section-header schedule-section-header">
+                <div className="schedule-heading-main">
                   <p className="eyebrow">Wybrany dzień</p>
                   <h2>{adminClientDateFormatter.format(dateFromKey(adminSelectedKey))}</h2>
+                  <button
+                    className="schedule-add-appointment"
+                    type="button"
+                    onClick={openCalendarAppointmentCreator}
+                  >
+                    <span aria-hidden="true">+</span>
+                    Dodaj wizytę
+                  </button>
                 </div>
                 <div className="admin-section-stats" aria-label="Podsumowanie dnia">
                   <span>
@@ -4155,11 +4598,14 @@ export function BookingHome() {
 
                   <div className="mobile-agenda-list">
                     {adminDayAppointments.length > 0 ? (
-                      adminDayAppointments.map((appointment) => (
-                        <article
-                          className={`mobile-agenda-appointment ${appointment.color}`}
-                          key={appointment.id}
-                        >
+                      adminDayAppointments.map((appointment) => {
+                        const calendarState = getCalendarAppointmentState(appointment, currentDate);
+
+                        return (
+                          <article
+                            className={`mobile-agenda-appointment ${appointment.color}`}
+                            key={appointment.id}
+                          >
                           <div className="mobile-agenda-time">
                             <strong>{appointment.startTime}</strong>
                             <span>
@@ -4171,55 +4617,13 @@ export function BookingHome() {
                             <span>{appointment.serviceName}</span>
                             <small>{appointment.price}</small>
                           </div>
-                          <em
-                            className={`appointment-status ${normalizeAppointmentStatus(
-                              appointment.status,
-                            )}`}
-                          >
-                            {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
+                          <em className={`appointment-status ${calendarState.className}`}>
+                            {calendarState.label}
                           </em>
-                          {normalizeAppointmentStatus(appointment.status) !== "completed" ? (
-                            <div className="mobile-agenda-actions">
-                            <button
-                              type="button"
-                              onClick={() => shiftAdminAppointment(appointment.id, -15)}
-                              disabled={
-                                !canMoveAdminAppointment(
-                                  appointment,
-                                  minutesToTime(timeToMinutes(appointment.startTime) - 15),
-                                )
-                              }
-                              aria-label={`Cofnij wizytę ${appointment.clientName} o 15 minut`}
-                            >
-                              -15
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => shiftAdminAppointment(appointment.id, 15)}
-                              disabled={
-                                !canMoveAdminAppointment(
-                                  appointment,
-                                  minutesToTime(timeToMinutes(appointment.startTime) + 15),
-                                )
-                              }
-                              aria-label={`Przesuń wizytę ${appointment.clientName} o 15 minut`}
-                            >
-                              +15
-                            </button>
-                            <button type="button" onClick={() => openAdminAppointmentEdit(appointment)}>
-                              Edytuj
-                            </button>
-                            <button
-                              className="decline"
-                              type="button"
-                              onClick={() => declineAdminAppointment(appointment.id)}
-                            >
-                              Odmów
-                            </button>
-                            </div>
-                          ) : null}
-                        </article>
-                      ))
+                          {renderCalendarAppointmentActions(appointment, true)}
+                          </article>
+                        );
+                      })
                     ) : (
                       <div className="mobile-agenda-empty">
                         <strong>Nie ma tu jeszcze żadnej wizyty</strong>
@@ -4277,17 +4681,21 @@ export function BookingHome() {
                         ((timeToMinutes(appointment.startTime) - adminScheduleStartMinutes) / 15) *
                         2.8;
                       const height = Math.max(4.8, (appointment.durationMinutes / 15) * 2.8 - 0.35);
+                      const calendarState = getCalendarAppointmentState(appointment, currentDate);
+                      const appointmentIsEditable =
+                        !isClosedAppointmentStatus(appointment.status) &&
+                        !isPotentialNoShow(appointment, currentDate);
 
                       return (
                         <article
                           className={`admin-appointment ${appointment.color}`}
                           draggable={
                             !isTouchDevice &&
-                            normalizeAppointmentStatus(appointment.status) !== "completed"
+                            appointmentIsEditable
                           }
                           key={appointment.id}
                           onDragStart={() => {
-                            if (normalizeAppointmentStatus(appointment.status) !== "completed") {
+                            if (appointmentIsEditable) {
                               setDraggedAppointmentId(appointment.id);
                             }
                           }}
@@ -4301,54 +4709,11 @@ export function BookingHome() {
                             <span>
                               {appointment.clientName} · {appointment.serviceName}
                             </span>
-                            <small className={`appointment-status ${normalizeAppointmentStatus(appointment.status)}`}>
-                              {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
+                            <small className={`appointment-status ${calendarState.className}`}>
+                              {calendarState.label}
                             </small>
                           </div>
-                          {normalizeAppointmentStatus(appointment.status) !== "completed" ? (
-                            <div className="appointment-actions">
-                            <button
-                              type="button"
-                              onClick={() => shiftAdminAppointment(appointment.id, -15)}
-                              disabled={
-                                !canMoveAdminAppointment(
-                                  appointment,
-                                  minutesToTime(timeToMinutes(appointment.startTime) - 15),
-                                )
-                              }
-                              aria-label={`Cofnij wizytę ${appointment.clientName} o 15 minut`}
-                            >
-                              -15
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => shiftAdminAppointment(appointment.id, 15)}
-                              disabled={
-                                !canMoveAdminAppointment(
-                                  appointment,
-                                  minutesToTime(timeToMinutes(appointment.startTime) + 15),
-                                )
-                              }
-                              aria-label={`Przesuń wizytę ${appointment.clientName} o 15 minut`}
-                            >
-                              +15
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openAdminAppointmentEdit(appointment)}
-                            >
-                              Edytuj
-                            </button>
-                            <button
-                              className="decline-button"
-                              type="button"
-                              onClick={() => declineAdminAppointment(appointment.id)}
-                              aria-label={`Odmów wizytę ${appointment.clientName}`}
-                            >
-                              Odmów
-                            </button>
-                            </div>
-                          ) : null}
+                          {renderCalendarAppointmentActions(appointment)}
                         </article>
                       );
                     })}
@@ -4357,7 +4722,12 @@ export function BookingHome() {
               </div>
             </div>
 
-            <div className={`admin-tab-panel ${adminSection === "clients" ? "active" : ""}`}>
+            <div
+              className={`admin-tab-panel admin-workspace-panel ${
+                adminSection === "schedule" && adminWorkspaceTab === "clients" ? "active" : ""
+              }`}
+            >
+              {renderAdminWorkspaceTabs()}
               <div className="admin-section-header">
                 <div className="client-section-title">
                   <div>
@@ -4366,8 +4736,8 @@ export function BookingHome() {
                     </p>
                     <h2>{clientWorkspaceTab === "appointments" ? "Aktywne wizyty" : "Klienci"}</h2>
                   </div>
-                  {clientWorkspaceTab === "directory" ? (
-                    <button className="add-client-button" type="button" onClick={openClientCreator}>
+                  {canAccessAdminClients ? (
+                    <button className="add-client-button" type="button" onClick={() => openClientCreator()}>
                       <span aria-hidden="true">+</span>
                       Dodaj klienta
                     </button>
@@ -4560,7 +4930,7 @@ export function BookingHome() {
                         </button>
 
                         <div className="client-quick-actions" aria-label={`Szybkie akcje dla ${client.name}`}>
-                          {settlementAppointment ? (
+                          {canAccessAdminSchedule && settlementAppointment ? (
                             <button
                               className="settle-appointment-button"
                               type="button"
@@ -4572,26 +4942,54 @@ export function BookingHome() {
                                 : "Rozlicz"}
                             </button>
                           ) : null}
-                          <button
-                            className="book-client-button"
-                            type="button"
-                            onClick={() => openManualClientBooking(client)}
-                            aria-label={`Umów wizytę dla ${client.name}`}
-                            title="Umów wizytę"
-                          >
-                            <span className="small-calendar-icon" aria-hidden="true" />
-                          </button>
-                          <button
-                            className="sms-button"
-                            type="button"
-                            disabled={!hasPhone || !contactAppointment}
-                            onClick={() => {
-                              if (contactAppointment) openSmsComposer(client, contactAppointment);
-                            }}
-                            aria-label={hasPhone ? `Napisz SMS do ${client.name}` : "Brak numeru telefonu"}
-                          >
-                            <span className="sms-icon" aria-hidden="true" />
-                          </button>
+                          {canAccessAdminSchedule ? (
+                            <button
+                              className="book-client-button"
+                              type="button"
+                              onClick={() => openManualClientBooking(client)}
+                              aria-label={`Umów wizytę dla ${client.name}`}
+                              title="Umów wizytę"
+                            >
+                              <span className="small-calendar-icon" aria-hidden="true" />
+                            </button>
+                          ) : null}
+                          {hasPhone ? (
+                            <a
+                              className="client-phone-button"
+                              href={`tel:+48${phoneDigits}`}
+                              aria-label={`Zadzwoń do ${client.name}`}
+                              title="Zadzwoń"
+                            >
+                              <span className="phone-icon" aria-hidden="true" />
+                            </a>
+                          ) : (
+                            <span className="client-phone-button disabled" aria-label="Brak numeru telefonu">
+                              <span className="phone-icon" aria-hidden="true" />
+                            </span>
+                          )}
+                          {contactAppointment ? (
+                            <button
+                              className="sms-button"
+                              type="button"
+                              disabled={!hasPhone}
+                              onClick={() => openSmsComposer(client, contactAppointment)}
+                              aria-label={hasPhone ? `Napisz SMS do ${client.name}` : "Brak numeru telefonu"}
+                            >
+                              <span className="sms-icon" aria-hidden="true" />
+                            </button>
+                          ) : hasPhone ? (
+                            <a
+                              className="sms-button"
+                              href={`sms:+48${phoneDigits}`}
+                              aria-label={`Napisz SMS do ${client.name}`}
+                            >
+                              <span className="sms-icon" aria-hidden="true" />
+                            </a>
+                          ) : (
+                            <span className="sms-button disabled" aria-label="Brak numeru telefonu">
+                              <span className="sms-icon" aria-hidden="true" />
+                            </span>
+                          )}
                           {client.email ? (
                             <a
                               className="client-email-button"
@@ -5502,7 +5900,10 @@ export function BookingHome() {
                 className={adminSection === section ? "active" : ""}
                 key={section}
                 type="button"
-                onClick={() => setAdminSection(section)}
+                onClick={() => {
+                  setAdminSection(section);
+                  if (section === "schedule") setAdminWorkspaceTab("upcoming");
+                }}
               >
                 <span className={`admin-nav-icon ${section}-icon`} aria-hidden="true" />
                 <span>{adminNavigationLabels[section]}</span>
@@ -6185,6 +6586,95 @@ export function BookingHome() {
         </div>
       ) : null}
 
+      {calendarClientPickerOpen && visibleStep === "admin" ? (
+        <div
+          className="client-modal-backdrop calendar-client-picker-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setCalendarClientPickerOpen(false);
+          }}
+        >
+          <section
+            className="client-appointment-modal calendar-client-picker"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Wybierz klienta do nowej wizyty"
+          >
+            <button
+              className="modal-close-button"
+              type="button"
+              onClick={() => setCalendarClientPickerOpen(false)}
+              aria-label="Zamknij"
+            >
+              ×
+            </button>
+            <header className="client-creator-header">
+              <span className="client-creator-icon" aria-hidden="true">
+                <span className="small-calendar-icon" />
+              </span>
+              <div>
+                <p className="eyebrow">Nowa wizyta</p>
+                <h2>Wybierz klienta</h2>
+              </div>
+            </header>
+            <label className="calendar-client-search">
+              <span className="search-icon" aria-hidden="true" />
+              <input
+                type="search"
+                autoFocus
+                value={calendarClientSearch}
+                onChange={(event) => setCalendarClientSearch(event.target.value)}
+                placeholder="Imię, telefon lub e-mail"
+              />
+            </label>
+            {canAccessAdminClients ? (
+              <button
+                className="calendar-new-client-button"
+                type="button"
+                onClick={openNewCalendarClientBooking}
+              >
+                <span aria-hidden="true">+</span>
+                <strong>Nowy klient</strong>
+                <small>Dodaj dane i od razu umów wizytę</small>
+              </button>
+            ) : null}
+            <div className="calendar-client-list" aria-label="Klienci">
+              {calendarBookingClients.length > 0 ? (
+                calendarBookingClients.map((client) => (
+                  <button
+                    type="button"
+                    key={client.id}
+                    onClick={() => openManualClientBooking(client)}
+                  >
+                    <ProfileAvatar
+                      className="calendar-client-avatar"
+                      name={client.name}
+                      photoUrl={client.photoUrl}
+                    />
+                    <span>
+                      <strong>{client.name}</strong>
+                      <small>
+                        {formatPhoneNumber(getPhoneDigits(client.phone)) || client.email || "Klient z historii wizyt"}
+                      </small>
+                    </span>
+                    <i aria-hidden="true">›</i>
+                  </button>
+                ))
+              ) : (
+                <div className="calendar-client-empty">
+                  <strong>Nie znaleziono klienta</strong>
+                  <span>
+                    {canAccessAdminClients
+                      ? "Dodaj nowego klienta powyżej."
+                      : "Poproś właściciela o dostęp do Bazy klientów, aby tworzyć nowe kontakty."}
+                  </span>
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {clientDialog &&
       (clientDialog.mode === "create" || manualBookingClient) &&
       visibleStep === "admin" ? (
@@ -6233,28 +6723,30 @@ export function BookingHome() {
 
             {clientDialog.mode === "create" ? (
               <>
-                <div className="client-save-mode" aria-label="Sposób zapisu">
-                  <button
-                    className={clientSaveMode === "record" ? "active" : ""}
-                    type="button"
-                    onClick={() => {
-                      setClientSaveMode("record");
-                      setClientFeedback(null);
-                    }}
-                  >
-                    Tylko zapisz
-                  </button>
-                  <button
-                    className={clientSaveMode === "booking" ? "active" : ""}
-                    type="button"
-                    onClick={() => {
-                      setClientSaveMode("booking");
-                      setClientFeedback(null);
-                    }}
-                  >
-                    Zapisz i umów
-                  </button>
-                </div>
+                {canAccessAdminSchedule ? (
+                  <div className="client-save-mode" aria-label="Sposób zapisu">
+                    <button
+                      className={clientSaveMode === "record" ? "active" : ""}
+                      type="button"
+                      onClick={() => {
+                        setClientSaveMode("record");
+                        setClientFeedback(null);
+                      }}
+                    >
+                      Tylko zapisz
+                    </button>
+                    <button
+                      className={clientSaveMode === "booking" ? "active" : ""}
+                      type="button"
+                      onClick={() => {
+                        setClientSaveMode("booking");
+                        setClientFeedback(null);
+                      }}
+                    >
+                      Zapisz i umów
+                    </button>
+                  </div>
+                ) : null}
 
                 <div className="client-form-grid">
                   <label>
@@ -6319,7 +6811,8 @@ export function BookingHome() {
               </div>
             )}
 
-            {clientDialog.mode === "book" || clientSaveMode === "booking" ? (
+            {canAccessAdminSchedule &&
+            (clientDialog.mode === "book" || clientSaveMode === "booking") ? (
               <div className="manual-booking-section">
                 <div className="manual-booking-heading">
                   <div>
@@ -6490,30 +6983,43 @@ export function BookingHome() {
                 <strong>{selectedAdminClient.email || "Brak adresu"}</strong>
               </div>
               <div className="client-profile-contact-actions">
-                <button
-                  className="book"
-                  type="button"
-                  onClick={() => openManualClientBooking(selectedAdminClient)}
-                >
-                  <span className="small-calendar-icon" aria-hidden="true" />
-                  Umów
-                </button>
-                <button
-                  className="sms-button"
-                  type="button"
-                  disabled={
-                    getPhoneDigits(selectedAdminClient.phone).length !== 9 ||
-                    selectedAdminClient.appointments.length === 0
-                  }
-                  onClick={() => {
-                    const appointment =
-                      selectedAdminClient.nextAppointment ?? selectedAdminClient.appointments.at(-1);
-                    if (appointment) openSmsComposer(selectedAdminClient, appointment);
-                  }}
-                >
-                  <span className="sms-icon" aria-hidden="true" />
-                  SMS
-                </button>
+                {canAccessAdminSchedule ? (
+                  <button
+                    className="book"
+                    type="button"
+                    onClick={() => openManualClientBooking(selectedAdminClient)}
+                  >
+                    <span className="small-calendar-icon" aria-hidden="true" />
+                    Umów
+                  </button>
+                ) : null}
+                {getPhoneDigits(selectedAdminClient.phone).length === 9 ? (
+                  <a className="call" href={`tel:+48${getPhoneDigits(selectedAdminClient.phone)}`}>
+                    <span className="phone-icon" aria-hidden="true" />
+                    Zadzwoń
+                  </a>
+                ) : null}
+                {getPhoneDigits(selectedAdminClient.phone).length === 9 ? (
+                  selectedAdminClient.appointments.length > 0 ? (
+                    <button
+                      className="sms-button"
+                      type="button"
+                      onClick={() => {
+                        const appointment =
+                          selectedAdminClient.nextAppointment ?? selectedAdminClient.appointments.at(-1);
+                        if (appointment) openSmsComposer(selectedAdminClient, appointment);
+                      }}
+                    >
+                      <span className="sms-icon" aria-hidden="true" />
+                      SMS
+                    </button>
+                  ) : (
+                    <a href={`sms:+48${getPhoneDigits(selectedAdminClient.phone)}`}>
+                      <span className="sms-icon" aria-hidden="true" />
+                      SMS
+                    </a>
+                  )
+                ) : null}
                 {selectedAdminClient.email ? (
                   <a
                     href={`mailto:${selectedAdminClient.email}?subject=${encodeURIComponent("BNB Barbershop - Twoja wizyta")}`}
@@ -6539,10 +7045,16 @@ export function BookingHome() {
               {selectedAdminClient.appointments.length === 0 ? (
                 <div className="client-profile-empty-history">
                   <strong>Brak wizyt w historii</strong>
-                  <span>Klient jest już w bazie i możesz umówić jego pierwszy termin.</span>
-                  <button type="button" onClick={() => openManualClientBooking(selectedAdminClient)}>
-                    Umów pierwszą wizytę
-                  </button>
+                  <span>
+                    {canAccessAdminSchedule
+                      ? "Klient jest już w bazie i możesz umówić jego pierwszy termin."
+                      : "Klient jest już zapisany w bazie."}
+                  </span>
+                  {canAccessAdminSchedule ? (
+                    <button type="button" onClick={() => openManualClientBooking(selectedAdminClient)}>
+                      Umów pierwszą wizytę
+                    </button>
+                  ) : null}
                 </div>
               ) : [...selectedAdminClient.appointments].reverse().map((appointment) => {
                 const isPast = getAppointmentEndDateTime(appointment).getTime() <= currentDate.getTime();
@@ -6556,6 +7068,8 @@ export function BookingHome() {
                   normalizeAppointmentStatus(appointment.status) === "completed";
                 const isCancelled =
                   normalizeAppointmentStatus(appointment.status) === "cancelled";
+                const isNoShow =
+                  normalizeAppointmentStatus(appointment.status) === "no_show";
                 const settlementAvailable = canSettleAppointment(appointment, currentDate);
                 const potentialNoShow = isPotentialNoShow(appointment, currentDate);
 
@@ -6579,6 +7093,8 @@ export function BookingHome() {
                             ? "Klient czeka na Twoje potwierdzenie"
                             : isCancelled
                               ? "Wizyta została odwołana"
+                              : isNoShow
+                                ? "Klient nie pojawił się na wizycie"
                               : isCompleted
                                 ? "Wizyta rozliczona"
                                 : potentialNoShow
@@ -6598,7 +7114,7 @@ export function BookingHome() {
                         : appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
                     </em>
                     <div className="client-history-actions">
-                      {settlementAvailable ? (
+                      {canAccessAdminSchedule && settlementAvailable ? (
                         <button
                           className="settle"
                           type="button"
@@ -6606,6 +7122,16 @@ export function BookingHome() {
                           onClick={() => void settleAdminAppointment(appointment)}
                         >
                           {settlingAppointmentId === appointment.id ? "Zapisywanie..." : "Rozlicz"}
+                        </button>
+                      ) : null}
+                      {canAccessAdminSchedule && potentialNoShow ? (
+                        <button
+                          className="no-show"
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => void markAdminAppointmentNoShow(appointment)}
+                        >
+                          Nieobecność
                         </button>
                       ) : null}
                       {getPhoneDigits(selectedAdminClient.phone).length === 9 ? (
@@ -6616,7 +7142,9 @@ export function BookingHome() {
                           SMS
                         </button>
                       ) : null}
-                      {!isPast && normalizeAppointmentStatus(appointment.status) !== "cancelled" ? (
+                      {canAccessAdminSchedule &&
+                      !isPast &&
+                      !isClosedAppointmentStatus(appointment.status) ? (
                         <button
                           type="button"
                           onClick={() => {
@@ -6627,7 +7155,7 @@ export function BookingHome() {
                           Edytuj
                         </button>
                       ) : null}
-                      {awaitsAdminConfirmation ? (
+                      {canAccessAdminSchedule && awaitsAdminConfirmation ? (
                         <button
                           className="confirm"
                           type="button"
@@ -6644,7 +7172,7 @@ export function BookingHome() {
                 );
               })}
             </div>
-            {clientWorkspaceTab === "directory" ? (
+            {canAccessAdminClients && !selectedAdminClient.hiddenFromDirectory ? (
               <footer className="client-profile-footer">
                 <button
                   className="remove-client-button"
@@ -6652,7 +7180,7 @@ export function BookingHome() {
                   onClick={() => setPendingClientRemovalId(selectedAdminClient.id)}
                 >
                   <span className="trash-icon" aria-hidden="true" />
-                  Usuń z bazy
+                  Ukryj klienta
                 </button>
               </footer>
             ) : null}
@@ -6688,7 +7216,7 @@ export function BookingHome() {
             </button>
             <div className="modal-title">
               <p className="eyebrow">Kartoteka klientów</p>
-              <h2 id="client-removal-title">Usunąć z bazy?</h2>
+              <h2 id="client-removal-title">Ukryć klienta?</h2>
             </div>
             <p className="cancellation-copy" id="client-removal-description">
               {pendingClientRemoval.name} zniknie z kartoteki {activeBarberName}. Historia wizyt,
@@ -6708,7 +7236,7 @@ export function BookingHome() {
                 disabled={isClientSaving}
                 onClick={() => void removeClientFromDirectory()}
               >
-                {isClientSaving ? "Usuwanie..." : "Usuń z bazy"}
+                {isClientSaving ? "Ukrywanie..." : "Ukryj klienta"}
               </button>
             </div>
           </section>
@@ -6853,7 +7381,9 @@ export function BookingHome() {
                 <strong>
                   {normalizeAppointmentStatus(selectedAdminEditAppointment.status) === "cancelled"
                     ? "Wizyta została odwołana"
-                    : "Wizyta została rozliczona"}
+                    : normalizeAppointmentStatus(selectedAdminEditAppointment.status) === "no_show"
+                      ? "Klient nie pojawił się na wizycie"
+                      : "Wizyta została rozliczona"}
                 </strong>
                 <span>To jest zapis zakończonej operacji i nie można go już edytować.</span>
               </div>
@@ -7099,7 +7629,9 @@ export function BookingHome() {
                 {selectedClientAppointmentIsClosed
                   ? normalizeAppointmentStatus(selectedClientAppointment.status) === "cancelled"
                     ? "Wizyta została odwołana"
-                    : "Wizyta została zakończona"
+                    : normalizeAppointmentStatus(selectedClientAppointment.status) === "no_show"
+                      ? "Wizyta została oznaczona jako nieobecność"
+                      : "Wizyta została zakończona"
                   : selectedClientNeedsConfirmation
                   ? "Czy nowy termin Ci odpowiada?"
                   : selectedClientAppointmentIsRescheduled

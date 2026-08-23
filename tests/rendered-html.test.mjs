@@ -200,6 +200,79 @@ test("keeps the mastered admin schedule and availability editor", async () => {
   assert.match(styles, /\.work-feedback\.success/);
 });
 
+test("merges schedule and clients into a permission-aware nearest appointments workspace", async () => {
+  const [bookingHome, styles] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /type AdminWorkspaceTab = "upcoming" \| "schedule" \| "clients"/);
+  assert.match(bookingHome, /useState<AdminWorkspaceTab>\("upcoming"\)/);
+  assert.match(bookingHome, /const canAccessAdminWorkspace = canAccessAdminSchedule \|\| canAccessAdminClients/);
+  assert.match(
+    bookingHome,
+    /standaloneAdminSections\.filter\(\(section\) => canAccessAdminSection\(section\)\)/,
+  );
+  assert.match(bookingHome, /4 najbliższe wizyty/);
+  assert.match(
+    bookingHome,
+    /const nearestAdminAppointments = selectNearestAppointments\(upcomingAdminAppointments, 4\)/,
+  );
+  assert.match(bookingHome, /getAppointmentEndDateTime\(appointment\)\.getTime\(\) > currentDate\.getTime\(\)/);
+  assert.match(bookingHome, /formatNearestAppointmentLabel\(\{/);
+  assert.match(bookingHome, /<strong>\{nearestAppointmentLabel\}<\/strong>/);
+  assert.match(bookingHome, /canAccessAdminSchedule && settlementAvailable/);
+  assert.match(bookingHome, /canAccessAdminClients && client/);
+  assert.match(styles, /\.admin-workspace-tabs/);
+  assert.match(styles, /\.nearest-appointment-card\.primary/);
+  assert.match(styles, /\.nearest-appointment-actions/);
+});
+
+test("moves the complete client directory into the shared appointments workspace", async () => {
+  const [bookingHome, styles, appointmentApi] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /type AdminSection = Exclude<BarberAdminSection, "clients"> \| "team"/);
+  assert.match(bookingHome, /<span>Klienci<\/span>/);
+  assert.match(bookingHome, /className="client-search"/);
+  assert.match(bookingHome, /className="client-filters"/);
+  assert.match(bookingHome, /Aktywne wizyty/);
+  assert.match(bookingHome, /Historia wizyt/);
+  assert.match(bookingHome, /Dodaj klienta/);
+  assert.match(bookingHome, /canAccessAdminSchedule \? \([\s\S]*openManualClientBooking/);
+  assert.match(bookingHome, /href=\{`tel:\+48\$\{phoneDigits\}`\}/);
+  assert.match(bookingHome, /href=\{`sms:\+48\$\{phoneDigits\}`\}/);
+  assert.match(bookingHome, /Ukryj klienta/);
+  assert.match(appointmentApi, /if \(!canAdminAccess\(admin, "schedule"\)\)[\s\S]*Brak uprawnień do umawiania wizyt/);
+  assert.match(styles, /\.client-phone-button/);
+  assert.match(styles, /\.phone-icon/);
+  assert.doesNotMatch(styles, /\.clients-icon/);
+});
+
+test("moves the complete appointment workflow into the calendar", async () => {
+  const [bookingHome, styles, appointmentApi, dataModel] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../shared/data-model.mjs", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /Dodaj wizytę/);
+  assert.match(bookingHome, /const renderCalendarAppointmentActions/);
+  assert.match(bookingHome, /Potwierdź/);
+  assert.match(bookingHome, /Rozlicz/);
+  assert.match(bookingHome, /Nieobecność/);
+  assert.match(bookingHome, /"create_admin"/);
+  assert.match(appointmentApi, /"mark_no_show_admin"/);
+  assert.match(appointmentApi, /next\.status = "no_show"/);
+  assert.match(dataModel, /"no_show"/);
+  assert.match(styles, /\.schedule-add-appointment/);
+  assert.match(styles, /\.calendar-client-picker/);
+});
+
 test("keeps settlement-driven admin analytics", async () => {
   const [bookingHome, styles, appointmentApi] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
@@ -229,7 +302,7 @@ test("keeps the fixed owner-managed team and role-aware admin avatars", async ()
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
-  assert.match(bookingHome, /type BarberAdminSection = Exclude<AdminSection, "team">/);
+  assert.match(bookingHome, /type BarberAdminSection =[\s\S]*\| "clients"[\s\S]*type AdminSection = Exclude/);
   assert.match(bookingHome, /const teamPath = isOwner \? "team\/barbers"/);
   assert.match(bookingHome, /const updateTeamMemberActive = async/);
   assert.match(bookingHome, /const updateTeamMemberAccess = async/);

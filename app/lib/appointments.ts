@@ -12,6 +12,7 @@ export type AppointmentMutationAction =
   | "reschedule_admin"
   | "cancel_admin"
   | "settle_admin"
+  | "mark_no_show_admin"
   | "upsert_admin_client"
   | "hide_admin_client";
 

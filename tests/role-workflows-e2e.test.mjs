@@ -155,6 +155,47 @@ test("E2E barber flow: admin reschedule, client confirmation, cancellation and s
   assert.equal("settledAmount" in fixture.database.appointments["kacper-past"], false);
 });
 
+test("E2E calendar flow: barber can mark an ended visit as a no-show but not a future visit", async () => {
+  fixture.reset();
+
+  const noShowResponse = await request(tokens.kacper, "POST", {
+    action: "mark_no_show_admin",
+    appointmentId: "kacper-past",
+  });
+  assert.equal(noShowResponse.status, 200, await noShowResponse.text());
+  assert.equal(fixture.database.appointments["kacper-past"].status, "no_show");
+  assert.equal(fixture.database.appointments["kacper-past"].noShowBy, "admin");
+  assert.equal(typeof fixture.database.appointments["kacper-past"].noShowAt, "number");
+
+  const closedVisitResponse = await request(tokens.kacper, "POST", {
+    action: "settle_admin",
+    appointmentId: "kacper-past",
+    expectedVersion: 2,
+    amount: 50,
+  });
+  assert.equal(closedVisitResponse.status, 409);
+  assert.equal(fixture.database.appointments["kacper-past"].status, "no_show");
+
+  const futureNoShowResponse = await request(tokens.kacper, "POST", {
+    action: "mark_no_show_admin",
+    appointmentId: "kacper-upcoming",
+  });
+  assert.equal(futureNoShowResponse.status, 409);
+  assert.equal(fixture.database.appointments["kacper-upcoming"].status, "confirmed");
+});
+
+test("E2E calendar permissions: barber cannot mark another barber's visit as a no-show", async () => {
+  fixture.reset();
+
+  const denied = await request(tokens.mateusz, "POST", {
+    action: "mark_no_show_admin",
+    appointmentId: "kacper-past",
+  });
+
+  assert.equal(denied.status, 403);
+  assert.equal(fixture.database.appointments["kacper-past"].status, "confirmed");
+});
+
 test("E2E permissions: barber cannot mutate another barber calendar while owner can", async () => {
   fixture.reset();
 
@@ -239,6 +280,42 @@ test("E2E permissions: client directory mutations are scoped to the signed-in ba
   assert.equal(kacperWrite.status, 200, await kacperWrite.text());
   assert.deepEqual(fixture.database.clients["kacper-manual-client"].barberIds, { kacper: true });
   assert.equal(fixture.database.clients["kacper-manual-client"].barberIds.mateusz, undefined);
+
+  const hideResponse = await request(tokens.kacper, "POST", {
+    action: "hide_admin_client",
+    barberId: "mateusz",
+    clientId: clientBUid,
+  });
+  assert.equal(hideResponse.status, 200, await hideResponse.text());
+  assert.equal(fixture.database.clients[clientBUid].hiddenFor.kacper, true);
+  assert.equal(fixture.database.clients[clientBUid].hiddenFor.mateusz, undefined);
+});
+
+test("E2E permissions: client access alone cannot create an appointment through the directory", async () => {
+  fixture.reset();
+  fixture.database.team.barbers.mateusz.access.schedule = false;
+
+  const appointment = createClientAppointment({
+    id: "clients-only-booking",
+    dateKey: "2099-01-10",
+    startTime: "15:00",
+  });
+  const response = await request(tokens.mateusz, "POST", {
+    action: "upsert_admin_client",
+    barberId: "mateusz",
+    client: {
+      id: clientAUid,
+      firstName: "Klient",
+      lastName: "A",
+      email: "client-a@example.com",
+      phone: "500600700",
+    },
+    appointment,
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(fixture.database.appointments[appointment.id], undefined);
+  assert.equal(fixture.database.clients[clientAUid].phone, "500600700");
 });
 
 test("E2E permissions: disabled section access removes its data and mutation capability", async () => {
@@ -255,6 +332,18 @@ test("E2E permissions: disabled section access removes its data and mutation cap
     clientId: clientAUid,
   });
   assert.equal(writeResponse.status, 403);
+
+  const appointment = createClientAppointment({
+    id: "schedule-only-booking",
+    dateKey: "2099-01-10",
+    startTime: "15:00",
+  });
+  const scheduleWriteResponse = await request(tokens.mateusz, "POST", {
+    action: "create_admin",
+    appointment,
+  });
+  assert.equal(scheduleWriteResponse.status, 200, await scheduleWriteResponse.text());
+  assert.equal(fixture.database.appointments[appointment.id].clientId, clientAUid);
 });
 
 test("E2E deactivation: inactive Kacper loses admin data and mutation access", async () => {
