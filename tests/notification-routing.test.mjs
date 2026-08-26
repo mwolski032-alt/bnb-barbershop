@@ -280,6 +280,61 @@ test("appointment API commits the booking and delivers its outbox job without a 
   assert.equal(sentPushes.some(({ message }) => message.token === "stale-token"), false);
 });
 
+test("joining the waitlist notifies only the selected barber and opens that waitlist", async () => {
+  reset();
+  const requestBody = {
+    action: "join_waitlist",
+    operationId: "waitlist-join-notification",
+    expectedVersion: 0,
+    waitlistEntry: {
+      id: "waitlist-new-client",
+      barberId: "mateusz",
+      serviceId: "cut",
+      clientName: "Jan Kowalski",
+      phone: "500600700",
+      dateFrom: "2099-01-10",
+      dateTo: "2099-01-20",
+      timePreference: "afternoon",
+    },
+  };
+
+  const firstResponse = await appointmentRequest("client-token", requestBody);
+  const firstResult = await firstResponse.json();
+
+  assert.equal(firstResponse.status, 200, JSON.stringify(firstResult));
+  assert.equal(database.notificationOutbox[requestBody.operationId].event, "waitlist_joined");
+  assert.equal(database.notificationOutbox[requestBody.operationId].status, "delivered");
+  assert.deepEqual(sentPushes.map(({ message }) => message.token), ["mateusz-token"]);
+  assert.equal(sentPushes.some(({ message }) => message.token === "owner-token"), false);
+  assert.equal(sentPushes.some(({ message }) => message.token === "client-phone-token"), false);
+
+  const push = sentPushes[0].message;
+  assert.equal(push.data.title, "Nowy zapis na listę rezerwową");
+  assert.match(push.data.body, /Jan Kowalski/);
+  assert.match(push.data.body, /Strzyżenie/);
+  assert.match(push.data.body, /10\.01\.2099–20\.01\.2099/);
+  assert.match(push.data.body, /po południu/);
+  const link = new URL(push.data.link);
+  assert.equal(link.searchParams.get("event"), "waitlist_joined");
+  assert.equal(link.searchParams.get("waitlist"), "waitlist-new-client");
+  assert.equal(link.searchParams.get("barber"), "mateusz");
+  assert.equal(link.searchParams.get("appointment"), null);
+
+  assert.deepEqual(sentEmails.map(({ to }) => to), ["mateusz@example.com"]);
+  assert.match(sentEmails[0].html, /Jan Kowalski/);
+  assert.match(sentEmails[0].html, /10\.01\.2099–20\.01\.2099/);
+  assert.match(sentEmails[0].html, /po południu/);
+
+  const pushCount = sentPushes.length;
+  const emailCount = sentEmails.length;
+  const retryResponse = await appointmentRequest("client-token", requestBody);
+  const retryResult = await retryResponse.json();
+  assert.equal(retryResponse.status, 200, JSON.stringify(retryResult));
+  assert.equal(retryResult.idempotent, true);
+  assert.equal(sentPushes.length, pushCount);
+  assert.equal(sentEmails.length, emailCount);
+});
+
 test("booking, reschedule, confirmation and cancellation each create a backend delivery job", async () => {
   reset();
   const appointment = appointmentFor({ id: "backend-flow", startTime: "12:00" });

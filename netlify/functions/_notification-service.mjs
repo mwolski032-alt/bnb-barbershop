@@ -17,12 +17,33 @@ export const notificationEventByAction = {
   confirm_admin: "admin_confirmed",
   cancel_client: "client_cancelled",
   cancel_admin: "admin_cancelled",
+  join_waitlist: "waitlist_joined",
   notify_waitlist: "waitlist_slot_open",
 };
 
 const MAX_ATTEMPTS = 6;
 const LEASE_MS = 60_000;
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000, 6 * 60 * 60_000, 12 * 60 * 60_000];
+
+const waitlistTimePreferenceLabels = {
+  any: "dowolna pora",
+  morning: "rano, do 12:00",
+  afternoon: "po południu, 12:00–17:00",
+  evening: "wieczorem, od 17:00",
+};
+
+const formatDateKey = (value) => {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}.${match[2]}.${match[1]}` : String(value || "");
+};
+
+const waitlistDateRange = (appointment) =>
+  appointment.dateFrom === appointment.dateTo
+    ? formatDateKey(appointment.dateFrom)
+    : `${formatDateKey(appointment.dateFrom)}–${formatDateKey(appointment.dateTo)}`;
+
+const waitlistPreferenceLabel = (appointment) =>
+  waitlistTimePreferenceLabels[appointment.timePreference] || waitlistTimePreferenceLabels.any;
 
 const eventCopy = {
   new_booking: {
@@ -78,6 +99,14 @@ const eventCopy = {
     body: (appointment) => `${appointment.serviceName} została odwołana przez barbera.`,
     clientEmail: true,
   },
+  waitlist_joined: {
+    target: "barber",
+    clientPush: false,
+    title: "Nowy zapis na listę rezerwową",
+    body: (appointment) =>
+      `${appointment.clientName} chce umówić: ${appointment.serviceName}. Termin: ${waitlistDateRange(appointment)}, ${waitlistPreferenceLabel(appointment)}.`,
+    barberEmail: true,
+  },
   waitlist_slot_open: {
     target: "client",
     title: "Zwolnił się termin",
@@ -123,7 +152,11 @@ const renderAppointmentEmail = (title, body, appointment, actionUrl = "") => `
       <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Barber</td><td>${escapeHtml(appointment.barberName || appointment.barberId)}</td></tr>
       <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Telefon</td><td>${escapeHtml(appointment.phone || "brak")}</td></tr>
       <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Usługa</td><td>${escapeHtml(appointment.serviceName)}</td></tr>
-      <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Termin</td><td>${escapeHtml(`${appointment.dateKey} ${appointment.startTime}`)}</td></tr>
+      <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Termin</td><td>${escapeHtml(
+        appointment.waitlistId && appointment.dateFrom
+          ? `${waitlistDateRange(appointment)}, ${waitlistPreferenceLabel(appointment)}`
+          : `${appointment.dateKey} ${appointment.startTime}`,
+      )}</td></tr>
     </table>
     ${actionUrl ? `<p style="margin-top: 20px;"><a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:#111827;color:#ffffff;text-decoration:none;font-weight:700;">Zarezerwuj termin</a></p>` : ""}
   </div>
@@ -189,7 +222,10 @@ const removeNotificationToken = (accessToken, device) =>
 const buildNotificationLink = (siteUrl, appointment, event) => {
   const link = new URL(siteUrl);
   link.searchParams.set("event", event);
-  if (event === "waitlist_slot_open" && appointment.waitlistId) {
+  if (event === "waitlist_joined" && appointment.waitlistId) {
+    link.searchParams.set("waitlist", appointment.waitlistId);
+    link.searchParams.set("barber", appointment.barberId);
+  } else if (event === "waitlist_slot_open" && appointment.waitlistId) {
     link.searchParams.set("waitlist", appointment.waitlistId);
     link.searchParams.set("barber", appointment.barberId);
     link.searchParams.set("service", appointment.serviceId);
@@ -247,7 +283,7 @@ const sendToDevice = async (accessToken, device, notification, appointment, even
 const collectTargetDevices = ({ tokensByUser, ownerUid, barber, appointment, copy }) => {
   const audiences = new Map();
   if (copy.target === "barber" && barber.active && barber.userId) audiences.set(barber.userId, "barber");
-  if (appointment.userId) audiences.set(appointment.userId, "client");
+  if (copy.clientPush !== false && appointment.userId) audiences.set(appointment.userId, "client");
   audiences.delete(ownerUid);
 
   const byToken = new Map();
@@ -349,7 +385,7 @@ const finishJob = async (accessToken, job, update) => {
 const processClaimedJob = async (accessToken, job, siteUrl) => {
   const operation = await readDatabase(`appointmentOperations/${encodeURIComponent(job.operationId)}`, accessToken);
   const expectedEvent = notificationEventByAction[operation?.action];
-  const appointment = operation?.appointment;
+  const appointment = operation?.appointment ?? operation?.notificationPayload;
   if (!appointment || operation.appointmentId !== job.appointmentId || expectedEvent !== job.event) {
     return finishJob(accessToken, job, {
       status: "exhausted",

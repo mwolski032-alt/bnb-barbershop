@@ -327,6 +327,11 @@ type PendingWaitlistSelection = {
   startTime: string;
 };
 
+type PendingAdminWaitlistSelection = {
+  waitlistId: string;
+  barberId: string;
+};
+
 type BarberProfile = {
   id: string;
   name: string;
@@ -1471,6 +1476,8 @@ export function BookingHome() {
   const [isWaitlistSaving, setIsWaitlistSaving] = useState(false);
   const [pendingWaitlistSelection, setPendingWaitlistSelection] =
     useState<PendingWaitlistSelection | null>(null);
+  const [pendingAdminWaitlistSelection, setPendingAdminWaitlistSelection] =
+    useState<PendingAdminWaitlistSelection | null>(null);
   const [barberWorkSettings, setBarberWorkSettings] = useState<WorkSettings>(defaultWorkSettings);
   const [form, setForm] = useState<FormState>({ fullName: "", phone: "" });
   const [serviceDraft, setServiceDraft] = useState<ServiceDraft>({
@@ -2579,6 +2586,7 @@ export function BookingHome() {
 
   useEffect(() => {
     const url = new URL(window.location.href);
+    const event = url.searchParams.get("event")?.trim() ?? "";
     const appointmentId = url.searchParams.get("appointment")?.trim();
     if (appointmentId) setPendingNotificationAppointmentId(appointmentId);
     const waitlistId = url.searchParams.get("waitlist")?.trim() ?? "";
@@ -2586,7 +2594,9 @@ export function BookingHome() {
     const serviceId = url.searchParams.get("service")?.trim() ?? "";
     const dateKey = url.searchParams.get("date")?.trim() ?? "";
     const startTime = url.searchParams.get("time")?.trim() ?? "";
-    if (waitlistId && barberId && serviceId && dateKey && startTime) {
+    if (event === "waitlist_joined" && waitlistId && barberId) {
+      setPendingAdminWaitlistSelection({ waitlistId, barberId });
+    } else if (waitlistId && barberId && serviceId && dateKey && startTime) {
       setPendingWaitlistSelection({ waitlistId, barberId, serviceId, dateKey, startTime });
     }
   }, []);
@@ -2862,6 +2872,44 @@ export function BookingHome() {
       `${url.pathname}${url.search}${url.hash}`,
     );
   }, [activeUser, allAdminAppointments, isAdmin, ownClientAppointments, pendingNotificationAppointmentId]);
+
+  useEffect(() => {
+    if (!activeUser || !pendingAdminWaitlistSelection || !sessionReady) return;
+
+    const clearWaitlistUrl = () => {
+      const url = new URL(window.location.href);
+      ["waitlist", "barber", "event"].forEach((key) => url.searchParams.delete(key));
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${url.pathname}${url.search}${url.hash}`,
+      );
+    };
+
+    if (!isAdmin) {
+      setPendingAdminWaitlistSelection(null);
+      clearWaitlistUrl();
+      return;
+    }
+
+    setSelectedBarberId(pendingAdminWaitlistSelection.barberId);
+    setAdminSection("schedule");
+    setAdminWorkspaceTab("upcoming");
+    setStep("admin");
+    setPendingAdminWaitlistSelection(null);
+    clearWaitlistUrl();
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const target = document.getElementById("admin-waitlist-title");
+        if (!target) return;
+        const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        target.scrollIntoView({
+          behavior: prefersReducedMotion ? "auto" : "smooth",
+          block: "start",
+        });
+      });
+    });
+  }, [activeUser, isAdmin, pendingAdminWaitlistSelection, sessionReady]);
 
   useEffect(() => {
     if (!activeUser || !pendingWaitlistSelection || !sessionReady) return;

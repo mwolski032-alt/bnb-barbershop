@@ -381,6 +381,7 @@ const mutateAppointmentOperation = async (accessToken, operation, action, user, 
         appointment: existingOperation.appointment,
         client: existingOperation.client,
         waitlistEntry: existingOperation.waitlistEntry,
+        notificationPayload: existingOperation.notificationPayload,
         notificationOperationIds: existingOperation.notificationOperationIds ?? [],
         syncRevision: Number(existingOperation.syncRevision) || 0,
         idempotent: true,
@@ -396,10 +397,11 @@ const mutateAppointmentOperation = async (accessToken, operation, action, user, 
       operationId: operation.operationId,
       action,
       actorUid: user.uid,
-      appointmentId: result.appointment?.id ?? "",
+      appointmentId: result.appointment?.id ?? result.notificationPayload?.id ?? "",
       appointment: result.appointment,
       client: result.client,
       waitlistEntry: result.waitlistEntry,
+      notificationPayload: result.notificationPayload,
       notificationOperationIds: result.notificationOperationIds ?? [],
       syncRevision,
       createdAt: Date.now(),
@@ -974,7 +976,7 @@ const deleteAdminClient = async (body, admin, user, accessToken, operation) => {
   return synchronizedOperationResponse(result, user, admin, accessToken, !result.error);
 };
 
-const joinWaitlist = async (body, admin, user, accessToken, operation) => {
+const joinWaitlist = async (body, admin, user, accessToken, operation, request) => {
   const requested = normalizeWaitlistEntry(body.waitlistEntry?.id, {
     ...body.waitlistEntry,
     userId: user.uid,
@@ -1031,10 +1033,39 @@ const joinWaitlist = async (body, admin, user, accessToken, operation) => {
         updatedAt: now,
       };
       database.waitlistEntries[waitlistEntry.id] = waitlistEntry;
-      return { database, waitlistEntry };
+      const notificationPayload = {
+        id: waitlistEntry.id,
+        waitlistId: waitlistEntry.id,
+        barberId: waitlistEntry.barberId,
+        serviceId: waitlistEntry.serviceId,
+        userId: waitlistEntry.userId,
+        clientName: waitlistEntry.clientName,
+        clientEmail: waitlistEntry.clientEmail,
+        phone: waitlistEntry.phone,
+        serviceName: waitlistEntry.serviceName,
+        dateFrom: waitlistEntry.dateFrom,
+        dateTo: waitlistEntry.dateTo,
+        timePreference: waitlistEntry.timePreference,
+        lastOperationId: operation.operationId,
+      };
+      enqueueAppointmentNotification(
+        database,
+        notificationEventByAction.join_waitlist,
+        notificationPayload,
+        operation.operationId,
+      );
+      return { database, waitlistEntry, notificationPayload };
     },
   );
-  return synchronizedOperationResponse(result, user, admin, accessToken, !result.error);
+  return synchronizedOperationResponse(
+    result,
+    user,
+    admin,
+    accessToken,
+    !result.error,
+    request,
+    notificationEventByAction.join_waitlist,
+  );
 };
 
 const removeWaitlistEntry = async (body, admin, user, accessToken, operation, asAdmin) => {
@@ -1114,7 +1145,7 @@ const handler = async (request) => {
       return deleteAdminClient(body, admin, user, accessToken, operation);
     }
     if (action === "join_waitlist") {
-      return joinWaitlist(body, admin, user, accessToken, operation);
+      return joinWaitlist(body, admin, user, accessToken, operation, request);
     }
     if (action === "leave_waitlist") {
       return removeWaitlistEntry(body, admin, user, accessToken, operation, false);
