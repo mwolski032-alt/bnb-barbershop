@@ -1,29 +1,13 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
 async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  return worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
-  );
+  const html = await readFile(new URL("../dist/client/index.html", import.meta.url), "utf8");
+  return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
 
-test("server-renders the BNB booking app shell", async () => {
+test("pre-renders the BNB booking app shell", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
@@ -54,10 +38,37 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(manifest, /\/icons\/icon-192\.png\?v=3/);
   assert.match(manifest, /\/icons\/icon-512\.png\?v=3/);
   assert.match(manifest, /maskable-512\.png\?v=3/);
-  assert.match(serviceWorker, /bnb-barbershop-v4/);
+  assert.match(serviceWorker, /bnb-barbershop-v5/);
+  assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(serviceWorker, /icon:.*\/icons\/icon-192\.png/);
   assert.match(serviceWorker, /badge:.*\/icons\/notification-b-v4\.png/);
   assert.match(notifications, /badge:\s*"\/icons\/notification-b-v4\.png"/);
+});
+
+test("ships a static lightweight startup with an offline app shell", async () => {
+  const [nextConfig, netlifyConfig, layout, bookingHome, serviceWorker, hero960, hero1440] =
+    await Promise.all([
+      readFile(new URL("../next.config.ts", import.meta.url), "utf8"),
+      readFile(new URL("../netlify.toml", import.meta.url), "utf8"),
+      readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+      readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+      readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
+      stat(new URL("../public/brand/bnb-hero-960.avif", import.meta.url)),
+      stat(new URL("../public/brand/bnb-hero-1440.avif", import.meta.url)),
+    ]);
+
+  assert.match(nextConfig, /output:\s*"export"/);
+  assert.match(netlifyConfig, /publish\s*=\s*"dist\/client"/);
+  assert.doesNotMatch(layout, /next\/font\/google/);
+  assert.match(bookingHome, /bnb-hero-960\.avif/);
+  assert.match(bookingHome, /bnb-hero-1440\.webp/);
+  assert.match(bookingHome, /bnb-hero-1440\.jpg/);
+  assert.doesNotMatch(bookingHome, /src="\/brand\/bnb-hero\.png"/);
+  assert.equal(hero960.size < 100_000, true);
+  assert.equal(hero1440.size < 150_000, true);
+  assert.match(serviceWorker, /APP_SHELL_URL/);
+  assert.match(serviceWorker, /request\.mode === "navigate"/);
+  assert.equal((await stat(new URL("../dist/client/index.html", import.meta.url))).size > 0, true);
 });
 
 test("keeps the premium client booking flow and safety controls", async () => {

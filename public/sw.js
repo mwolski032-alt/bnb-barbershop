@@ -1,4 +1,11 @@
-const CACHE_NAME = "bnb-barbershop-v4";
+const CACHE_NAME = "bnb-barbershop-v5";
+const APP_SHELL_URL = "/";
+const APP_SHELL = [
+  APP_SHELL_URL,
+  "/manifest.webmanifest?v=3",
+  "/brand/bnb-logo.png",
+  "/icons/icon-192.png?v=3",
+];
 const STATIC_ASSET_TYPES = new Set(["font", "image", "manifest", "script", "style"]);
 let firebaseMessagingReady = false;
 const FIREBASE_CONFIG = {
@@ -43,8 +50,13 @@ try {
   // cannot be loaded in the service worker.
 }
 
-self.addEventListener("install", () => {
-  self.skipWaiting();
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener("activate", (event) => {
@@ -63,6 +75,28 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   if (request.method !== "GET" || url.origin !== self.location.origin) {
+    return;
+  }
+
+  if (request.mode === "navigate") {
+    event.respondWith(
+      caches.open(CACHE_NAME).then(async (cache) => {
+        const cachedShell = await cache.match(APP_SHELL_URL);
+        const networkResponse = fetch(request).then(async (response) => {
+          if (response.ok) {
+            await cache.put(APP_SHELL_URL, response.clone());
+          }
+          return response;
+        });
+
+        if (cachedShell) {
+          event.waitUntil(networkResponse.catch(() => undefined));
+          return cachedShell;
+        }
+
+        return networkResponse;
+      }),
+    );
     return;
   }
 

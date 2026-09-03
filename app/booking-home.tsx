@@ -6926,14 +6926,26 @@ export function BookingHome() {
       ) : visibleStep === "booking" ? (
         <>
           <div className="home-hero" style={heroStyle} aria-hidden="true">
-            <img
-              src="/brand/bnb-hero.png"
-              alt=""
-              width="1672"
-              height="941"
-              decoding="async"
-              fetchPriority="high"
-            />
+            <picture>
+              <source
+                type="image/avif"
+                srcSet="/brand/bnb-hero-960.avif 960w, /brand/bnb-hero-1440.avif 1440w"
+                sizes="(max-width: 767px) 100vw, 720px"
+              />
+              <source
+                type="image/webp"
+                srcSet="/brand/bnb-hero-960.webp 960w, /brand/bnb-hero-1440.webp 1440w"
+                sizes="(max-width: 767px) 100vw, 720px"
+              />
+              <img
+                src="/brand/bnb-hero-1440.jpg"
+                alt=""
+                width="1440"
+                height="811"
+                decoding="async"
+                fetchPriority="high"
+              />
+            </picture>
           </div>
           <section className="booking-panel" aria-label="Kalendarz rezerwacji">
             <div className="topbar">

@@ -33,12 +33,21 @@ const localBindingConfig = {
     : [],
 };
 
-export default defineConfig(async () => {
+export default defineConfig(async ({ command }) => {
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
   process.env.WRANGLER_WRITE_LOGS ??= "false";
   process.env.WRANGLER_LOG_PATH ??= ".wrangler/logs";
   process.env.MINIFLARE_REGISTRY_PATH ??= ".wrangler/registry";
+
+  if (command === "build") {
+    const tailwindcss = (await import("@tailwindcss/vite")).default;
+
+    return {
+      envPrefix: ["VITE_", "NEXT_PUBLIC_"],
+      plugins: [tailwindcss(), vinext()],
+    };
+  }
 
   if (process.env.NETLIFY || process.env.NITRO_PRESET === "netlify") {
     const { nitro } = await import("nitro/vite");

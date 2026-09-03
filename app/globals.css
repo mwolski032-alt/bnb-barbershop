@@ -13,13 +13,15 @@
   --orange: #ff9f0a;
   --red: #ff453a;
   --gray: #636366;
+  --font-app-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+  --font-app-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-app-sans);
+  --font-mono: var(--font-app-mono);
 }
 
 * {
@@ -40,13 +42,7 @@ body {
     radial-gradient(circle at 96% 3rem, rgba(48, 209, 88, 0.1), transparent 20rem),
     linear-gradient(180deg, #0c0e15 0%, #07080c 42%, #050609 100%);
   color: var(--foreground);
-  font-family:
-    var(--font-geist-sans),
-    -apple-system,
-    BlinkMacSystemFont,
-    "SF Pro Display",
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-app-sans);
 }
 
 button {
@@ -3484,6 +3480,12 @@ h2 {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.home-hero picture {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .admin-waitlist-main {

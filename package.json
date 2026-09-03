@@ -7,8 +7,8 @@
   },
   "scripts": {
     "dev": "vinext dev",
-    "build": "vinext build",
-    "build:netlify": "npm run typecheck && node build/netlify-build.mjs",
+    "build": "node build/netlify-build.mjs",
+    "build:netlify": "npm run typecheck && npm run build",
     "start": "vinext start",
     "test": "npm run build && node --test tests/*.test.mjs",
     "test:rules": "firebase emulators:exec --only database --project demo-bnb-stage3 \"node --test tests/emulator/firebase-rules.test.mjs\"",
