@@ -193,6 +193,7 @@ globalThis.fetch = async (input, options = {}) => {
 
 const notificationService = await import("../netlify/functions/_notification-service.mjs");
 const { default: appointmentsHandler } = await import("../netlify/functions/appointments.mjs");
+const notificationDispatch = await import("../netlify/functions/notification-dispatch.mjs");
 const { default: sendPushHandler } = await import("../netlify/functions/send-push.mjs");
 const notificationWorker = await import("../netlify/functions/notification-worker.mjs");
 
@@ -251,7 +252,15 @@ const appointmentRequest = (token, body) => appointmentsHandler(
   }),
 );
 
-test("appointment API commits the booking and delivers its outbox job without a frontend push call", async () => {
+const dispatchNotifications = (token, operationIds) => notificationDispatch.default(
+  new Request("https://bnb.example/.netlify/functions/notification-dispatch", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ operationIds }),
+  }),
+);
+
+test("appointment API commits immediately and a background function delivers its outbox job", async () => {
   reset();
   const response = await appointmentsHandler(
     new Request("https://bnb.example/.netlify/functions/appointments", {
@@ -269,6 +278,13 @@ test("appointment API commits the booking and delivers its outbox job without a 
   const result = await response.json();
 
   assert.equal(response.status, 200, JSON.stringify(result));
+  assert.equal(result.notificationQueued, true);
+  assert.deepEqual(result.notificationOperationIds, ["backend-booking-operation"]);
+  assert.equal(database.notificationOutbox["backend-booking-operation"].status, "pending");
+  assert.equal(sentPushes.length, 0);
+
+  await dispatchNotifications("client-token", result.notificationOperationIds);
+
   assert.equal(database.notificationOutbox["backend-booking-operation"].status, "delivered");
   assert.deepEqual(sentPushes.map(({ message }) => message.token), [
     "mateusz-token",
@@ -278,6 +294,21 @@ test("appointment API commits the booking and delivers its outbox job without a 
   assert.equal(sentPushes.some(({ message }) => message.token === "owner-token"), false);
   assert.equal(sentPushes.some(({ message }) => message.token === "retired-token"), false);
   assert.equal(sentPushes.some(({ message }) => message.token === "stale-token"), false);
+});
+
+test("background dispatch processes only jobs created by the signed-in user", async () => {
+  reset();
+  const { operationId } = seedJob("new_booking", "create_client", {
+    id: "authorized-background-job",
+  });
+
+  await dispatchNotifications("mateusz-id-token", [operationId]);
+  assert.equal(database.notificationOutbox[operationId].status, "pending");
+  assert.equal(sentPushes.length, 0);
+
+  await dispatchNotifications("client-token", [operationId]);
+  assert.equal(database.notificationOutbox[operationId].status, "delivered");
+  assert.equal(sentPushes.length > 0, true);
 });
 
 test("joining the waitlist notifies only the selected barber and opens that waitlist", async () => {
@@ -302,7 +333,13 @@ test("joining the waitlist notifies only the selected barber and opens that wait
   const firstResult = await firstResponse.json();
 
   assert.equal(firstResponse.status, 200, JSON.stringify(firstResult));
+  assert.equal(firstResult.notificationQueued, true);
   assert.equal(database.notificationOutbox[requestBody.operationId].event, "waitlist_joined");
+  assert.equal(database.notificationOutbox[requestBody.operationId].status, "pending");
+  assert.equal(sentPushes.length, 0);
+
+  await dispatchNotifications("client-token", firstResult.notificationOperationIds);
+
   assert.equal(database.notificationOutbox[requestBody.operationId].status, "delivered");
   assert.deepEqual(sentPushes.map(({ message }) => message.token), ["mateusz-token"]);
   assert.equal(sentPushes.some(({ message }) => message.token === "owner-token"), false);
@@ -382,7 +419,7 @@ test("booking, reschedule, confirmation and cancellation each create a backend d
       "flow-cancel": "client_cancelled",
     },
   );
-  assert.equal(Object.values(database.notificationOutbox).every((job) => job.status === "delivered"), true);
+  assert.equal(Object.values(database.notificationOutbox).every((job) => job.status === "pending"), true);
   assert.equal(database.appointments[appointment.id], undefined);
   assert.equal(database.appointmentOperations["flow-cancel"].appointment.status, "cancelled");
   assert.equal(database.appointmentOperations["flow-cancel"].appointment.version, 4);
@@ -474,12 +511,22 @@ test("cancellation immediately delivers the waitlist offer created in the same r
     expectedVersion: 1,
     appointmentId: appointment.id,
   });
-  assert.equal(response.status, 200, await response.text());
+  const responseResult = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(responseResult));
 
   const waitlistJob = Object.values(database.notificationOutbox).find(
     (job) => job.event === "waitlist_slot_open",
   );
-  assert.equal(waitlistJob.status, "delivered");
+  assert.equal(waitlistJob.status, "pending");
+  assert.equal(sentPushes.length, 0);
+
+  await dispatchNotifications("client-token", responseResult.notificationOperationIds);
+
+  assert.equal(
+    Object.values(database.notificationOutbox).find((job) => job.event === "waitlist_slot_open")
+      .status,
+    "delivered",
+  );
   assert.equal(
     sentPushes.some(({ message }) => message.token === "waitlist-client-token"),
     true,
@@ -642,17 +689,20 @@ test("public push endpoint accepts only a signed-in non-owner test notification"
 });
 
 test("scheduled worker and frontend wiring keep appointment notifications backend-owned", async () => {
-  const [frontend, appointmentsSource, notificationSource] = await Promise.all([
+  const [frontend, appointmentClient, appointmentsSource, dispatchSource, notificationSource] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/appointments.ts", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/notification-dispatch.mjs", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/_notification-service.mjs", import.meta.url), "utf8"),
   ]);
   assert.deepEqual(notificationWorker.config, { schedule: "* * * * *" });
   assert.doesNotMatch(frontend, /sendAppointmentNotification/);
-  assert.match(
-    appointmentsSource,
-    /notificationOperationIds\.map[\s\S]*processNotificationJob\(operationId/,
-  );
+  assert.match(appointmentsSource, /notificationQueued:/);
+  assert.doesNotMatch(appointmentsSource, /await processNotificationJob/);
+  assert.match(appointmentClient, /notification-dispatch[\s\S]*keepalive: true/);
+  assert.match(dispatchSource, /background: true/);
+  assert.match(dispatchSource, /processNotificationJob\(operationId/);
   assert.match(notificationSource, /confirm_client: "client_confirmed"/);
   assert.match(notificationSource, /confirm_admin: "admin_confirmed"/);
   assert.match(notificationSource, /status: "invalid"/);

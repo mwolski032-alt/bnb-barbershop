@@ -18,8 +18,6 @@ import {
 } from "../../shared/data-model.mjs";
 import {
   notificationEventByAction,
-  processNotificationJob,
-  resolveNotificationSiteUrl,
 } from "./_notification-service.mjs";
 import { isBookableStartTime } from "../../shared/booking-time.mjs";
 import {
@@ -713,36 +711,13 @@ const synchronizedOperationResponse = async (
   admin,
   accessToken,
   ok = true,
-  request = null,
   notificationEvent = "",
 ) => {
-  let notification = null;
   const notificationOperationIds = [
     ...(notificationEvent && result.operationId ? [result.operationId] : []),
     ...(Array.isArray(result.notificationOperationIds) ? result.notificationOperationIds : []),
   ].filter((operationId, index, values) => operationId && values.indexOf(operationId) === index);
-  if (ok && notificationOperationIds.length > 0 && request) {
-    const deliveries = await Promise.all(
-      notificationOperationIds.map(async (operationId) => {
-        try {
-          return await processNotificationJob(operationId, {
-            accessToken,
-            force: true,
-            siteUrl: resolveNotificationSiteUrl(request),
-          });
-        } catch (error) {
-          return {
-            ok: false,
-            state: "queued",
-            operationId,
-            error: error instanceof Error ? error.message : "Notification delivery was queued.",
-          };
-        }
-      }),
-    );
-    notification = deliveries[0] ?? null;
-  }
-  const snapshot = await getAppointmentData(user, admin, accessToken);
+  const snapshot = await getAppointmentData(user, admin, accessToken, result.database);
   return jsonResponse(
     {
       ok,
@@ -754,7 +729,8 @@ const synchronizedOperationResponse = async (
       currentAppointment: result.currentAppointment,
       client: result.client,
       waitlistEntry: result.waitlistEntry,
-      notification,
+      notificationQueued: ok && notificationOperationIds.length > 0,
+      notificationOperationIds,
       ...snapshot,
     },
     ok ? 200 : result.status ?? 409,
@@ -768,7 +744,7 @@ const resolveManagedBarberId = async (admin, requestedBarberId, accessToken) => 
   return barberId;
 };
 
-const upsertAdminClient = async (body, admin, user, accessToken, operation, request) => {
+const upsertAdminClient = async (body, admin, user, accessToken, operation) => {
   if (!canAdminAccess(admin, "clients")) {
     return jsonResponse({ ok: false, error: "Brak dostępu do bazy klientów." }, 403);
   }
@@ -872,7 +848,6 @@ const upsertAdminClient = async (body, admin, user, accessToken, operation, requ
     admin,
     accessToken,
     !result.error,
-    request,
     proposed ? "new_booking" : "",
   );
 };
@@ -976,7 +951,7 @@ const deleteAdminClient = async (body, admin, user, accessToken, operation) => {
   return synchronizedOperationResponse(result, user, admin, accessToken, !result.error);
 };
 
-const joinWaitlist = async (body, admin, user, accessToken, operation, request) => {
+const joinWaitlist = async (body, admin, user, accessToken, operation) => {
   const requested = normalizeWaitlistEntry(body.waitlistEntry?.id, {
     ...body.waitlistEntry,
     userId: user.uid,
@@ -1063,7 +1038,6 @@ const joinWaitlist = async (body, admin, user, accessToken, operation, request) 
     admin,
     accessToken,
     !result.error,
-    request,
     notificationEventByAction.join_waitlist,
   );
 };
@@ -1136,7 +1110,7 @@ const handler = async (request) => {
     }
 
     if (action === "upsert_admin_client") {
-      return upsertAdminClient(body, admin, user, accessToken, operation, request);
+      return upsertAdminClient(body, admin, user, accessToken, operation);
     }
     if (action === "hide_admin_client") {
       return hideAdminClient(body, admin, user, accessToken, operation);
@@ -1145,7 +1119,7 @@ const handler = async (request) => {
       return deleteAdminClient(body, admin, user, accessToken, operation);
     }
     if (action === "join_waitlist") {
-      return joinWaitlist(body, admin, user, accessToken, operation, request);
+      return joinWaitlist(body, admin, user, accessToken, operation);
     }
     if (action === "leave_waitlist") {
       return removeWaitlistEntry(body, admin, user, accessToken, operation, false);
@@ -1225,7 +1199,6 @@ const handler = async (request) => {
         admin,
         accessToken,
         !createResult.error,
-        request,
         "new_booking",
       );
     }
@@ -1380,7 +1353,6 @@ const handler = async (request) => {
       admin,
       accessToken,
       !result.error,
-      request,
       notificationEventByAction[action] ?? "",
     );
   } catch (error) {

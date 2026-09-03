@@ -31,6 +31,8 @@ export type AppointmentApiResult<T> = {
   currentAppointment?: T;
   client?: unknown;
   waitlistEntry?: unknown;
+  notificationQueued?: boolean;
+  notificationOperationIds?: string[];
   occupancy?: Array<{
     id: string;
     barberId: string;
@@ -99,9 +101,10 @@ export const mutateAppointment = async <T>(
   payload: Record<string, unknown>,
   options: { operationId: string; expectedVersion: number },
 ) => {
+  const headers = await getAuthorizationHeaders();
   const response = await fetch("/.netlify/functions/appointments", {
     method: "POST",
-    headers: await getAuthorizationHeaders(),
+    headers,
     body: JSON.stringify({
       action,
       operationId: options.operationId,
@@ -109,7 +112,16 @@ export const mutateAppointment = async <T>(
       ...payload,
     }),
   });
-  return readResult<T>(response);
+  const result = await readResult<T>(response);
+  if (result.notificationOperationIds?.length) {
+    void fetch("/.netlify/functions/notification-dispatch", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ operationIds: result.notificationOperationIds }),
+      keepalive: true,
+    }).catch(() => undefined);
+  }
+  return result;
 };
 
 export const fetchClientAppointmentData = async <T>() => {

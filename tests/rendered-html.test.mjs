@@ -71,6 +71,27 @@ test("ships a static lightweight startup with an offline app shell", async () =>
   assert.equal((await stat(new URL("../dist/client/index.html", import.meta.url))).size > 0, true);
 });
 
+test("shows immediate progress and keeps notification delivery off the critical path", async () => {
+  const [bookingHome, styles, appointmentClient, appointmentApi, backgroundDispatch] =
+    await Promise.all([
+      readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+      readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+      readFile(new URL("../app/lib/appointments.ts", import.meta.url), "utf8"),
+      readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
+      readFile(new URL("../netlify/functions/notification-dispatch.mjs", import.meta.url), "utf8"),
+    ]);
+
+  assert.match(bookingHome, /applyOptimisticAppointmentOperation/);
+  assert.match(bookingHome, /action-feedback-toast/);
+  assert.match(bookingHome, /aria-busy=/);
+  assert.match(styles, /button\[aria-busy="true"\]/);
+  assert.match(styles, /\.action-feedback-toast/);
+  assert.match(appointmentClient, /notification-dispatch[\s\S]*keepalive: true/);
+  assert.match(appointmentApi, /getAppointmentData\(user, admin, accessToken, result\.database\)/);
+  assert.doesNotMatch(appointmentApi, /await processNotificationJob/);
+  assert.match(backgroundDispatch, /background: true/);
+});
+
 test("keeps the premium client booking flow and safety controls", async () => {
   const [bookingHome, styles] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
@@ -441,11 +462,12 @@ test("keeps the fixed owner-managed team and role-aware admin avatars", async ()
 });
 
 test("keeps barber ownership and excludes the owner from appointment notifications", async () => {
-  const [bookingHome, notifications, notificationService, appointmentApi, adminHelper] = await Promise.all([
+  const [bookingHome, notifications, notificationService, appointmentApi, dispatch, adminHelper] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/notifications.ts", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/_notification-service.mjs", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/notification-dispatch.mjs", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/_firebase-admin.mjs", import.meta.url), "utf8"),
   ]);
 
@@ -468,10 +490,8 @@ test("keeps barber ownership and excludes the owner from appointment notificatio
   assert.doesNotMatch(bookingHome, /inAppNotifications/);
   assert.doesNotMatch(notificationService, /writeInAppNotifications/);
   assert.doesNotMatch(bookingHome, /notificationButton/);
-  assert.match(
-    appointmentApi,
-    /notificationOperationIds\.map[\s\S]*processNotificationJob\(operationId/,
-  );
+  assert.match(appointmentApi, /notificationOperationIds/);
+  assert.match(dispatch, /processNotificationJob\(operationId/);
 });
 
 test("opens system push links and lets the client confirm a changed time", async () => {

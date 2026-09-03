@@ -276,6 +276,12 @@ type WorkFeedback = {
   message: string;
 };
 
+type ActionFeedback = {
+  key: string;
+  kind: "pending" | "success" | "error";
+  message: string;
+};
+
 type ClientSaveMode = "record" | "booking";
 type WaitlistTimePreference = "any" | "morning" | "afternoon" | "evening";
 
@@ -309,6 +315,7 @@ type WaitlistEntry = {
   version: number;
   createdAt: number;
   updatedAt: number;
+  lastOperationId?: string;
 };
 
 type WaitlistDraft = {
@@ -358,6 +365,28 @@ type BarberDetails = {
   bio: string;
   photoUrl: string;
   updatedAt?: number;
+};
+
+const appointmentActionFeedback: Record<
+  AppointmentMutationAction,
+  { pending: string; success: string }
+> = {
+  create_client: { pending: "Rezerwuję termin…", success: "Wizyta została zarezerwowana." },
+  reschedule_client: { pending: "Zmieniam termin…", success: "Nowy termin został zapisany." },
+  confirm_client: { pending: "Potwierdzam termin…", success: "Termin został potwierdzony." },
+  confirm_admin: { pending: "Potwierdzam wizytę…", success: "Wizyta została potwierdzona." },
+  cancel_client: { pending: "Odwołuję wizytę…", success: "Wizyta została odwołana." },
+  create_admin: { pending: "Zapisuję wizytę…", success: "Wizyta została zapisana." },
+  reschedule_admin: { pending: "Przenoszę wizytę…", success: "Termin wizyty został zmieniony." },
+  cancel_admin: { pending: "Odwołuję wizytę…", success: "Wizyta została odwołana." },
+  settle_admin: { pending: "Rozliczam wizytę…", success: "Wizyta została rozliczona." },
+  mark_no_show_admin: { pending: "Zapisuję nieobecność…", success: "Nieobecność została zapisana." },
+  upsert_admin_client: { pending: "Zapisuję dane klienta…", success: "Dane klienta zostały zapisane." },
+  hide_admin_client: { pending: "Aktualizuję kartotekę…", success: "Kartoteka została zaktualizowana." },
+  delete_admin_client: { pending: "Usuwam klienta…", success: "Klient został usunięty." },
+  join_waitlist: { pending: "Zapisuję na listę rezerwową…", success: "Zapisano na listę rezerwową." },
+  leave_waitlist: { pending: "Usuwam zapis z listy…", success: "Zapis został usunięty." },
+  remove_waitlist_admin: { pending: "Usuwam osobę z listy…", success: "Osoba została usunięta z listy." },
 };
 
 type ProfileAvatarProps = {
@@ -1431,8 +1460,11 @@ export function BookingHome() {
   const [installGuideOpen, setInstallGuideOpen] = useState(false);
   const closeInstallGuide = useCallback(() => setInstallGuideOpen(false), []);
   const [bookingError, setBookingError] = useState("");
+  const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
+  const [pendingActionKeys, setPendingActionKeys] = useState<Set<string>>(() => new Set());
   const [dataError, setDataError] = useState("");
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const [step, setStep] = useState<Step>("booking");
   const [adminSection, setAdminSection] = useState<AdminSection>("schedule");
   const [adminWorkspaceTab, setAdminWorkspaceTab] =
@@ -2420,6 +2452,190 @@ export function BookingHome() {
     return refresh;
   }, [applyAppointmentSnapshot]);
 
+  const applyOptimisticAppointmentOperation = useCallback(
+    (action: AppointmentMutationAction, payload: Record<string, unknown>, operationId: string) => {
+      const requestedAppointment = payload.appointment as AdminAppointment | undefined;
+      const appointmentId = String(payload.appointmentId ?? requestedAppointment?.id ?? "");
+      const previousAdminAppointment = allAdminAppointments.find((item) => item.id === appointmentId);
+      const previousClientAppointment = ownClientAppointments.find((item) => item.id === appointmentId);
+      const previousOccupancy = appointments.find((item) => item.id === appointmentId);
+      const now = Date.now();
+      const isCreate = action === "create_client" || action === "create_admin";
+      const removesAppointment = ["cancel_client", "cancel_admin", "mark_no_show_admin"].includes(action);
+
+      const optimisticAppointment = (current?: AdminAppointment) => {
+        const base = current ?? requestedAppointment;
+        if (!base) return null;
+        const next: AdminAppointment = {
+          ...base,
+          version: isCreate ? 1 : Math.max(1, Number(base.version) || 1) + 1,
+          lastOperationId: operationId,
+          updatedAt: now,
+        };
+
+        if (action === "reschedule_client" || action === "reschedule_admin") {
+          next.dateKey = String(payload.dateKey ?? next.dateKey);
+          next.startTime = String(payload.startTime ?? next.startTime);
+          next.status = "rescheduled";
+          next.rescheduledBy = action === "reschedule_client" ? "client" : "admin";
+        } else if (action === "confirm_client" || action === "confirm_admin") {
+          next.status = "confirmed";
+        } else if (action === "settle_admin") {
+          next.status = "completed";
+          next.settlement = {
+            barberId: next.barberId,
+            settledAt: now,
+            amount: Math.max(0, Number(payload.amount) || 0),
+          };
+        }
+        return next;
+      };
+
+      if (appointmentId && (isCreate || previousAdminAppointment || previousClientAppointment)) {
+        const updateList = (items: AdminAppointment[], allowCreate: boolean) => {
+          if (removesAppointment) return items.filter((item) => item.id !== appointmentId);
+          const nextItems = items.map((item) =>
+            item.id === appointmentId ? optimisticAppointment(item) ?? item : item,
+          );
+          if (allowCreate && !nextItems.some((item) => item.id === appointmentId)) {
+            const created = optimisticAppointment();
+            if (created) nextItems.push(created);
+          }
+          return nextItems;
+        };
+
+        setAllAdminAppointments((items) => updateList(items, isCreate && Boolean(isAdmin)));
+        setOwnClientAppointments((items) =>
+          updateList(
+            items,
+            isCreate &&
+              Boolean(requestedAppointment?.userId) &&
+              requestedAppointment?.userId === activeUser?.uid,
+          ),
+        );
+        setAppointments((items) => {
+          if (removesAppointment || action === "settle_admin") {
+            return items.filter((item) => item.id !== appointmentId);
+          }
+          if (action === "confirm_client" || action === "confirm_admin") return items;
+          const base = previousOccupancy ?? requestedAppointment;
+          if (!base) return items;
+          const optimisticOccupancy: Appointment = {
+            id: appointmentId,
+            barberId: base.barberId,
+            dateKey:
+              action === "reschedule_client" || action === "reschedule_admin"
+                ? String(payload.dateKey ?? base.dateKey)
+                : base.dateKey,
+            startTime:
+              action === "reschedule_client" || action === "reschedule_admin"
+                ? String(payload.startTime ?? base.startTime)
+                : base.startTime,
+            durationMinutes: base.durationMinutes,
+            lastOperationId: operationId,
+          };
+          return items.some((item) => item.id === appointmentId)
+            ? items.map((item) => (item.id === appointmentId ? optimisticOccupancy : item))
+            : [...items, optimisticOccupancy];
+        });
+      }
+
+      const waitlistId = String(
+        payload.waitlistId ?? (payload.waitlistEntry as Partial<WaitlistEntry> | undefined)?.id ?? "",
+      );
+      const previousClientWaitlist = clientWaitlistEntries.find((entry) => entry.id === waitlistId);
+      const previousAdminWaitlist = allAdminWaitlistEntries.find((entry) => entry.id === waitlistId);
+      if (action === "join_waitlist") {
+        const draft = payload.waitlistEntry as Partial<WaitlistEntry>;
+        const optimisticEntry: WaitlistEntry = {
+          id: waitlistId,
+          userId: activeUser?.uid ?? "",
+          clientName: draft.clientName ?? "",
+          clientEmail: activeUser?.email ?? "",
+          phone: draft.phone ?? "",
+          barberId: draft.barberId ?? activeBarberId,
+          serviceId: draft.serviceId ?? selectedService.id,
+          serviceName: selectedService.name,
+          durationMinutes: selectedService.durationMinutes,
+          dateFrom: draft.dateFrom ?? dayKey(today),
+          dateTo: draft.dateTo ?? dayKey(today),
+          timePreference: draft.timePreference ?? "any",
+          status: "waiting",
+          offer: null,
+          version: 1,
+          createdAt: now,
+          updatedAt: now,
+          lastOperationId: operationId,
+        };
+        setClientWaitlistEntries((entries) => [...entries, optimisticEntry]);
+        if (isAdmin) setAllAdminWaitlistEntries((entries) => [...entries, optimisticEntry]);
+      } else if (action === "leave_waitlist") {
+        setClientWaitlistEntries((entries) => entries.filter((entry) => entry.id !== waitlistId));
+      } else if (action === "remove_waitlist_admin") {
+        setAllAdminWaitlistEntries((entries) => entries.filter((entry) => entry.id !== waitlistId));
+      }
+
+      const restoreAppointmentList = (
+        setter: typeof setAllAdminAppointments,
+        previous: AdminAppointment | undefined,
+      ) => {
+        setter((items) => {
+          const withoutOptimistic = items.filter(
+            (item) => !(item.id === appointmentId && item.lastOperationId === operationId),
+          );
+          if (previous && !withoutOptimistic.some((item) => item.id === appointmentId)) {
+            withoutOptimistic.push(previous);
+          }
+          return withoutOptimistic;
+        });
+      };
+
+      return () => {
+        if (appointmentId) {
+          restoreAppointmentList(setAllAdminAppointments, previousAdminAppointment);
+          restoreAppointmentList(setOwnClientAppointments, previousClientAppointment);
+          setAppointments((items) => {
+            const withoutOptimistic = items.filter(
+              (item) => !(item.id === appointmentId && item.lastOperationId === operationId),
+            );
+            if (previousOccupancy && !withoutOptimistic.some((item) => item.id === appointmentId)) {
+              withoutOptimistic.push(previousOccupancy);
+            }
+            return withoutOptimistic;
+          });
+        }
+        if (waitlistId) {
+          const restoreWaitlist = (
+            entries: WaitlistEntry[],
+            previous: WaitlistEntry | undefined,
+          ) => {
+            const withoutOptimistic = entries.filter(
+              (entry) => !(entry.id === waitlistId && entry.lastOperationId === operationId),
+            );
+            if (previous && !withoutOptimistic.some((entry) => entry.id === waitlistId)) {
+              withoutOptimistic.push(previous);
+            }
+            return withoutOptimistic;
+          };
+          setClientWaitlistEntries((entries) => restoreWaitlist(entries, previousClientWaitlist));
+          setAllAdminWaitlistEntries((entries) => restoreWaitlist(entries, previousAdminWaitlist));
+        }
+      };
+    },
+    [
+      activeBarberId,
+      activeUser,
+      allAdminAppointments,
+      allAdminWaitlistEntries,
+      appointments,
+      clientWaitlistEntries,
+      isAdmin,
+      ownClientAppointments,
+      selectedService,
+      today,
+    ],
+  );
+
   const runAppointmentOperation = useCallback(
     (
       action: AppointmentMutationAction,
@@ -2432,6 +2648,14 @@ export function BookingHome() {
       const operationId =
         retryOperationIdsRef.current.get(options.key) ?? createAppointmentOperationId();
       retryOperationIdsRef.current.set(options.key, operationId);
+      const feedback = appointmentActionFeedback[action];
+      const rollbackOptimisticChange = applyOptimisticAppointmentOperation(
+        action,
+        payload,
+        operationId,
+      );
+      setPendingActionKeys((keys) => new Set(keys).add(options.key));
+      setActionFeedback({ key: options.key, kind: "pending", message: feedback.pending });
 
       const operation = mutateAppointment<AdminAppointment>(action, payload, {
         operationId,
@@ -2443,22 +2667,53 @@ export function BookingHome() {
           appointmentSyncChannelRef.current?.postMessage({
             revision: Number(result.syncRevision) || 0,
           });
+          setActionFeedback((current) =>
+            current?.key === options.key
+              ? { key: options.key, kind: "success", message: feedback.success }
+              : current,
+          );
           return result;
         })
         .catch((error: unknown) => {
+          rollbackOptimisticChange();
           if (error instanceof AppointmentApiError) {
             if (error.result) applyAppointmentSnapshot(error.result);
             if (error.status < 500) retryOperationIdsRef.current.delete(options.key);
           }
+          setActionFeedback((current) =>
+            current?.key === options.key
+              ? {
+                  key: options.key,
+                  kind: "error",
+                  message: error instanceof Error ? error.message : "Nie udało się zapisać zmiany.",
+                }
+              : current,
+          );
           throw error;
         })
-        .finally(() => pendingAppointmentOperationsRef.current.delete(options.key));
+        .finally(() => {
+          pendingAppointmentOperationsRef.current.delete(options.key);
+          setPendingActionKeys((keys) => {
+            const next = new Set(keys);
+            next.delete(options.key);
+            return next;
+          });
+        });
 
       pendingAppointmentOperationsRef.current.set(options.key, operation);
       return operation;
     },
-    [applyAppointmentSnapshot],
+    [applyAppointmentSnapshot, applyOptimisticAppointmentOperation],
   );
+
+  const isActionPending = (key: string) => pendingActionKeys.has(key);
+  const isDirectActionPending = (key: string) =>
+    actionFeedback?.kind === "pending" && actionFeedback.key === key;
+  const showActionFeedback = (
+    key: string,
+    kind: ActionFeedback["kind"],
+    message: string,
+  ) => setActionFeedback({ key, kind, message });
 
   const registerCurrentPushDevice = useCallback(async () => {
     if (!activeUser || isOwner) return null;
@@ -2528,6 +2783,29 @@ export function BookingHome() {
     const timeoutId = window.setTimeout(() => setPushDeviceFeedback(null), 4500);
     return () => window.clearTimeout(timeoutId);
   }, [pushDeviceFeedback]);
+
+  useEffect(() => {
+    if (isPushDeviceUpdating) {
+      setActionFeedback({
+        key: "push_device",
+        kind: "pending",
+        message: "Aktualizuję powiadomienia…",
+      });
+      return;
+    }
+    if (pushDeviceFeedback) {
+      setActionFeedback({ key: "push_device", ...pushDeviceFeedback });
+    }
+  }, [isPushDeviceUpdating, pushDeviceFeedback]);
+
+  useEffect(() => {
+    if (!actionFeedback || actionFeedback.kind === "pending") return undefined;
+    const feedbackKey = actionFeedback.key;
+    const timeoutId = window.setTimeout(() => {
+      setActionFeedback((current) => (current?.key === feedbackKey ? null : current));
+    }, 4200);
+    return () => window.clearTimeout(timeoutId);
+  }, [actionFeedback]);
 
   useEffect(() => {
     const touchQuery = window.matchMedia("(pointer: coarse)");
@@ -3423,6 +3701,8 @@ export function BookingHome() {
       if (editingAvailabilityKey && !availabilityDraftKeys.includes(editingAvailabilityKey)) {
         delete nextAvailability[editingAvailabilityKey];
       }
+      setBarberWorkSettings((current) => ({ ...current, availability: nextAvailability }));
+      showActionFeedback("save_availability", "pending", "Zapisuję dostępność…");
       await set(
         ref(realtimeDb, `barbers/${activeBarberId}/workSettings/availability`),
         nextAvailability,
@@ -3434,9 +3714,15 @@ export function BookingHome() {
             ? "Dostępność została zapisana."
             : `Zapisano ${availabilityDraftKeys.length} dni dostępności.`,
       });
+      showActionFeedback("save_availability", "success", "Dostępność została zapisana.");
       setEditingAvailabilityKey(null);
     } catch {
+      setBarberWorkSettings((current) => ({
+        ...current,
+        availability: workSettings.availability,
+      }));
       setWorkFeedback({ kind: "error", message: "Nie udało się zapisać dostępności." });
+      showActionFeedback("save_availability", "error", "Nie udało się zapisać dostępności.");
     } finally {
       setIsWorkSaving(false);
     }
@@ -3470,6 +3756,8 @@ export function BookingHome() {
       setIsWorkSaving(true);
       const nextAvailability = { ...workSettings.availability };
       delete nextAvailability[dateKeyValue];
+      setBarberWorkSettings((current) => ({ ...current, availability: nextAvailability }));
+      showActionFeedback("remove_availability", "pending", "Usuwam dzień dostępności…");
       await set(
         ref(realtimeDb, `barbers/${activeBarberId}/workSettings/availability`),
         nextAvailability,
@@ -3477,8 +3765,14 @@ export function BookingHome() {
       if (editingAvailabilityKey === dateKeyValue) resetAvailabilityEditor();
       setPendingAvailabilityRemovalKey(null);
       setWorkFeedback({ kind: "success", message: "Dzień został usunięty z dostępności." });
+      showActionFeedback("remove_availability", "success", "Dzień dostępności został usunięty.");
     } catch {
+      setBarberWorkSettings((current) => ({
+        ...current,
+        availability: workSettings.availability,
+      }));
       setWorkFeedback({ kind: "error", message: "Nie udało się usunąć tego dnia." });
+      showActionFeedback("remove_availability", "error", "Nie udało się usunąć tego dnia.");
     } finally {
       setIsWorkSaving(false);
     }
@@ -3493,7 +3787,7 @@ export function BookingHome() {
     try {
       setIsWorkSaving(true);
       setWorkFeedback(null);
-      await set(ref(realtimeDb, `barbers/${activeBarberId}/workSettings/availability`), {
+      const nextAvailability = {
         ...workSettings.availability,
         [key]: {
           id: key,
@@ -3502,14 +3796,26 @@ export function BookingHome() {
           startTime,
           endTime,
         },
-      });
+      };
+      setBarberWorkSettings((current) => ({ ...current, availability: nextAvailability }));
+      showActionFeedback("quick_availability", "pending", "Dodaję szybki termin…");
+      await set(
+        ref(realtimeDb, `barbers/${activeBarberId}/workSettings/availability`),
+        nextAvailability,
+      );
       setExpandedAvailabilityMonth(key.slice(0, 7));
       setWorkFeedback({
         kind: "success",
         message: `Dodano ${adminClientDateFormatter.format(date)}, ${startTime}-${endTime}.`,
       });
+      showActionFeedback("quick_availability", "success", "Termin został dodany.");
     } catch {
+      setBarberWorkSettings((current) => ({
+        ...current,
+        availability: workSettings.availability,
+      }));
       setWorkFeedback({ kind: "error", message: "Nie udało się dodać szybkiego terminu." });
+      showActionFeedback("quick_availability", "error", "Nie udało się dodać terminu.");
     } finally {
       setIsWorkSaving(false);
     }
@@ -3579,6 +3885,9 @@ export function BookingHome() {
 
     try {
       setIsSaving(true);
+      setWorkFeedback(null);
+      setBarberServices(nextServices);
+      showActionFeedback("save_service", "pending", "Zapisuję usługę…");
       await set(
         ref(realtimeDb, `barbers/${activeBarberId}/services`),
         servicesToRecord(nextServices, activeBarberId),
@@ -3587,6 +3896,12 @@ export function BookingHome() {
         setSelectedServiceId(serviceId);
       }
       resetServiceDraft();
+      setWorkFeedback({ kind: "success", message: "Usługa została zapisana." });
+      showActionFeedback("save_service", "success", "Usługa została zapisana.");
+    } catch {
+      setBarberServices(barberServices);
+      setWorkFeedback({ kind: "error", message: "Nie udało się zapisać usługi." });
+      showActionFeedback("save_service", "error", "Nie udało się zapisać usługi.");
     } finally {
       setIsSaving(false);
     }
@@ -3602,6 +3917,9 @@ export function BookingHome() {
 
     try {
       setIsSaving(true);
+      setWorkFeedback(null);
+      setBarberServices(nextServices);
+      showActionFeedback(`delete_service:${serviceId}`, "pending", "Usuwam usługę…");
       await set(
         ref(realtimeDb, `barbers/${activeBarberId}/services`),
         servicesToRecord(nextServices, activeBarberId),
@@ -3613,6 +3931,12 @@ export function BookingHome() {
       if (editingServiceId === serviceId) {
         resetServiceDraft();
       }
+      setWorkFeedback({ kind: "success", message: "Usługa została usunięta." });
+      showActionFeedback(`delete_service:${serviceId}`, "success", "Usługa została usunięta.");
+    } catch {
+      setBarberServices(barberServices);
+      setWorkFeedback({ kind: "error", message: "Nie udało się usunąć usługi." });
+      showActionFeedback(`delete_service:${serviceId}`, "error", "Nie udało się usunąć usługi.");
     } finally {
       setIsSaving(false);
     }
@@ -3639,6 +3963,7 @@ export function BookingHome() {
   };
 
   const saveBarberProfile = async () => {
+    const previousProfile = barberProfiles[activeBarberId] ?? emptyBarberDetails;
     const profile = normalizeBarberDetails({
       ...profileDraft,
       displayName:
@@ -3654,10 +3979,15 @@ export function BookingHome() {
     try {
       setIsProfileSaving(true);
       setProfileFeedback(null);
+      setBarberProfiles((current) => ({ ...current, [activeBarberId]: profile }));
+      showActionFeedback("save_profile", "pending", "Zapisuję profil…");
       await set(ref(realtimeDb, `barbers/${activeBarberId}/profile`), profile);
       setProfileFeedback({ kind: "success", message: "Profil został zapisany." });
+      showActionFeedback("save_profile", "success", "Profil został zapisany.");
     } catch {
+      setBarberProfiles((current) => ({ ...current, [activeBarberId]: previousProfile }));
       setProfileFeedback({ kind: "error", message: "Nie udało się zapisać profilu." });
+      showActionFeedback("save_profile", "error", "Nie udało się zapisać profilu.");
     } finally {
       setIsProfileSaving(false);
     }
@@ -3732,6 +4062,10 @@ export function BookingHome() {
     try {
       setIsTeamSaving(true);
       setTeamFeedback(null);
+      setTeamMembers((current) =>
+        current.map((currentMember) => (currentMember.id === memberId ? member : currentMember)),
+      );
+      showActionFeedback("save_team_member", "pending", "Zapisuję dane barbera…");
       const updates: Record<string, unknown> = {
         [`team/barbers/${memberId}`]: member,
       };
@@ -3740,8 +4074,16 @@ export function BookingHome() {
       updates[`barbers/${memberId}/profile/updatedAt`] = now;
       await update(ref(realtimeDb), updates);
       setTeamDialogMemberId(null);
+      setTeamFeedback({ kind: "success", message: "Dane barbera zostały zapisane." });
+      showActionFeedback("save_team_member", "success", "Dane barbera zostały zapisane.");
     } catch {
+      setTeamMembers((current) =>
+        current.map((currentMember) =>
+          currentMember.id === memberId ? existingMember : currentMember,
+        ),
+      );
       setTeamFeedback({ kind: "error", message: "Nie udało się zapisać członka zespołu." });
+      showActionFeedback("save_team_member", "error", "Nie udało się zapisać danych barbera.");
     } finally {
       setIsTeamSaving(false);
     }
@@ -3752,12 +4094,26 @@ export function BookingHome() {
     try {
       setIsTeamSaving(true);
       setTeamFeedback(null);
+      setTeamMembers((current) =>
+        current.map((currentMember) =>
+          currentMember.id === member.id ? { ...currentMember, active } : currentMember,
+        ),
+      );
+      showActionFeedback("toggle_team_member", "pending", "Aktualizuję konto barbera…");
       await update(ref(realtimeDb, `team/barbers/${member.id}`), {
         active,
         updatedAt: serverTimestamp(),
       });
+      setTeamFeedback({ kind: "success", message: "Stan konta został zmieniony." });
+      showActionFeedback("toggle_team_member", "success", "Stan konta został zmieniony.");
     } catch {
+      setTeamMembers((current) =>
+        current.map((currentMember) =>
+          currentMember.id === member.id ? member : currentMember,
+        ),
+      );
       setTeamFeedback({ kind: "error", message: "Nie udało się zmienić stanu konta." });
+      showActionFeedback("toggle_team_member", "error", "Nie udało się zmienić stanu konta.");
     } finally {
       setIsTeamSaving(false);
     }
@@ -3772,12 +4128,31 @@ export function BookingHome() {
     try {
       setIsTeamSaving(true);
       setTeamFeedback(null);
+      setTeamMembers((current) =>
+        current.map((currentMember) =>
+          currentMember.id === member.id
+            ? {
+                ...currentMember,
+                access: { ...currentMember.access, [section]: allowed },
+              }
+            : currentMember,
+        ),
+      );
+      showActionFeedback("update_team_access", "pending", "Aktualizuję uprawnienia…");
       await update(ref(realtimeDb, `team/barbers/${member.id}`), {
         [`access/${section}`]: allowed,
         updatedAt: serverTimestamp(),
       });
+      setTeamFeedback({ kind: "success", message: "Uprawnienia zostały zapisane." });
+      showActionFeedback("update_team_access", "success", "Uprawnienia zostały zapisane.");
     } catch {
+      setTeamMembers((current) =>
+        current.map((currentMember) =>
+          currentMember.id === member.id ? member : currentMember,
+        ),
+      );
       setTeamFeedback({ kind: "error", message: "Nie udało się zmienić zakresu dostępu." });
+      showActionFeedback("update_team_access", "error", "Nie udało się zapisać uprawnień.");
     } finally {
       setIsTeamSaving(false);
     }
@@ -3825,16 +4200,23 @@ export function BookingHome() {
 
   const handleSignOut = async () => {
     setAuthError("");
-    if (currentUser) {
-      await signOut(getAuth(firebaseApp));
+    setIsSigningOut(true);
+    try {
+      if (currentUser) {
+        await signOut(getAuth(firebaseApp));
+      }
+      setStep("booking");
+      setSelectedTime("");
+      setBookingSummary(null);
+      setClientAppointmentId(null);
+      setClientAppointmentsListOpen(false);
+      setPendingClientCancellationId(null);
+      setReschedulingAppointmentId(null);
+    } catch {
+      showActionFeedback("sign_out", "error", "Nie udało się wylogować. Spróbuj ponownie.");
+    } finally {
+      setIsSigningOut(false);
     }
-    setStep("booking");
-    setSelectedTime("");
-    setBookingSummary(null);
-    setClientAppointmentId(null);
-    setClientAppointmentsListOpen(false);
-    setPendingClientCancellationId(null);
-    setReschedulingAppointmentId(null);
   };
 
   const handlePushDeviceToggle = async () => {
@@ -4317,6 +4699,8 @@ export function BookingHome() {
       );
       setAdminSelectedKey(adminEditDraft.dateKey);
       setAdminEditAppointmentId(null);
+    } catch (error) {
+      setBookingError(error instanceof Error ? error.message : "Nie udało się zmienić terminu.");
     } finally {
       setIsSaving(false);
     }
@@ -4338,6 +4722,8 @@ export function BookingHome() {
           expectedVersion: appointment.version ?? 1,
         },
       );
+    } catch (error) {
+      setBookingError(error instanceof Error ? error.message : "Nie udało się przesunąć wizyty.");
     } finally {
       setDraggedAppointmentId(null);
     }
@@ -4358,11 +4744,15 @@ export function BookingHome() {
     if (!window.confirm(`Odwołać wizytę ${appointment?.clientName ?? "klienta"}?`)) return;
 
     if (!appointment) return;
-    await runAppointmentOperation(
-      "cancel_admin",
-      { appointmentId },
-      { key: `cancel_admin:${appointmentId}`, expectedVersion: appointment.version ?? 1 },
-    );
+    try {
+      await runAppointmentOperation(
+        "cancel_admin",
+        { appointmentId },
+        { key: `cancel_admin:${appointmentId}`, expectedVersion: appointment.version ?? 1 },
+      );
+    } catch (error) {
+      setBookingError(error instanceof Error ? error.message : "Nie udało się odwołać wizyty.");
+    }
   };
 
   const footerLabel =
@@ -4726,6 +5116,8 @@ export function BookingHome() {
           expectedVersion: appointment.version ?? 1,
         },
       );
+    } catch (error) {
+      setBookingError(error instanceof Error ? error.message : "Nie udało się rozliczyć wizyty.");
     } finally {
       setSettlingAppointmentId(null);
     }
@@ -4745,6 +5137,8 @@ export function BookingHome() {
           expectedVersion: appointment.version ?? 1,
         },
       );
+    } catch (error) {
+      setBookingError(error instanceof Error ? error.message : "Nie udało się zapisać nieobecności.");
     } finally {
       setIsSaving(false);
     }
@@ -4767,7 +5161,8 @@ export function BookingHome() {
           <button
             className="confirm"
             type="button"
-            disabled={isSaving}
+            disabled={isSaving || isActionPending(`confirm_admin:${appointment.id}`)}
+            aria-busy={isActionPending(`confirm_admin:${appointment.id}`)}
             onClick={() => void confirmClientRescheduledAppointment(appointment.id)}
           >
             Potwierdź
@@ -4778,6 +5173,7 @@ export function BookingHome() {
             className="settle"
             type="button"
             disabled={Boolean(settlingAppointmentId)}
+            aria-busy={isActionPending(`settle_admin:${appointment.id}`)}
             onClick={() => void settleAdminAppointment(appointment)}
           >
             {settlingAppointmentId === appointment.id ? "Zapis..." : "Rozlicz"}
@@ -4787,7 +5183,8 @@ export function BookingHome() {
           <button
             className="no-show"
             type="button"
-            disabled={isSaving}
+            disabled={isSaving || isActionPending(`mark_no_show_admin:${appointment.id}`)}
+            aria-busy={isActionPending(`mark_no_show_admin:${appointment.id}`)}
             onClick={() => void markAdminAppointmentNoShow(appointment)}
           >
             Nieobecność
@@ -4799,11 +5196,13 @@ export function BookingHome() {
               type="button"
               onClick={() => shiftAdminAppointment(appointment.id, -15)}
               disabled={
+                isActionPending(`reschedule_admin:${appointment.id}`) ||
                 !canMoveAdminAppointment(
                   appointment,
                   minutesToTime(timeToMinutes(appointment.startTime) - 15),
                 )
               }
+              aria-busy={isActionPending(`reschedule_admin:${appointment.id}`)}
               aria-label={`Cofnij wizytę ${appointment.clientName} o 15 minut`}
             >
               -15
@@ -4812,11 +5211,13 @@ export function BookingHome() {
               type="button"
               onClick={() => shiftAdminAppointment(appointment.id, 15)}
               disabled={
+                isActionPending(`reschedule_admin:${appointment.id}`) ||
                 !canMoveAdminAppointment(
                   appointment,
                   minutesToTime(timeToMinutes(appointment.startTime) + 15),
                 )
               }
+              aria-busy={isActionPending(`reschedule_admin:${appointment.id}`)}
               aria-label={`Przesuń wizytę ${appointment.clientName} o 15 minut`}
             >
               +15
@@ -4827,6 +5228,8 @@ export function BookingHome() {
             <button
               className={mobile ? "decline" : "decline-button"}
               type="button"
+              disabled={isActionPending(`cancel_admin:${appointment.id}`)}
+              aria-busy={isActionPending(`cancel_admin:${appointment.id}`)}
               onClick={() => declineAdminAppointment(appointment.id)}
             >
               Anuluj
@@ -4985,6 +5388,7 @@ export function BookingHome() {
                 void handleGoogleSignIn();
               }}
               disabled={isSigningIn}
+              aria-busy={isSigningIn}
             >
               <span aria-hidden="true">G</span>
               {isSigningIn ? "Łączenie..." : "Kontynuuj z Google"}
@@ -5029,6 +5433,24 @@ export function BookingHome() {
           visibleStep === "booking" && heroScrollProgress > 0.48 ? "hero-collapsed" : ""
         }`}
       >
+      {actionFeedback ? (
+        <div
+          className={`action-feedback-toast ${actionFeedback.kind}`}
+          role={actionFeedback.kind === "error" ? "alert" : "status"}
+          aria-live={actionFeedback.kind === "error" ? "assertive" : "polite"}
+        >
+          <span className="action-feedback-icon" aria-hidden="true">
+            {actionFeedback.kind === "pending" ? (
+              <span className="action-spinner" />
+            ) : actionFeedback.kind === "success" ? (
+              <CheckCircle2 />
+            ) : (
+              <X />
+            )}
+          </span>
+          <span>{actionFeedback.message}</span>
+        </div>
+      ) : null}
       {visibleStep === "admin" ? (
         <section className="admin-view" aria-label="Panel admina">
           <div className="admin-topbar">
@@ -5251,6 +5673,7 @@ export function BookingHome() {
                                 className="settle"
                                 type="button"
                                 disabled={Boolean(settlingAppointmentId)}
+                                aria-busy={isActionPending(`settle_admin:${appointment.id}`)}
                                 onClick={() => void settleAdminAppointment(appointment)}
                               >
                                 {settlingAppointmentId === appointment.id ? "Zapisywanie..." : "Rozlicz"}
@@ -5396,6 +5819,7 @@ export function BookingHome() {
                             <button
                               type="button"
                               disabled={isWaitlistSaving}
+                              aria-busy={isActionPending(`remove_waitlist_admin:${entry.id}`)}
                               onClick={() => void removeAdminWaitlistEntry(entry)}
                               aria-label={`Usuń ${entry.clientName} z listy rezerwowej`}
                             >
@@ -5926,6 +6350,7 @@ export function BookingHome() {
                               className="settle-appointment-button"
                               type="button"
                               disabled={Boolean(settlingAppointmentId)}
+                              aria-busy={isActionPending(`settle_admin:${settlementAppointment.id}`)}
                               onClick={() => void settleAdminAppointment(settlementAppointment)}
                             >
                               {settlingAppointmentId === settlementAppointment.id
@@ -6332,6 +6757,7 @@ export function BookingHome() {
                       type="button"
                       onClick={() => void addAvailabilityRange()}
                       disabled={!canSaveAvailability || isWorkSaving}
+                      aria-busy={isDirectActionPending("save_availability")}
                     >
                       {isWorkSaving
                         ? "Zapisywanie..."
@@ -6362,6 +6788,7 @@ export function BookingHome() {
                         key={`${option.dateKey}-${option.startTime}`}
                         type="button"
                         disabled={isWorkSaving}
+                        aria-busy={isDirectActionPending("quick_availability")}
                         onClick={() =>
                           void quickAddAvailability(
                             option.offset,
@@ -6448,6 +6875,7 @@ export function BookingHome() {
                                       }
                                       type="button"
                                       disabled={isWorkSaving}
+                                      aria-busy={isDirectActionPending("remove_availability")}
                                       onClick={() => void removeAvailabilityDate(windowItem.dateKey)}
                                     >
                                       {pendingAvailabilityRemovalKey === windowItem.dateKey
@@ -6552,6 +6980,7 @@ export function BookingHome() {
                     <button
                       type="button"
                       disabled={!canSaveService || isSaving}
+                      aria-busy={isDirectActionPending("save_service")}
                       onClick={() => {
                         void saveService();
                       }}
@@ -6577,7 +7006,8 @@ export function BookingHome() {
                         <button
                           className="danger"
                           type="button"
-                          disabled={services.length <= 1}
+                          disabled={services.length <= 1 || isSaving}
+                          aria-busy={isDirectActionPending(`delete_service:${service.id}`)}
                           onClick={() => {
                             void deleteService(service.id);
                           }}
@@ -6875,6 +7305,9 @@ export function BookingHome() {
                     <button
                       type="submit"
                       disabled={isProfileSaving || isProfilePhotoProcessing}
+                      aria-busy={
+                        isDirectActionPending("save_profile") || isProfilePhotoProcessing
+                      }
                     >
                       {isProfileSaving ? "Zapisywanie..." : "Zapisz profil"}
                     </button>
@@ -6966,11 +7399,13 @@ export function BookingHome() {
                   <strong>{activeUser.displayName ?? activeUser.email ?? "Klient"}</strong>
                   <button
                     type="button"
+                    disabled={isSigningOut}
+                    aria-busy={isSigningOut}
                     onClick={() => {
                       void handleSignOut();
                     }}
                   >
-                    Wyloguj
+                    {isSigningOut ? "Wylogowuję…" : "Wyloguj"}
                   </button>
                 </div>
                 {!isOwner ? (
@@ -7427,6 +7862,7 @@ export function BookingHome() {
                     className="secondary"
                     type="button"
                     disabled={isWaitlistSaving}
+                    aria-busy={isActionPending(`leave_waitlist:${activeClientWaitlistEntry.id}`)}
                     onClick={() => void leaveClientWaitlist(activeClientWaitlistEntry)}
                   >
                     Wypisz mnie
@@ -7672,7 +8108,12 @@ export function BookingHome() {
                 >
                   Anuluj
                 </button>
-                <button className="primary" type="submit" disabled={isTeamSaving}>
+                <button
+                  className="primary"
+                  type="submit"
+                  disabled={isTeamSaving}
+                  aria-busy={isDirectActionPending("save_team_member")}
+                >
                   {isTeamSaving ? "Zapisywanie..." : "Zapisz zmiany"}
                 </button>
               </div>
@@ -8013,6 +8454,7 @@ export function BookingHome() {
                   ((clientDialog.mode === "book" || clientSaveMode === "booking") &&
                     (!serviceCatalogReady || !manualBookingService || manualBookingHasConflict))
                 }
+                aria-busy={isClientSaving}
                 onClick={() => void handleSaveClientFromDialog()}
               >
                 {isClientSaving
@@ -8219,6 +8661,7 @@ export function BookingHome() {
                           className="settle"
                           type="button"
                           disabled={Boolean(settlingAppointmentId)}
+                          aria-busy={isActionPending(`settle_admin:${appointment.id}`)}
                           onClick={() => void settleAdminAppointment(appointment)}
                         >
                           {settlingAppointmentId === appointment.id ? "Zapisywanie..." : "Rozlicz"}
@@ -8228,7 +8671,8 @@ export function BookingHome() {
                         <button
                           className="no-show"
                           type="button"
-                          disabled={isSaving}
+                          disabled={isSaving || isActionPending(`mark_no_show_admin:${appointment.id}`)}
+                          aria-busy={isActionPending(`mark_no_show_admin:${appointment.id}`)}
                           onClick={() => void markAdminAppointmentNoShow(appointment)}
                         >
                           Nieobecność
@@ -8259,7 +8703,8 @@ export function BookingHome() {
                         <button
                           className="confirm"
                           type="button"
-                          disabled={isSaving}
+                          disabled={isSaving || isActionPending(`confirm_admin:${appointment.id}`)}
+                          aria-busy={isActionPending(`confirm_admin:${appointment.id}`)}
                           onClick={() => {
                             void confirmClientRescheduledAppointment(appointment.id);
                           }}
@@ -8334,6 +8779,7 @@ export function BookingHome() {
                 className="danger"
                 type="button"
                 disabled={isClientSaving}
+                aria-busy={isActionPending(`delete_admin_client:${pendingClientRemoval.id}`)}
                 onClick={() => void removeClientFromDirectory()}
               >
                 {isClientSaving ? "Usuwanie..." : "Usuń na zawsze"}
@@ -8536,6 +8982,9 @@ export function BookingHome() {
                   <button
                     type="button"
                     disabled={isSaving || !adminEditDraft.dateKey || !adminEditDraft.startTime}
+                    aria-busy={isActionPending(
+                      `reschedule_admin:${selectedAdminEditAppointment.id}`,
+                    )}
                     onClick={() => {
                       void saveAdminAppointmentEdit();
                     }}
@@ -8711,7 +9160,13 @@ export function BookingHome() {
                 >
                   Wróć
                 </button>
-                <button type="submit" disabled={!canJoinWaitlist || isWaitlistSaving}>
+                <button
+                  type="submit"
+                  disabled={!canJoinWaitlist || isWaitlistSaving}
+                  aria-busy={isActionPending(
+                    `join_waitlist:${activeBarberId}:${selectedService.id}`,
+                  )}
+                >
                   <BellRing aria-hidden="true" />
                   {isWaitlistSaving ? "Zapisywanie..." : "Powiadom mnie"}
                 </button>
@@ -8929,7 +9384,8 @@ export function BookingHome() {
                   <button
                     className="confirm"
                     type="button"
-                    disabled={isSaving}
+                    disabled={isSaving || isActionPending(`confirm_client:${selectedClientAppointment.id}`)}
+                    aria-busy={isActionPending(`confirm_client:${selectedClientAppointment.id}`)}
                     onClick={() => confirmClientRescheduledAppointment(selectedClientAppointment.id)}
                   >
                     {isSaving ? "Potwierdzanie..." : "Potwierdzam nowy termin"}
@@ -9007,6 +9463,7 @@ export function BookingHome() {
                 className="danger"
                 type="button"
                 disabled={isSaving}
+                aria-busy={isActionPending(`cancel_client:${pendingClientCancellation.id}`)}
                 onClick={() => cancelClientAppointment(pendingClientCancellation.id)}
               >
                 Odwołaj wizytę
@@ -9028,6 +9485,14 @@ export function BookingHome() {
             className={footerClassName}
             type="button"
             disabled={footerDisabled}
+            aria-busy={
+              visibleStep === "confirm"
+                ? isActionPending("create_client:booking")
+                : Boolean(
+                    reschedulingAppointment &&
+                      isActionPending(`reschedule_client:${reschedulingAppointment.id}`),
+                  )
+            }
             onClick={() => {
               if (visibleStep === "booking") {
                 if (reschedulingAppointment) {
