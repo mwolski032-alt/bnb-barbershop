@@ -469,7 +469,11 @@ test("moves the complete appointment workflow into the calendar", async () => {
   assert.match(bookingHome, /Rozlicz/);
   assert.match(bookingHome, /Nieobecność/);
   assert.match(bookingHome, /"create_admin"/);
+  assert.match(bookingHome, /"update_admin"/);
+  assert.match(bookingHome, /Cena tej wizyty \(zł\)/);
+  assert.match(bookingHome, /po rozliczeniu właśnie ta cena trafi do analizy/);
   assert.match(appointmentApi, /"mark_no_show_admin"/);
+  assert.match(appointmentApi, /originalPriceAmount/);
   assert.match(appointmentApi, /next\.status = "no_show"/);
   assert.match(dataModel, /"no_show"/);
   assert.match(styles, /\.schedule-add-appointment/);
@@ -490,8 +494,8 @@ test("keeps settlement-driven admin analytics", async () => {
   assert.match(bookingHome, /const isPotentialNoShow/);
   assert.match(bookingHome, /const settleAdminAppointment = async/);
   assert.match(appointmentApi, /next\.status = "completed"/);
-  assert.match(bookingHome, /const settledAmount = getServicePriceValue/);
-  assert.match(appointmentApi, /next\.settlement = \{ barberId: next\.barberId/);
+  assert.match(bookingHome, /const settledAmount = getAppointmentPriceValue/);
+  assert.match(appointmentApi, /next\.settlement = \{[\s\S]*barberId: next\.barberId[\s\S]*amount:/);
   assert.match(analyticsScreen, /aria-label="Analiza działalności"/);
   assert.match(analyticsScreen, /Potencjalne nieobecności/);
   assert.match(styles, /\.analytics-kpi-grid/);

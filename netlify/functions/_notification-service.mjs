@@ -11,6 +11,7 @@ import {
 export const notificationEventByAction = {
   create_client: "new_booking",
   create_admin: "new_booking",
+  update_admin: "admin_appointment_updated",
   upsert_admin_client: "new_booking",
   reschedule_client: "client_rescheduled",
   reschedule_admin: "admin_rescheduled",
@@ -45,6 +46,40 @@ const waitlistDateRange = (appointment) =>
 
 const waitlistPreferenceLabel = (appointment) =>
   waitlistTimePreferenceLabels[appointment.timePreference] || waitlistTimePreferenceLabels.any;
+
+const formatPrice = (value, fallback = "") => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return fallback;
+  return `${amount.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1").replace(".", ",")} zł`;
+};
+
+const appointmentUpdateTitle = (appointment) => {
+  if (!appointment.priceChanged) return "Wizyta została przesunięta";
+  if (Number(appointment.priceAmount) === 0) return "Ta wizyta jest od nas 🎁";
+  if (Number(appointment.priceAmount) < Number(appointment.previousPriceAmount)) {
+    return "Masz rabat na wizytę 🎉";
+  }
+  return "Zmieniono cenę wizyty";
+};
+
+const appointmentUpdateBody = (appointment) => {
+  const newTerm = `${formatDateKey(appointment.dateKey)} o ${appointment.startTime}`;
+  if (!appointment.priceChanged) return `Nowy termin: ${newTerm}.`;
+
+  let priceMessage;
+  if (Number(appointment.priceAmount) === 0) {
+    priceMessage = `Usługa „${appointment.serviceName}” będzie bezpłatna — za tę wizytę nic nie płacisz.`;
+  } else if (Number(appointment.priceAmount) < Number(appointment.previousPriceAmount)) {
+    priceMessage =
+      `Cena usługi „${appointment.serviceName}” została obniżona z ` +
+      `${formatPrice(appointment.previousPriceAmount, appointment.previousPrice)} do ${formatPrice(appointment.priceAmount, appointment.price)}.`;
+  } else {
+    priceMessage =
+      `Cena usługi „${appointment.serviceName}” została zmieniona z ` +
+      `${formatPrice(appointment.previousPriceAmount, appointment.previousPrice)} na ${formatPrice(appointment.priceAmount, appointment.price)}.`;
+  }
+  return `${priceMessage} ${appointment.scheduleChanged ? "Nowy termin" : "Termin"}: ${newTerm}.`;
+};
 
 const eventCopy = {
   new_booking: {
@@ -98,6 +133,12 @@ const eventCopy = {
     target: "client",
     title: "Wizyta została odwołana",
     body: (appointment) => `${appointment.serviceName} została odwołana przez barbera.`,
+    clientEmail: true,
+  },
+  admin_appointment_updated: {
+    target: "client",
+    title: appointmentUpdateTitle,
+    body: appointmentUpdateBody,
     clientEmail: true,
   },
   waitlist_joined: {
@@ -329,9 +370,15 @@ const readDeliveryContext = async (accessToken, appointment, copy) => {
   };
 };
 
+const resolveCopy = (value, appointment) =>
+  typeof value === "function" ? value(appointment) : value;
+
 const audienceNotification = (copy, appointment, audience) => audience === "client"
-  ? { title: copy.clientTitle || copy.title, body: (copy.clientBody || copy.body)(appointment) }
-  : { title: copy.title, body: copy.body(appointment) };
+  ? {
+      title: resolveCopy(copy.clientTitle || copy.title, appointment),
+      body: resolveCopy(copy.clientBody || copy.body, appointment),
+    }
+  : { title: resolveCopy(copy.title, appointment), body: resolveCopy(copy.body, appointment) };
 
 const claimJob = async (operationId, accessToken, now, force) => {
   const path = `notificationOutbox/${encodeURIComponent(operationId)}`;
@@ -398,7 +445,7 @@ const finishJob = async (accessToken, job, update) => {
 const processClaimedJob = async (accessToken, job, siteUrl) => {
   const operation = await readDatabase(`appointmentOperations/${encodeURIComponent(job.operationId)}`, accessToken);
   const expectedEvent = notificationEventByAction[operation?.action];
-  const appointment = operation?.appointment ?? operation?.notificationPayload;
+  const appointment = operation?.notificationPayload ?? operation?.appointment;
   if (!appointment || operation.appointmentId !== job.appointmentId || expectedEvent !== job.event) {
     return finishJob(accessToken, job, {
       status: "exhausted",
@@ -466,8 +513,8 @@ const processClaimedJob = async (accessToken, job, siteUrl) => {
     copy.barberEmail &&
     !["delivered", "skipped"].includes(emailDeliveries.barber?.status)
   ) {
-    const title = copy.title;
-    const body = copy.body(appointmentWithBarber);
+    const title = resolveCopy(copy.title, appointmentWithBarber);
+    const body = resolveCopy(copy.body, appointmentWithBarber);
     emailTasks.push(sendResendEmail({
       to: context.barber.email,
       subject: `PILNE BNB: ${title}`,
@@ -489,8 +536,8 @@ const processClaimedJob = async (accessToken, job, siteUrl) => {
     appointment.userId !== context.ownerUid &&
     !["delivered", "skipped"].includes(emailDeliveries.client?.status)
   ) {
-    const title = copy.clientTitle || copy.title;
-    const body = (copy.clientBody || copy.body)(appointmentWithBarber);
+    const title = resolveCopy(copy.clientTitle || copy.title, appointmentWithBarber);
+    const body = resolveCopy(copy.clientBody || copy.body, appointmentWithBarber);
     emailTasks.push(sendResendEmail({
       to: appointment.clientEmail,
       subject: `BNB Barbershop: ${title}`,
@@ -630,7 +677,7 @@ export const sendTestDeviceNotification = async ({ uid, appointment, siteUrl }) 
   const results = await Promise.all(devices.map((device) => sendToDevice(
     accessToken,
     device,
-    { title: copy.title, body: copy.body(appointment) },
+    { title: resolveCopy(copy.title, appointment), body: resolveCopy(copy.body, appointment) },
     appointment,
     "test_push",
     siteUrl,

@@ -342,6 +342,79 @@ test("E2E barber flow: admin reschedule, client confirmation, cancellation and s
   assert.equal("settledAmount" in fixture.database.appointments["kacper-past"], false);
 });
 
+test("E2E individual visit price: discount and free visit use the edited amount in settlement", async () => {
+  fixture.reset();
+
+  const discountResponse = await request(tokens.kacper, "POST", {
+    action: "update_admin",
+    appointmentId: "kacper-upcoming",
+    dateKey: "2099-01-10",
+    startTime: "10:00",
+    priceAmount: 35,
+  });
+  const discount = await discountResponse.json();
+  assert.equal(discountResponse.status, 200, JSON.stringify(discount));
+  assert.equal(discount.appointment.price, "35 zł");
+  assert.equal(discount.appointment.priceAmount, 35);
+  assert.equal(discount.appointment.originalPriceAmount, 50);
+  assert.equal(discount.appointment.status, "confirmed");
+  assert.equal(fixture.database.notificationOutbox[discount.operationId].event, "admin_appointment_updated");
+
+  const freeResponse = await request(tokens.kacper, "POST", {
+    action: "update_admin",
+    appointmentId: "kacper-past",
+    dateKey: "2026-08-01",
+    startTime: "10:00",
+    priceAmount: 0,
+  });
+  const freeVisit = await freeResponse.json();
+  assert.equal(freeResponse.status, 200, JSON.stringify(freeVisit));
+  assert.equal(freeVisit.appointment.price, "0 zł");
+  assert.equal(freeVisit.appointment.priceAmount, 0);
+
+  const settleResponse = await request(tokens.kacper, "POST", {
+    action: "settle_admin",
+    appointmentId: "kacper-past",
+    expectedVersion: 2,
+    amount: 999,
+  });
+  assert.equal(settleResponse.status, 200, await settleResponse.text());
+  assert.equal(fixture.database.appointments["kacper-past"].settlement.amount, 0);
+});
+
+test("E2E individual visit price: clients, other barbers and invalid amounts cannot change it", async () => {
+  fixture.reset();
+
+  const clientDenied = await request(tokens.clientB, "POST", {
+    action: "update_admin",
+    appointmentId: "kacper-upcoming",
+    dateKey: "2099-01-10",
+    startTime: "10:00",
+    priceAmount: 0,
+  });
+  assert.equal(clientDenied.status, 403);
+
+  const otherBarberDenied = await request(tokens.mateusz, "POST", {
+    action: "update_admin",
+    appointmentId: "kacper-upcoming",
+    dateKey: "2099-01-10",
+    startTime: "10:00",
+    priceAmount: 0,
+  });
+  assert.equal(otherBarberDenied.status, 403);
+
+  const invalid = await request(tokens.kacper, "POST", {
+    action: "update_admin",
+    appointmentId: "kacper-upcoming",
+    dateKey: "2099-01-10",
+    startTime: "10:00",
+    priceAmount: -1,
+  });
+  assert.equal(invalid.status, 400);
+  assert.equal(fixture.database.appointments["kacper-upcoming"].price, "50 zl");
+  assert.equal(fixture.database.appointments["kacper-upcoming"].version, 1);
+});
+
 test("E2E calendar flow: barber can mark an ended visit as a no-show but not a future visit", async () => {
   fixture.reset();
 

@@ -189,6 +189,7 @@ type ServiceDraft = {
 type AdminEditDraft = {
   dateKey: string;
   startTime: string;
+  price: string;
 };
 
 type AppointmentStatus = "confirmed" | "rescheduled" | "cancelled" | "completed" | "no_show";
@@ -217,6 +218,10 @@ type AdminAppointment = Appointment & {
   userId?: string;
   serviceName: string;
   price: string;
+  priceAmount?: number;
+  originalPriceAmount?: number;
+  priceAdjustedAt?: number;
+  priceAdjustedBy?: "admin";
   color: AppointmentColor;
   status?: AppointmentStatus;
   rescheduledAt?: number;
@@ -419,6 +424,7 @@ const appointmentActionFeedback: Record<
   confirm_admin: { pending: "Potwierdzam wizytę…", success: "Wizyta została potwierdzona." },
   cancel_client: { pending: "Odwołuję wizytę…", success: "Wizyta została odwołana." },
   create_admin: { pending: "Zapisuję wizytę…", success: "Wizyta została zapisana." },
+  update_admin: { pending: "Zapisuję zmiany wizyty…", success: "Zmiany wizyty zostały zapisane." },
   reschedule_admin: { pending: "Przenoszę wizytę…", success: "Termin wizyty został zmieniony." },
   cancel_admin: { pending: "Odwołuję wizytę…", success: "Wizyta została odwołana." },
   settle_admin: { pending: "Rozliczam wizytę…", success: "Wizyta została rozliczona." },
@@ -636,13 +642,52 @@ const shiftDateKey = (key: string, days: number) => {
   return dayKey(date);
 };
 
-const getServicePriceValue = (value: string) =>
-  Number(value.trim().replace(",", ".").replace(/[^\d.]/g, ""));
+const getServicePriceValue = (value: string) => {
+  const normalized = value
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/[^\d,.-]/g, "");
+  if (!normalized) return Number.NaN;
+  return Number(
+    normalized.includes(",")
+      ? normalized.replace(/\./g, "").replace(",", ".")
+      : normalized,
+  );
+};
+
+const getAppointmentPriceValue = (appointment: Pick<AdminAppointment, "price" | "priceAmount">) =>
+  Number.isFinite(Number(appointment.priceAmount))
+    ? Number(appointment.priceAmount)
+    : getServicePriceValue(appointment.price);
+
+const formatAppointmentPrice = (amount: number) =>
+  `${amount.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1").replace(".", ",")} zł`;
+
+const getAppointmentPriceInputValue = (
+  appointment: Pick<AdminAppointment, "price" | "priceAmount">,
+) => {
+  const amount = getAppointmentPriceValue(appointment);
+  return Number.isFinite(amount) ? String(Math.round(amount * 100) / 100) : "";
+};
+
+const parseAppointmentPriceInput = (value: string) => Number(value.trim().replace(",", "."));
+
+const isValidAppointmentPriceInput = (value: string) => {
+  if (!value.trim()) return false;
+  const amount = parseAppointmentPriceInput(value);
+  const roundedAmount = Math.round(amount * 100) / 100;
+  return (
+    Number.isFinite(amount) &&
+    amount >= 0 &&
+    amount <= 10_000 &&
+    Math.abs(amount - roundedAmount) <= 0.000001
+  );
+};
 
 const getAppointmentRevenue = (appointment: AdminAppointment) =>
   Number.isFinite(Number(appointment.settlement?.amount))
     ? Number(appointment.settlement?.amount)
-    : getServicePriceValue(appointment.price);
+    : getAppointmentPriceValue(appointment);
 
 const getAnalyticsRange = (period: AnalyticsPeriod, now: Date) => {
   let start: Date;
@@ -1571,6 +1616,7 @@ export function BookingHome() {
   const [adminEditDraft, setAdminEditDraft] = useState<AdminEditDraft>({
     dateKey: dayKey(today),
     startTime: "10:00",
+    price: "",
   });
   const [expandedAvailabilityMonth, setExpandedAvailabilityMonth] = useState<
     string | null | undefined
@@ -2084,11 +2130,11 @@ export function BookingHome() {
       newClients,
       potentialNoShows: potentialNoShows.length,
       potentialNoShowValue: potentialNoShows.reduce(
-        (sum, appointment) => sum + getServicePriceValue(appointment.price),
+        (sum, appointment) => sum + getAppointmentPriceValue(appointment),
         0,
       ),
       plannedRevenue: upcomingAppointments.reduce(
-        (sum, appointment) => sum + getServicePriceValue(appointment.price),
+        (sum, appointment) => sum + getAppointmentPriceValue(appointment),
         0,
       ),
       servicesSummary,
@@ -2462,7 +2508,31 @@ export function BookingHome() {
           updatedAt: now,
         };
 
-        if (action === "reschedule_client" || action === "reschedule_admin") {
+        if (action === "update_admin") {
+          const nextDateKey = String(payload.dateKey ?? next.dateKey);
+          const nextStartTime = String(payload.startTime ?? next.startTime);
+          const priceAmount = Number(payload.priceAmount);
+          const scheduleChanged =
+            nextDateKey !== next.dateKey || nextStartTime !== next.startTime;
+          if (scheduleChanged) {
+            next.dateKey = nextDateKey;
+            next.startTime = nextStartTime;
+            next.status = "rescheduled";
+            next.rescheduledBy = "admin";
+          }
+          if (
+            Number.isFinite(priceAmount) &&
+            Math.round(priceAmount * 100) !== Math.round(getAppointmentPriceValue(next) * 100)
+          ) {
+            next.originalPriceAmount = Number.isFinite(Number(next.originalPriceAmount))
+              ? Number(next.originalPriceAmount)
+              : getAppointmentPriceValue(next);
+            next.priceAmount = Math.round(priceAmount * 100) / 100;
+            next.price = formatAppointmentPrice(next.priceAmount);
+            next.priceAdjustedAt = now;
+            next.priceAdjustedBy = "admin";
+          }
+        } else if (action === "reschedule_client" || action === "reschedule_admin") {
           next.dateKey = String(payload.dateKey ?? next.dateKey);
           next.startTime = String(payload.startTime ?? next.startTime);
           next.status = "rescheduled";
@@ -2513,11 +2583,11 @@ export function BookingHome() {
             id: appointmentId,
             barberId: base.barberId,
             dateKey:
-              action === "reschedule_client" || action === "reschedule_admin"
+              action === "update_admin" || action === "reschedule_client" || action === "reschedule_admin"
                 ? String(payload.dateKey ?? base.dateKey)
                 : base.dateKey,
             startTime:
-              action === "reschedule_client" || action === "reschedule_admin"
+              action === "update_admin" || action === "reschedule_client" || action === "reschedule_admin"
                 ? String(payload.startTime ?? base.startTime)
                 : base.startTime,
             durationMinutes: base.durationMinutes,
@@ -3159,7 +3229,11 @@ export function BookingHome() {
       setAdminSection("schedule");
       setAdminWorkspaceTab("schedule");
       setAdminSelectedKey(appointment.dateKey);
-      setAdminEditDraft({ dateKey: appointment.dateKey, startTime: appointment.startTime });
+      setAdminEditDraft({
+        dateKey: appointment.dateKey,
+        startTime: appointment.startTime,
+        price: getAppointmentPriceInputValue(appointment),
+      });
       setAdminEditAppointmentId(appointment.id);
       setStep("admin");
     } else {
@@ -4582,6 +4656,7 @@ export function BookingHome() {
       phone: form.phone,
       serviceName: selectedService.name,
       price: selectedService.price,
+      priceAmount: getServicePriceValue(selectedService.price),
       color: appointmentColor,
       status: "confirmed",
     };
@@ -4675,30 +4750,48 @@ export function BookingHome() {
     setAdminEditDraft({
       dateKey: appointment.dateKey,
       startTime: appointment.startTime,
+      price: getAppointmentPriceInputValue(appointment),
     });
   };
 
   const saveAdminAppointmentEdit = async () => {
     if (!selectedAdminEditAppointment || isSaving) return;
 
+    const priceAmount = parseAppointmentPriceInput(adminEditDraft.price);
+    if (!isValidAppointmentPriceInput(adminEditDraft.price)) {
+      setBookingError("Podaj cenę od 0 do 10 000 zł, maksymalnie z 2 miejscami po przecinku.");
+      return;
+    }
+    const scheduleChanged =
+      adminEditDraft.dateKey !== selectedAdminEditAppointment.dateKey ||
+      adminEditDraft.startTime !== selectedAdminEditAppointment.startTime;
+    const priceChanged =
+      Math.round(priceAmount * 100) !==
+      Math.round(getAppointmentPriceValue(selectedAdminEditAppointment) * 100);
+    if (!scheduleChanged && !priceChanged) {
+      setAdminEditAppointmentId(null);
+      return;
+    }
+
     try {
       setIsSaving(true);
       await runAppointmentOperation(
-        "reschedule_admin",
+        "update_admin",
         {
           appointmentId: selectedAdminEditAppointment.id,
           dateKey: adminEditDraft.dateKey,
           startTime: adminEditDraft.startTime,
+          priceAmount,
         },
         {
-          key: `reschedule_admin:${selectedAdminEditAppointment.id}`,
+          key: `update_admin:${selectedAdminEditAppointment.id}`,
           expectedVersion: selectedAdminEditAppointment.version ?? 1,
         },
       );
       setAdminSelectedKey(adminEditDraft.dateKey);
       setAdminEditAppointmentId(null);
     } catch (error) {
-      setBookingError(error instanceof Error ? error.message : "Nie udało się zmienić terminu.");
+      setBookingError(error instanceof Error ? error.message : "Nie udało się zapisać zmian wizyty.");
     } finally {
       setIsSaving(false);
     }
@@ -5015,6 +5108,7 @@ export function BookingHome() {
         phone: phoneDigits,
         serviceName: manualBookingService.name,
         price: manualBookingService.price,
+        priceAmount: getServicePriceValue(manualBookingService.price),
         color: getNextAppointmentColor(manualBookingDraft.dateKey, adminAppointments),
         status: "confirmed",
       };
@@ -5098,7 +5192,7 @@ export function BookingHome() {
 
     try {
       setSettlingAppointmentId(appointment.id);
-      const settledAmount = getServicePriceValue(appointment.price);
+      const settledAmount = getAppointmentPriceValue(appointment);
       await runAppointmentOperation(
         "settle_admin",
         { appointmentId: appointment.id, amount: settledAmount },
@@ -7331,7 +7425,9 @@ export function BookingHome() {
             </div>
 
             <div className="admin-edit-recap">
-              <span>{selectedAdminEditAppointment.serviceName}</span>
+              <span>
+                {selectedAdminEditAppointment.serviceName} · {selectedAdminEditAppointment.price}
+              </span>
               <strong>
                 {adminClientDateFormatter.format(dateFromKey(selectedAdminEditAppointment.dateKey))},{" "}
                 {selectedAdminEditAppointment.startTime}
@@ -7384,22 +7480,45 @@ export function BookingHome() {
                       ))}
                     </select>
                   </label>
+                  <label className="admin-edit-price-field">
+                    Cena tej wizyty (zł)
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      max="10000"
+                      step="0.01"
+                      value={adminEditDraft.price}
+                      onChange={(event) =>
+                        setAdminEditDraft((current) => ({
+                          ...current,
+                          price: event.target.value,
+                        }))
+                      }
+                      aria-invalid={!isValidAppointmentPriceInput(adminEditDraft.price)}
+                    />
+                  </label>
                 </div>
 
                 <div className="modal-client-note">
-                  <strong>Ręczna zmiana admina</strong>
+                  <strong>Zmiana tylko dla tej wizyty</strong>
                   <span>
-                    Możesz wybrać dzień bez dostępności publicznej. Klient zobaczy wizytę jako
-                    przesuniętą.
+                    Cena usługi dla innych klientów pozostanie bez zmian. Klient dostanie
+                    powiadomienie o nowej kwocie, a po rozliczeniu właśnie ta cena trafi do analizy.
                   </span>
                 </div>
 
                 <div className="modal-actions">
                   <button
                     type="button"
-                    disabled={isSaving || !adminEditDraft.dateKey || !adminEditDraft.startTime}
+                    disabled={
+                      isSaving ||
+                      !adminEditDraft.dateKey ||
+                      !adminEditDraft.startTime ||
+                      !isValidAppointmentPriceInput(adminEditDraft.price)
+                    }
                     aria-busy={isActionPending(
-                      `reschedule_admin:${selectedAdminEditAppointment.id}`,
+                      `update_admin:${selectedAdminEditAppointment.id}`,
                     )}
                     onClick={() => {
                       void saveAdminAppointmentEdit();

@@ -25,5 +25,5 @@ test("runtime settlement uses only the canonical nested record", async () => {
 
   assert.doesNotMatch(frontend, /settledAmount\?:|settledAt\?:/);
   assert.doesNotMatch(backend, /next\.settledAmount|next\.settledAt/);
-  assert.match(backend, /next\.settlement = \{ barberId: next\.barberId/);
+  assert.match(backend, /next\.settlement = \{[\s\S]*barberId: next\.barberId[\s\S]*amount:/);
 });

@@ -33,6 +33,7 @@ const allowedActions = new Set([
   "confirm_admin",
   "cancel_client",
   "create_admin",
+  "update_admin",
   "reschedule_admin",
   "cancel_admin",
   "settle_admin",
@@ -46,6 +47,7 @@ const allowedActions = new Set([
 ]);
 const scheduleAdminActions = new Set([
   "create_admin",
+  "update_admin",
   "reschedule_admin",
   "confirm_admin",
   "cancel_admin",
@@ -56,6 +58,7 @@ const scheduleAdminActions = new Set([
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const waitlistTimePreferences = new Set(["any", "morning", "afternoon", "evening"]);
+const maximumAppointmentPrice = 10_000;
 
 const timeToMinutes = (time) => {
   const [hours, minutes] = String(time).split(":").map(Number);
@@ -63,6 +66,54 @@ const timeToMinutes = (time) => {
 };
 const rangesOverlap = (firstStart, firstDuration, secondStart, secondDuration) =>
   firstStart < secondStart + secondDuration && secondStart < firstStart + firstDuration;
+
+const parsePriceAmount = (value) => {
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/[^\d,.-]/g, "");
+  if (!normalized) return Number.NaN;
+  const decimalValue = normalized.includes(",")
+    ? normalized.replace(/\./g, "").replace(",", ".")
+    : normalized;
+  return Number(decimalValue);
+};
+
+const getAppointmentPriceAmount = (appointment) => {
+  const storedAmount = Number(appointment.priceAmount);
+  return Number.isFinite(storedAmount) ? storedAmount : parsePriceAmount(appointment.price);
+};
+
+const readRequestedPriceAmount = (value) => {
+  if (value === null || value === undefined || String(value).trim() === "") {
+    return { error: "Podaj cenę wizyty." };
+  }
+  const amount = Number(String(value).replace(",", "."));
+  const roundedAmount = Math.round(amount * 100) / 100;
+  if (
+    !Number.isFinite(amount) ||
+    amount < 0 ||
+    amount > maximumAppointmentPrice ||
+    Math.abs(amount - roundedAmount) > 0.000001
+  ) {
+    return { error: "Cena wizyty musi mieścić się w zakresie od 0 do 10 000 zł i mieć maksymalnie 2 miejsca po przecinku." };
+  }
+  return { amount: roundedAmount };
+};
+
+const formatAppointmentPrice = (amount) =>
+  `${amount.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1").replace(".", ",")} zł`;
+
+const applyServicePrice = (appointment, service) => {
+  appointment.price = cleanText(service.price, 40);
+  delete appointment.originalPriceAmount;
+  delete appointment.priceAdjustedAt;
+  delete appointment.priceAdjustedBy;
+  const priceAmount = parsePriceAmount(appointment.price);
+  if (Number.isFinite(priceAmount) && priceAmount >= 0) {
+    appointment.priceAmount = Math.round(priceAmount * 100) / 100;
+  }
+};
 
 const normalizeWaitlistEntry = (id, value = {}) => ({
   id: cleanText(value.id || id, 120),
@@ -174,7 +225,7 @@ const readClientBookingConfiguration = async (appointment, accessToken) => {
     throw new Error("Wybrana usługa nie jest już dostępna.");
   }
   appointment.serviceName = cleanText(service.name, 120);
-  appointment.price = cleanText(service.price, 40);
+  applyServicePrice(appointment, service);
   appointment.durationMinutes = Number(service.durationMinutes);
 
   const availability = await readDatabase(
@@ -217,7 +268,7 @@ const readAdminBookingConfiguration = async (appointment, accessToken) => {
     throw new Error("Wybrana usługa nie jest już dostępna.");
   }
   appointment.serviceName = cleanText(service.name, 120);
-  appointment.price = cleanText(service.price, 40);
+  applyServicePrice(appointment, service);
   appointment.durationMinutes = Number(service.durationMinutes);
 };
 
@@ -1439,6 +1490,7 @@ const handler = async (request) => {
       }
 
       let next = { ...current };
+      let notificationPayload;
       if (action === "reschedule_client" || action === "reschedule_admin") {
         next.dateKey = cleanText(body.dateKey, 10);
         next.startTime = cleanText(body.startTime, 5);
@@ -1451,6 +1503,54 @@ const handler = async (request) => {
         if (hasConflict(appointments, next, appointmentId)) {
           return { error: "Ten termin został właśnie zajęty." };
         }
+      } else if (action === "update_admin") {
+        const nextDateKey = cleanText(body.dateKey, 10);
+        const nextStartTime = cleanText(body.startTime, 5);
+        const requestedPrice = readRequestedPriceAmount(body.priceAmount);
+        if (requestedPrice.error) return { error: requestedPrice.error, status: 400 };
+
+        const currentPriceAmount = getAppointmentPriceAmount(current);
+        if (!Number.isFinite(currentPriceAmount)) {
+          return { error: "Nie udało się odczytać obecnej ceny wizyty.", status: 409 };
+        }
+        const scheduleChanged =
+          nextDateKey !== current.dateKey || nextStartTime !== current.startTime;
+        const priceChanged =
+          Math.round(currentPriceAmount * 100) !== Math.round(requestedPrice.amount * 100);
+        if (!scheduleChanged && !priceChanged) {
+          return { error: "Nie wprowadzono żadnych zmian.", status: 409 };
+        }
+
+        if (scheduleChanged) {
+          next.dateKey = nextDateKey;
+          next.startTime = nextStartTime;
+          next.status = "rescheduled";
+          next.rescheduledAt = Date.now();
+          next.rescheduledBy = "admin";
+          const validationError = validateAppointmentTime(next);
+          if (validationError) return { error: validationError, status: 400 };
+          if (hasConflict(appointments, next, appointmentId)) {
+            return { error: "Ten termin został właśnie zajęty." };
+          }
+        }
+
+        if (priceChanged) {
+          next.originalPriceAmount = Number.isFinite(Number(current.originalPriceAmount))
+            ? Number(current.originalPriceAmount)
+            : Math.round(currentPriceAmount * 100) / 100;
+          next.priceAmount = requestedPrice.amount;
+          next.price = formatAppointmentPrice(requestedPrice.amount);
+          next.priceAdjustedAt = Date.now();
+          next.priceAdjustedBy = "admin";
+        }
+
+        notificationPayload = {
+          ...next,
+          scheduleChanged,
+          priceChanged,
+          previousPrice: current.price,
+          previousPriceAmount: Math.round(currentPriceAmount * 100) / 100,
+        };
       } else if (action === "confirm_client" || action === "confirm_admin") {
         next.status = "confirmed";
         next.confirmedAt = Date.now();
@@ -1463,10 +1563,17 @@ const handler = async (request) => {
         if (!isSettlementAvailable(next)) {
           return { error: "Tej wizyty nie można jeszcze rozliczyć.", status: 409 };
         }
-        const amount = Math.max(0, Number(body.amount) || 0);
+        const amount = getAppointmentPriceAmount(next);
+        if (!Number.isFinite(amount) || amount < 0 || amount > maximumAppointmentPrice) {
+          return { error: "Wizyta nie ma prawidłowej ceny do rozliczenia.", status: 409 };
+        }
         const settledAt = Date.now();
         next.status = "completed";
-        next.settlement = { barberId: next.barberId, settledAt, amount };
+        next.settlement = {
+          barberId: next.barberId,
+          settledAt,
+          amount: Math.round(amount * 100) / 100,
+        };
       } else if (action === "mark_no_show_admin") {
         if (!isNoShowAvailable(next)) {
           return { error: "Nieobecność można oznaczyć dopiero po zakończeniu wizyty.", status: 409 };
@@ -1477,6 +1584,14 @@ const handler = async (request) => {
       }
 
       next = updateAppointmentVersion(next, operation.operationId);
+      if (notificationPayload) {
+        notificationPayload = {
+          ...notificationPayload,
+          version: next.version,
+          lastOperationId: next.lastOperationId,
+          updatedAt: next.updatedAt,
+        };
+      }
       const removesClientHistory = ["cancel_client", "cancel_admin", "mark_no_show_admin"].includes(action);
       const notificationOperationIds = [];
       if (action === "cancel_client" || action === "cancel_admin") {
@@ -1508,10 +1623,10 @@ const handler = async (request) => {
       enqueueAppointmentNotification(
         database,
         notificationEventByAction[action],
-        next,
+        notificationPayload ?? next,
         operation.operationId,
       );
-      return { database, appointment: next, notificationOperationIds };
+      return { database, appointment: next, notificationPayload, notificationOperationIds };
       },
     );
 

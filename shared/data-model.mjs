@@ -57,8 +57,18 @@ export const normalizeAppointmentRecord = (id, value = {}) => {
   const barberId = cleanText(value.barberId, 80);
   const canonicalValue = { ...value };
   const settlement = normalizeSettlementRecord(value.settlement, barberId);
+  const priceAmount = Number(value.priceAmount);
+  const originalPriceAmount = Number(value.originalPriceAmount);
   delete canonicalValue.settledAt;
   delete canonicalValue.settledAmount;
+  delete canonicalValue.priceAmount;
+  delete canonicalValue.originalPriceAmount;
+  delete canonicalValue.priceAdjustedAt;
+  delete canonicalValue.priceAdjustedBy;
+  delete canonicalValue.previousPrice;
+  delete canonicalValue.previousPriceAmount;
+  delete canonicalValue.priceChanged;
+  delete canonicalValue.scheduleChanged;
   return {
     ...canonicalValue,
     id: cleanText(id, 120),
@@ -75,6 +85,16 @@ export const normalizeAppointmentRecord = (id, value = {}) => {
     phone: normalizePhone(value.phone),
     serviceName: cleanText(value.serviceName, 120),
     price: cleanText(value.price, 40),
+    ...(Number.isFinite(priceAmount) && priceAmount >= 0
+      ? { priceAmount: Math.round(priceAmount * 100) / 100 }
+      : {}),
+    ...(Number.isFinite(originalPriceAmount) && originalPriceAmount >= 0
+      ? { originalPriceAmount: Math.round(originalPriceAmount * 100) / 100 }
+      : {}),
+    ...(Number.isFinite(Number(value.priceAdjustedAt)) && Number(value.priceAdjustedAt) > 0
+      ? { priceAdjustedAt: Number(value.priceAdjustedAt) }
+      : {}),
+    ...(value.priceAdjustedBy === "admin" ? { priceAdjustedBy: "admin" } : {}),
     color: appointmentColors.has(value.color) ? value.color : "blue",
     status: appointmentStatuses.has(value.status) ? value.status : "confirmed",
     version: Number.isInteger(Number(value.version)) && Number(value.version) > 0
@@ -380,6 +400,22 @@ export const validateCanonicalDatabase = (database) => {
     }
     if (!Number.isInteger(Number(appointment.version)) || Number(appointment.version) < 1) {
       errors.push({ path, code: "invalid_appointment_version", message: "Wizyta nie ma prawidłowej wersji." });
+    }
+    if (
+      appointment.priceAmount !== undefined &&
+      (!Number.isFinite(Number(appointment.priceAmount)) ||
+        Number(appointment.priceAmount) < 0 ||
+        Number(appointment.priceAmount) > 10_000)
+    ) {
+      errors.push({ path: `${path}/priceAmount`, code: "invalid_appointment_price", message: "Wizyta ma nieprawidłową cenę." });
+    }
+    if (
+      appointment.originalPriceAmount !== undefined &&
+      (!Number.isFinite(Number(appointment.originalPriceAmount)) ||
+        Number(appointment.originalPriceAmount) < 0 ||
+        Number(appointment.originalPriceAmount) > 10_000)
+    ) {
+      errors.push({ path: `${path}/originalPriceAmount`, code: "invalid_original_appointment_price", message: "Wizyta ma nieprawidłową cenę pierwotną." });
     }
     if (appointment.status === "completed" && !appointment.settlement) {
       errors.push({ path, code: "missing_settlement", message: "Rozliczona wizyta nie ma rozliczenia." });

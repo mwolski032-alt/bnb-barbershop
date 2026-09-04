@@ -452,6 +452,71 @@ test("admin changes reach every active client device and link to the exact appoi
   }
 });
 
+test("individual discount notifies the client with the old and new price", async () => {
+  reset();
+  const appointment = appointmentFor({ id: "discounted-appointment" });
+  database.appointments[appointment.id] = appointment;
+
+  const response = await appointmentRequest("mateusz-id-token", {
+    action: "update_admin",
+    operationId: "discount-appointment-operation",
+    expectedVersion: 1,
+    appointmentId: appointment.id,
+    dateKey: appointment.dateKey,
+    startTime: appointment.startTime,
+    priceAmount: 45,
+  });
+  const result = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(result));
+  assert.equal(database.notificationOutbox[result.operationId].event, "admin_appointment_updated");
+
+  await dispatchNotifications("mateusz-id-token", result.notificationOperationIds);
+
+  assert.deepEqual(sentPushes.map(({ message }) => message.token), [
+    "client-phone-token",
+    "client-tablet-token",
+  ]);
+  const push = sentPushes[0].message;
+  assert.equal(push.data.title, "Masz rabat na wizytę 🎉");
+  assert.equal(
+    push.data.body,
+    "Cena usługi „Strzyżenie” została obniżona z 70 zł do 45 zł. Termin: 10.01.2099 o 10:00.",
+  );
+  assert.equal(new URL(push.data.link).searchParams.get("event"), "admin_appointment_updated");
+  assert.deepEqual(sentEmails.map(({ to }) => to), ["client@example.com"]);
+  assert.equal(sentEmails[0].subject, "BNB Barbershop: Masz rabat na wizytę 🎉");
+});
+
+test("a free visit sends a special notification and keeps zero as a real price", async () => {
+  reset();
+  const appointment = appointmentFor({ id: "free-appointment" });
+  database.appointments[appointment.id] = appointment;
+
+  const response = await appointmentRequest("mateusz-id-token", {
+    action: "update_admin",
+    operationId: "free-appointment-operation",
+    expectedVersion: 1,
+    appointmentId: appointment.id,
+    dateKey: appointment.dateKey,
+    startTime: appointment.startTime,
+    priceAmount: 0,
+  });
+  const result = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(result));
+  assert.equal(result.appointment.priceAmount, 0);
+  assert.equal(result.appointment.price, "0 zł");
+
+  await dispatchNotifications("mateusz-id-token", result.notificationOperationIds);
+
+  const push = sentPushes[0].message;
+  assert.equal(push.data.title, "Ta wizyta jest od nas 🎁");
+  assert.equal(
+    push.data.body,
+    "Usługa „Strzyżenie” będzie bezpłatna — za tę wizytę nic nie płacisz. Termin: 10.01.2099 o 10:00.",
+  );
+  assert.deepEqual(sentEmails.map(({ to }) => to), ["client@example.com"]);
+});
+
 test("waitlist notification links directly to the offered barber, service, date and time", async () => {
   reset();
   const { operationId } = seedJob("waitlist_slot_open", "notify_waitlist", {

@@ -6790,6 +6790,14 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   font-weight: 820;
 }
 
+.admin-edit-price-field {
+  grid-column: 1 / -1;
+}
+
+.admin-edit-price-field input[aria-invalid="true"] {
+  box-shadow: inset 0 0 0 1px rgba(255, 105, 97, 0.72);
+}
+
 .admin-edit-form input,
 .admin-edit-form select {
   width: 100%;
