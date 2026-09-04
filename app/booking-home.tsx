@@ -663,11 +663,22 @@ const getAppointmentPriceValue = (appointment: Pick<AdminAppointment, "price" | 
 const formatAppointmentPrice = (amount: number) =>
   `${amount.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1").replace(".", ",")} zł`;
 
-const getAppointmentPriceInputValue = (
-  appointment: Pick<AdminAppointment, "price" | "priceAmount">,
-) => {
-  const amount = getAppointmentPriceValue(appointment);
+const getAppointmentEditablePriceValue = (appointment: AdminAppointment) =>
+  normalizeAppointmentStatus(appointment.status) === "completed" &&
+  Number.isFinite(Number(appointment.settlement?.amount))
+    ? Number(appointment.settlement?.amount)
+    : getAppointmentPriceValue(appointment);
+
+const getAppointmentPriceInputValue = (appointment: AdminAppointment) => {
+  const amount = getAppointmentEditablePriceValue(appointment);
   return Number.isFinite(amount) ? String(Math.round(amount * 100) / 100) : "";
+};
+
+const getAppointmentDisplayPrice = (appointment: AdminAppointment) => {
+  const amount = Number(appointment.settlement?.amount);
+  return normalizeAppointmentStatus(appointment.status) === "completed" && Number.isFinite(amount)
+    ? formatAppointmentPrice(amount)
+    : appointment.price;
 };
 
 const parseAppointmentPriceInput = (value: string) => Number(value.trim().replace(",", "."));
@@ -2243,6 +2254,12 @@ export function BookingHome() {
     selectedAdminEditAppointment &&
       isClosedAppointmentStatus(selectedAdminEditAppointment.status),
   );
+  const selectedAdminEditAppointmentIsCompleted = Boolean(
+    selectedAdminEditAppointment &&
+      normalizeAppointmentStatus(selectedAdminEditAppointment.status) === "completed",
+  );
+  const selectedAdminEditAppointmentIsReadOnly =
+    selectedAdminEditAppointmentIsClosed && !selectedAdminEditAppointmentIsCompleted;
   const selectedAdminClient =
     adminClientProfiles.find((client) => client.id === selectedAdminClientId) ?? null;
   const pendingClientRemoval =
@@ -4767,7 +4784,7 @@ export function BookingHome() {
       adminEditDraft.startTime !== selectedAdminEditAppointment.startTime;
     const priceChanged =
       Math.round(priceAmount * 100) !==
-      Math.round(getAppointmentPriceValue(selectedAdminEditAppointment) * 100);
+      Math.round(getAppointmentEditablePriceValue(selectedAdminEditAppointment) * 100);
     if (!scheduleChanged && !priceChanged) {
       setAdminEditAppointmentId(null);
       return;
@@ -5238,7 +5255,15 @@ export function BookingHome() {
       status === "rescheduled" && appointment.rescheduledBy !== "admin";
     const canEdit = !isClosed && !potentialNoShow;
 
-    if (isClosed) return null;
+    if (isClosed) {
+      return status === "completed" ? (
+        <div className={mobile ? "mobile-agenda-actions" : "appointment-actions"}>
+          <button type="button" onClick={() => openAdminAppointmentEdit(appointment)}>
+            Edytuj cenę
+          </button>
+        </div>
+      ) : null;
+    }
 
     return (
       <div className={mobile ? "mobile-agenda-actions" : "appointment-actions"}>
@@ -7136,7 +7161,7 @@ export function BookingHome() {
                       <span>
                         {appointment.startTime} -{" "}
                         {addMinutesToTime(appointment.startTime, appointment.durationMinutes)} ·{" "}
-                        {appointment.price}
+                        {getAppointmentDisplayPrice(appointment)}
                       </span>
                       <small>
                         {awaitsClientConfirmation
@@ -7197,8 +7222,8 @@ export function BookingHome() {
                         </button>
                       ) : null}
                       {canAccessAdminSchedule &&
-                      !isPast &&
-                      !isClosedAppointmentStatus(appointment.status) ? (
+                      (isCompleted ||
+                        (!isPast && !isClosedAppointmentStatus(appointment.status))) ? (
                         <button
                           type="button"
                           onClick={() => {
@@ -7206,7 +7231,7 @@ export function BookingHome() {
                             openAdminAppointmentEdit(appointment);
                           }}
                         >
-                          Edytuj
+                          {isCompleted ? "Edytuj cenę" : "Edytuj"}
                         </button>
                       ) : null}
                       {canAccessAdminSchedule && awaitsAdminConfirmation ? (
@@ -7407,7 +7432,13 @@ export function BookingHome() {
             className="client-appointment-modal admin-edit-modal"
             role="dialog"
             aria-modal="true"
-            aria-label={selectedAdminEditAppointmentIsClosed ? "Szczegóły wizyty klienta" : "Edytuj wizytę klienta"}
+            aria-label={
+              selectedAdminEditAppointmentIsCompleted
+                ? "Skoryguj cenę rozliczonej wizyty"
+                : selectedAdminEditAppointmentIsReadOnly
+                  ? "Szczegóły wizyty klienta"
+                  : "Edytuj wizytę klienta"
+            }
           >
             <button
               className="modal-close-button"
@@ -7419,14 +7450,18 @@ export function BookingHome() {
             </button>
             <div className="modal-title">
               <p className="eyebrow">
-                {selectedAdminEditAppointmentIsClosed ? "Szczegóły wizyty" : "Edycja wizyty"}
+                {selectedAdminEditAppointmentIsCompleted
+                  ? "Korekta rozliczenia"
+                  : selectedAdminEditAppointmentIsReadOnly
+                    ? "Szczegóły wizyty"
+                    : "Edycja wizyty"}
               </p>
               <h2>{selectedAdminEditAppointment.clientName}</h2>
             </div>
 
             <div className="admin-edit-recap">
               <span>
-                {selectedAdminEditAppointment.serviceName} · {selectedAdminEditAppointment.price}
+                {selectedAdminEditAppointment.serviceName} · {getAppointmentDisplayPrice(selectedAdminEditAppointment)}
               </span>
               <strong>
                 {adminClientDateFormatter.format(dateFromKey(selectedAdminEditAppointment.dateKey))},{" "}
@@ -7434,7 +7469,7 @@ export function BookingHome() {
               </strong>
             </div>
 
-            {selectedAdminEditAppointmentIsClosed ? (
+            {selectedAdminEditAppointmentIsReadOnly ? (
               <div className="modal-client-note">
                 <strong>
                   {normalizeAppointmentStatus(selectedAdminEditAppointment.status) === "cancelled"
@@ -7448,38 +7483,42 @@ export function BookingHome() {
             ) : (
               <>
                 <div className="admin-edit-form">
-                  <label>
-                    Dzień
-                    <input
-                      type="date"
-                      min={dayKey(today)}
-                      value={adminEditDraft.dateKey}
-                      onChange={(event) =>
-                        setAdminEditDraft((current) => ({
-                          ...current,
-                          dateKey: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Godzina
-                    <select
-                      value={adminEditDraft.startTime}
-                      onChange={(event) =>
-                        setAdminEditDraft((current) => ({
-                          ...current,
-                          startTime: event.target.value,
-                        }))
-                      }
-                    >
-                      {workTimeOptions.slice(0, -1).map((time) => (
-                        <option key={time} value={time}>
-                          {time}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  {!selectedAdminEditAppointmentIsCompleted ? (
+                    <>
+                      <label>
+                        Dzień
+                        <input
+                          type="date"
+                          min={dayKey(today)}
+                          value={adminEditDraft.dateKey}
+                          onChange={(event) =>
+                            setAdminEditDraft((current) => ({
+                              ...current,
+                              dateKey: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Godzina
+                        <select
+                          value={adminEditDraft.startTime}
+                          onChange={(event) =>
+                            setAdminEditDraft((current) => ({
+                              ...current,
+                              startTime: event.target.value,
+                            }))
+                          }
+                        >
+                          {workTimeOptions.slice(0, -1).map((time) => (
+                            <option key={time} value={time}>
+                              {time}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </>
+                  ) : null}
                   <label className="admin-edit-price-field">
                     Cena tej wizyty (zł)
                     <input
@@ -7501,10 +7540,15 @@ export function BookingHome() {
                 </div>
 
                 <div className="modal-client-note">
-                  <strong>Zmiana tylko dla tej wizyty</strong>
+                  <strong>
+                    {selectedAdminEditAppointmentIsCompleted
+                      ? "Korekta przychodu"
+                      : "Zmiana tylko dla tej wizyty"}
+                  </strong>
                   <span>
-                    Cena usługi dla innych klientów pozostanie bez zmian. Klient dostanie
-                    powiadomienie o nowej kwocie, a po rozliczeniu właśnie ta cena trafi do analizy.
+                    {selectedAdminEditAppointmentIsCompleted
+                      ? "Nowa kwota od razu przeliczy analizę, a klient dostanie informację o korekcie. Cena pozostałych wizyt nie zmieni się."
+                      : "Cena usługi dla innych klientów pozostanie bez zmian. Klient dostanie powiadomienie o nowej kwocie, a po rozliczeniu właśnie ta cena trafi do analizy."}
                   </span>
                 </div>
 
@@ -7524,7 +7568,7 @@ export function BookingHome() {
                       void saveAdminAppointmentEdit();
                     }}
                   >
-                    Zapisz zmianę
+                    {selectedAdminEditAppointmentIsCompleted ? "Zapisz korektę" : "Zapisz zmianę"}
                   </button>
                   <button
                     className="danger"

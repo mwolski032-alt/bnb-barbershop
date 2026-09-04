@@ -472,8 +472,12 @@ test("moves the complete appointment workflow into the calendar", async () => {
   assert.match(bookingHome, /"update_admin"/);
   assert.match(bookingHome, /Cena tej wizyty \(zł\)/);
   assert.match(bookingHome, /po rozliczeniu właśnie ta cena trafi do analizy/);
+  assert.match(bookingHome, /Korekta rozliczenia/);
+  assert.match(bookingHome, /Edytuj cenę/);
   assert.match(appointmentApi, /"mark_no_show_admin"/);
   assert.match(appointmentApi, /originalPriceAmount/);
+  assert.match(appointmentApi, /isCompletedPriceCorrection/);
+  assert.match(appointmentApi, /next\.settlement = \{ \.\.\.next\.settlement, amount: requestedPrice\.amount \}/);
   assert.match(appointmentApi, /next\.status = "no_show"/);
   assert.match(dataModel, /"no_show"/);
   assert.match(styles, /\.schedule-add-appointment/);

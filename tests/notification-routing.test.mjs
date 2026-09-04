@@ -517,6 +517,38 @@ test("a free visit sends a special notification and keeps zero as a real price",
   assert.deepEqual(sentEmails.map(({ to }) => to), ["client@example.com"]);
 });
 
+test("a completed visit correction uses past-tense notification copy", async () => {
+  reset();
+  const appointment = appointmentFor({
+    id: "completed-price-correction",
+    status: "completed",
+    settlement: { barberId: "mateusz", settledAt: 1, amount: 70 },
+  });
+  database.appointments[appointment.id] = appointment;
+
+  const response = await appointmentRequest("mateusz-id-token", {
+    action: "update_admin",
+    operationId: "completed-price-correction-operation",
+    expectedVersion: 1,
+    appointmentId: appointment.id,
+    dateKey: appointment.dateKey,
+    startTime: appointment.startTime,
+    priceAmount: 20,
+  });
+  const result = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(result));
+  assert.equal(result.appointment.settlement.amount, 20);
+
+  await dispatchNotifications("mateusz-id-token", result.notificationOperationIds);
+
+  const push = sentPushes[0].message;
+  assert.equal(push.data.title, "Skorygowano cenę wizyty");
+  assert.equal(
+    push.data.body,
+    "Końcowa cena usługi „Strzyżenie” została skorygowana z 70 zł do 20 zł. Data wizyty: 10.01.2099 o 10:00.",
+  );
+});
+
 test("waitlist notification links directly to the offered barber, service, date and time", async () => {
   reset();
   const { operationId } = seedJob("waitlist_slot_open", "notify_waitlist", {

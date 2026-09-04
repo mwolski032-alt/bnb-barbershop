@@ -69,6 +69,7 @@ export const normalizeAppointmentRecord = (id, value = {}) => {
   delete canonicalValue.previousPriceAmount;
   delete canonicalValue.priceChanged;
   delete canonicalValue.scheduleChanged;
+  delete canonicalValue.appointmentWasCompleted;
   return {
     ...canonicalValue,
     id: cleanText(id, 120),

@@ -275,13 +275,23 @@ const readAdminBookingConfiguration = async (appointment, accessToken) => {
 const mutateDatabaseRoot = (accessToken, mutation, actorUid = "") =>
   mutateScopedDatabase(accessToken, mutation, { actorUid });
 
-const relinkClientAliases = (appointments, aliases, operationId) => {
+const relinkClientAliases = (appointments, aliases, operationId, canonicalClient) => {
   for (const [appointmentId, raw] of Object.entries(appointments ?? {})) {
     const appointment = normalizeAppointment(appointmentId, raw);
     const canonicalId = aliases[appointment.clientId];
     if (canonicalId && canonicalId !== appointment.clientId) {
       appointments[appointmentId] = updateAppointmentVersion(
-        { ...appointment, clientId: canonicalId },
+        {
+          ...appointment,
+          clientId: canonicalId,
+          ...(canonicalClient?.userId ? { userId: canonicalClient.userId } : {}),
+          ...(canonicalClient?.email && !appointment.clientEmail
+            ? { clientEmail: canonicalClient.email }
+            : {}),
+          ...(canonicalClient?.photoUrl && !appointment.clientPhotoUrl
+            ? { clientPhotoUrl: canonicalClient.photoUrl }
+            : {}),
+        },
         operationId,
       );
     }
@@ -310,7 +320,7 @@ const upsertClientIntoDatabase = (database, requestedId, value, barberId, operat
   if (result.error) return result;
   applyCanonicalClientResult(database, result);
   database.appointments ??= {};
-  relinkClientAliases(database.appointments, result.aliases, operationId);
+  relinkClientAliases(database.appointments, result.aliases, operationId, result.client);
   return result;
 };
 
@@ -1477,7 +1487,8 @@ const handler = async (request) => {
       }
       const versionError = requireCurrentVersion(operation, current);
       if (versionError) return versionError;
-      if (["cancelled", "completed", "no_show"].includes(current.status)) {
+      const isCompletedPriceCorrection = action === "update_admin" && current.status === "completed";
+      if (["cancelled", "completed", "no_show"].includes(current.status) && !isCompletedPriceCorrection) {
         return { error: "Zamkniętej wizyty nie można już zmieniać.", status: 409 };
       }
       if (
@@ -1509,7 +1520,10 @@ const handler = async (request) => {
         const requestedPrice = readRequestedPriceAmount(body.priceAmount);
         if (requestedPrice.error) return { error: requestedPrice.error, status: 400 };
 
-        const currentPriceAmount = getAppointmentPriceAmount(current);
+        const currentPriceAmount =
+          current.status === "completed" && Number.isFinite(Number(current.settlement?.amount))
+            ? Number(current.settlement.amount)
+            : getAppointmentPriceAmount(current);
         if (!Number.isFinite(currentPriceAmount)) {
           return { error: "Nie udało się odczytać obecnej ceny wizyty.", status: 409 };
         }
@@ -1522,6 +1536,9 @@ const handler = async (request) => {
         }
 
         if (scheduleChanged) {
+          if (current.status === "completed") {
+            return { error: "W rozliczonej wizycie można skorygować tylko cenę.", status: 409 };
+          }
           next.dateKey = nextDateKey;
           next.startTime = nextStartTime;
           next.status = "rescheduled";
@@ -1542,10 +1559,14 @@ const handler = async (request) => {
           next.price = formatAppointmentPrice(requestedPrice.amount);
           next.priceAdjustedAt = Date.now();
           next.priceAdjustedBy = "admin";
+          if (current.status === "completed" && next.settlement) {
+            next.settlement = { ...next.settlement, amount: requestedPrice.amount };
+          }
         }
 
         notificationPayload = {
           ...next,
+          appointmentWasCompleted: current.status === "completed",
           scheduleChanged,
           priceChanged,
           previousPrice: current.price,

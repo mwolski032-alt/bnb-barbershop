@@ -110,6 +110,61 @@ test("E2E Google identity: login links manual visits and routes later notificati
   assert.equal(fixture.database.notificationOutbox[operationId].userId, clientAUid);
 });
 
+test("E2E client identity: first signed-in booking merges a manual card without e-mail by phone", async () => {
+  fixture.reset();
+  fixture.database.clients["manual-without-email"] = {
+    id: "manual-without-email",
+    firstName: "Klient",
+    lastName: "A",
+    email: "",
+    phone: "511222333",
+    barberIds: { mateusz: true },
+  };
+  fixture.database.appointments["manual-visit-without-email"] = {
+    id: "manual-visit-without-email",
+    barberId: "mateusz",
+    clientId: "manual-without-email",
+    serviceId: "cut",
+    clientName: "Klient A",
+    clientEmail: "",
+    phone: "511222333",
+    serviceName: "Strzyzenie",
+    price: "50 zl",
+    dateKey: "2026-08-01",
+    startTime: "12:00",
+    durationMinutes: 60,
+    color: "blue",
+    status: "completed",
+    version: 1,
+    settlement: { barberId: "mateusz", settledAt: 1, amount: 50 },
+  };
+  const newAppointment = {
+    ...createClientAppointment({ id: "booking-that-links-manual-card", startTime: "12:00" }),
+    phone: "511222333",
+  };
+
+  const response = await request(tokens.clientA, "POST", {
+    action: "create_client",
+    appointment: newAppointment,
+    client: { firstName: "Klient", lastName: "A", phone: "511222333" },
+  });
+  assert.equal(response.status, 200, await response.text());
+  assert.equal(fixture.database.clients["manual-without-email"], undefined);
+  assert.equal(fixture.database.appointments["manual-visit-without-email"].clientId, clientAUid);
+  assert.equal(fixture.database.appointments["manual-visit-without-email"].userId, clientAUid);
+  assert.equal(
+    fixture.database.appointments["manual-visit-without-email"].clientEmail,
+    "client-a@example.com",
+  );
+
+  const historyResponse = await request(tokens.clientA, "GET");
+  const history = await historyResponse.json();
+  assert.equal(
+    history.clientAppointments.some(({ id }) => id === "manual-visit-without-email"),
+    true,
+  );
+});
+
 test("E2E identity safety: an unverified email cannot claim a manual client card", async () => {
   fixture.reset();
   fixture.database.clients["unverified-manual-client"] = {
@@ -380,6 +435,36 @@ test("E2E individual visit price: discount and free visit use the edited amount 
   });
   assert.equal(settleResponse.status, 200, await settleResponse.text());
   assert.equal(fixture.database.appointments["kacper-past"].settlement.amount, 0);
+});
+
+test("E2E completed visit price correction immediately updates its settlement", async () => {
+  fixture.reset();
+
+  const settleResponse = await request(tokens.kacper, "POST", {
+    action: "settle_admin",
+    appointmentId: "kacper-past",
+    amount: 50,
+  });
+  assert.equal(settleResponse.status, 200, await settleResponse.text());
+
+  const correctionResponse = await request(tokens.kacper, "POST", {
+    action: "update_admin",
+    appointmentId: "kacper-past",
+    expectedVersion: 2,
+    dateKey: "2026-08-01",
+    startTime: "10:00",
+    priceAmount: 20,
+  });
+  const correction = await correctionResponse.json();
+  assert.equal(correctionResponse.status, 200, JSON.stringify(correction));
+  assert.equal(correction.appointment.status, "completed");
+  assert.equal(correction.appointment.price, "20 zł");
+  assert.equal(correction.appointment.priceAmount, 20);
+  assert.equal(correction.appointment.settlement.amount, 20);
+  assert.equal(
+    fixture.database.notificationOutbox[correction.operationId].event,
+    "admin_appointment_updated",
+  );
 });
 
 test("E2E individual visit price: clients, other barbers and invalid amounts cannot change it", async () => {

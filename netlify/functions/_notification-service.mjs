@@ -55,7 +55,12 @@ const formatPrice = (value, fallback = "") => {
 
 const appointmentUpdateTitle = (appointment) => {
   if (!appointment.priceChanged) return "Wizyta została przesunięta";
-  if (Number(appointment.priceAmount) === 0) return "Ta wizyta jest od nas 🎁";
+  if (Number(appointment.priceAmount) === 0) {
+    return appointment.appointmentWasCompleted
+      ? "Ta wizyta była od nas 🎁"
+      : "Ta wizyta jest od nas 🎁";
+  }
+  if (appointment.appointmentWasCompleted) return "Skorygowano cenę wizyty";
   if (Number(appointment.priceAmount) < Number(appointment.previousPriceAmount)) {
     return "Masz rabat na wizytę 🎉";
   }
@@ -68,17 +73,19 @@ const appointmentUpdateBody = (appointment) => {
 
   let priceMessage;
   if (Number(appointment.priceAmount) === 0) {
-    priceMessage = `Usługa „${appointment.serviceName}” będzie bezpłatna — za tę wizytę nic nie płacisz.`;
+    priceMessage = appointment.appointmentWasCompleted
+      ? `Rozliczenie usługi „${appointment.serviceName}” zostało zmienione z ${formatPrice(appointment.previousPriceAmount, appointment.previousPrice)} na 0 zł — ta wizyta była bezpłatna.`
+      : `Usługa „${appointment.serviceName}” będzie bezpłatna — za tę wizytę nic nie płacisz.`;
   } else if (Number(appointment.priceAmount) < Number(appointment.previousPriceAmount)) {
-    priceMessage =
-      `Cena usługi „${appointment.serviceName}” została obniżona z ` +
-      `${formatPrice(appointment.previousPriceAmount, appointment.previousPrice)} do ${formatPrice(appointment.priceAmount, appointment.price)}.`;
+    priceMessage = appointment.appointmentWasCompleted
+      ? `Końcowa cena usługi „${appointment.serviceName}” została skorygowana z ${formatPrice(appointment.previousPriceAmount, appointment.previousPrice)} do ${formatPrice(appointment.priceAmount, appointment.price)}.`
+      : `Cena usługi „${appointment.serviceName}” została obniżona z ${formatPrice(appointment.previousPriceAmount, appointment.previousPrice)} do ${formatPrice(appointment.priceAmount, appointment.price)}.`;
   } else {
     priceMessage =
       `Cena usługi „${appointment.serviceName}” została zmieniona z ` +
       `${formatPrice(appointment.previousPriceAmount, appointment.previousPrice)} na ${formatPrice(appointment.priceAmount, appointment.price)}.`;
   }
-  return `${priceMessage} ${appointment.scheduleChanged ? "Nowy termin" : "Termin"}: ${newTerm}.`;
+  return `${priceMessage} ${appointment.appointmentWasCompleted ? "Data wizyty" : appointment.scheduleChanged ? "Nowy termin" : "Termin"}: ${newTerm}.`;
 };
 
 const eventCopy = {
