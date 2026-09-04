@@ -2347,6 +2347,30 @@ h2 {
   line-height: 1.4;
 }
 
+.booking-operation-error.has-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.booking-operation-error.has-action button {
+  min-height: 2.35rem;
+  flex: 0 0 auto;
+  padding: 0.45rem 0.72rem;
+  border: 1px solid rgba(255, 180, 180, 0.32);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffd0d0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.booking-operation-error.has-action button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
 button[aria-busy="true"] {
   cursor: wait;
 }
@@ -10249,6 +10273,36 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
     padding-top: 0.45rem;
     border-top: 1px solid rgba(255, 255, 255, 0.065);
   }
+}
+
+html.reduced-effects .home-hero {
+  will-change: opacity;
+}
+
+html.reduced-effects .install-guide-backdrop,
+html.reduced-effects .client-modal-backdrop,
+html.reduced-effects .action-feedback-toast,
+html.reduced-effects .bottom-footer,
+html.reduced-effects .admin-bottom-nav,
+html.reduced-effects .admin-view,
+html.reduced-effects .client-creator-footer,
+html.reduced-effects .topbar,
+html.reduced-effects .client-bottom-sheet .modal-actions {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html.reduced-effects .action-feedback-toast,
+html.reduced-effects .admin-bottom-nav,
+html.reduced-effects .admin-view,
+html.reduced-effects .topbar {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+html.reduced-effects .admin-nav-pill,
+html.reduced-effects .admin-nav-icon,
+html.reduced-effects .admin-bottom-nav button {
+  transition-duration: 100ms;
 }
 
 @media (prefers-reduced-motion: reduce) {

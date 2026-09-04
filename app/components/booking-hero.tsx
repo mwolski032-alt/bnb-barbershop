@@ -9,16 +9,27 @@ function BookingHero() {
     const hero = heroRef.current;
     if (!hero) return;
 
+    const shell = hero.closest(".app-shell");
+    const reducedEffects = document.documentElement.classList.contains("reduced-effects");
     let frame = 0;
+    let framePending = false;
+    let collapsed = false;
     const update = () => {
-      window.cancelAnimationFrame(frame);
+      if (framePending) return;
+      framePending = true;
       frame = window.requestAnimationFrame(() => {
         const heroHeight = Math.max(1, window.innerWidth * 0.5625);
         const progress = Math.min(1, Math.max(0, window.scrollY / (heroHeight * 0.62)));
         hero.style.opacity = String(1 - progress);
-        hero.style.transform = `translateY(${-18 * progress}px) scale(${1 - 0.035 * progress})`;
-        hero.style.filter = `saturate(${1 - 0.28 * progress}) brightness(${1 - 0.38 * progress})`;
-        hero.closest(".app-shell")?.classList.toggle("hero-collapsed", progress > 0.48);
+        hero.style.transform = reducedEffects
+          ? "none"
+          : `translateY(${-18 * progress}px) scale(${1 - 0.035 * progress})`;
+        const shouldCollapse = progress > 0.48;
+        if (collapsed !== shouldCollapse) {
+          collapsed = shouldCollapse;
+          shell?.classList.toggle("hero-collapsed", collapsed);
+        }
+        framePending = false;
       });
     };
 
@@ -29,7 +40,7 @@ function BookingHero() {
       window.cancelAnimationFrame(frame);
       window.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
-      hero.closest(".app-shell")?.classList.remove("hero-collapsed");
+      shell?.classList.remove("hero-collapsed");
     };
   }, []);
 

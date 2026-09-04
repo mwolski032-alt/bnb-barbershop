@@ -20,6 +20,7 @@ import {
   signInWithPopup,
   signInWithRedirect,
   signOut,
+  type Auth,
   type User,
 } from "firebase/auth";
 import { onValue, ref, serverTimestamp, set, update } from "firebase/database";
@@ -90,6 +91,32 @@ const AdminCalendarScreen = lazy(() => import("./components/screens/admin-calend
 const AdminClientsScreen = lazy(() => import("./components/screens/admin-clients-screen"));
 const AdminAnalyticsScreen = lazy(() => import("./components/screens/admin-analytics-screen"));
 const AdminSettingsScreen = lazy(() => import("./components/screens/admin-settings-screen"));
+
+const googleRedirectPendingKey = "bnb-google-redirect-pending";
+
+const hasPendingGoogleRedirect = () => {
+  try {
+    return window.sessionStorage.getItem(googleRedirectPendingKey) === "1";
+  } catch {
+    return false;
+  }
+};
+
+const clearPendingGoogleRedirect = () => {
+  try {
+    window.sessionStorage.removeItem(googleRedirectPendingKey);
+  } catch {}
+};
+
+const signInWithGoogleRedirect = async (firebaseAuth: Auth, provider: GoogleAuthProvider) => {
+  try {
+    window.sessionStorage.setItem(googleRedirectPendingKey, "1");
+    await signInWithRedirect(firebaseAuth, provider);
+  } catch (error) {
+    clearPendingGoogleRedirect();
+    throw error;
+  }
+};
 
 type Availability = "high" | "medium" | "low" | "none";
 type Step = "booking" | "confirm" | "success" | "admin";
@@ -1401,6 +1428,7 @@ export function BookingHome() {
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
   const [pendingActionKeys, setPendingActionKeys] = useState<Set<string>>(() => new Set());
   const [dataError, setDataError] = useState("");
+  const [isRetryingData, setIsRetryingData] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [step, setStep] = useState<Step>("booking");
@@ -2389,6 +2417,20 @@ export function BookingHome() {
     return refresh;
   }, [activeBarberId, applyAppointmentSnapshot]);
 
+  const retryClientAppointmentData = useCallback(async () => {
+    if (isRetryingData) return;
+    setIsRetryingData(true);
+    setDataError("");
+    try {
+      await refreshClientAppointmentData();
+    } catch (error) {
+      console.error("Appointment data refresh failed", error);
+      setDataError("Nie udało się odświeżyć terminarza. Sprawdź połączenie i spróbuj ponownie.");
+    } finally {
+      setIsRetryingData(false);
+    }
+  }, [isRetryingData, refreshClientAppointmentData]);
+
   const applyOptimisticAppointmentOperation = useCallback(
     (action: AppointmentMutationAction, payload: Record<string, unknown>, operationId: string) => {
       const requestedAppointment = payload.appointment as AdminAppointment | undefined;
@@ -2845,10 +2887,14 @@ export function BookingHome() {
   useEffect(() => {
     const firebaseAuth = getAuth(firebaseApp);
 
-    void getRedirectResult(firebaseAuth).catch((error: { code?: string }) => {
-      setAuthError(getGoogleSignInErrorMessage(error.code));
-      setIsSigningIn(false);
-    });
+    if (hasPendingGoogleRedirect()) {
+      void getRedirectResult(firebaseAuth)
+        .catch((error: { code?: string }) => {
+          setAuthError(getGoogleSignInErrorMessage(error.code));
+          setIsSigningIn(false);
+        })
+        .finally(clearPendingGoogleRedirect);
+    }
 
     return onAuthStateChanged(firebaseAuth, (user) => {
       setCurrentUser(user);
@@ -2960,8 +3006,9 @@ export function BookingHome() {
       requestInProgress = true;
       try {
         await refreshClientAppointmentData();
-      } catch {
+      } catch (error) {
         if (!stopped) {
+          console.error("Appointment data refresh failed", error);
           setSessionReady(true);
           setDataError("Nie udało się odświeżyć terminarza. Sprawdź połączenie i spróbuj ponownie.");
         }
@@ -4081,7 +4128,7 @@ export function BookingHome() {
       const useRedirect = shouldUseRedirectSignIn(window.navigator);
 
       if (useRedirect) {
-        await signInWithRedirect(firebaseAuth, provider);
+        await signInWithGoogleRedirect(firebaseAuth, provider);
       } else {
         await signInWithPopup(firebaseAuth, provider);
       }
@@ -4092,7 +4139,7 @@ export function BookingHome() {
           const firebaseAuth = getAuth(firebaseApp);
           const provider = new GoogleAuthProvider();
           provider.setCustomParameters({ prompt: "select_account" });
-          await signInWithRedirect(firebaseAuth, provider);
+          await signInWithGoogleRedirect(firebaseAuth, provider);
           return;
         } catch (redirectError) {
           setAuthError(
@@ -7804,8 +7851,21 @@ export function BookingHome() {
       ) : null}
 
       {(bookingError || dataError) && visibleStep !== "confirm" ? (
-        <div className="booking-operation-error" role="alert">
-          {bookingError || dataError}
+        <div
+          className={`booking-operation-error${!bookingError && dataError ? " has-action" : ""}`}
+          role="alert"
+        >
+          <span>{bookingError || dataError}</span>
+          {!bookingError && dataError ? (
+            <button
+              type="button"
+              disabled={isRetryingData}
+              aria-busy={isRetryingData}
+              onClick={() => void retryClientAppointmentData()}
+            >
+              {isRetryingData ? "Odświeżam..." : "Spróbuj ponownie"}
+            </button>
+          ) : null}
         </div>
       ) : null}
 

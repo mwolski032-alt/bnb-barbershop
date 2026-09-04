@@ -142,9 +142,11 @@ test("uses scoped Firebase reads, atomic path patches and per-user realtime sign
 });
 
 test("keeps the premium client booking flow and safety controls", async () => {
-  const [bookingHome, styles] = await Promise.all([
+  const [bookingHome, styles, layout, bookingHero] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/booking-hero.tsx", import.meta.url), "utf8"),
   ]);
 
   assert.match(bookingHome, /Twoja najbliższa wizyta/);
@@ -155,7 +157,26 @@ test("keeps the premium client booking flow and safety controls", async () => {
   assert.match(bookingHome, /event\.key !== "Escape"/);
   assert.doesNotMatch(bookingHome, /silentNewAppointmentToastIdRef/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(layout, /navigator\.deviceMemory/);
+  assert.match(layout, /navigator\.hardwareConcurrency/);
+  assert.match(layout, /connection\?\.saveData/);
+  assert.match(layout, /classList\.toggle\("reduced-effects"/);
+  assert.match(styles, /html\.reduced-effects \.admin-bottom-nav/);
+  assert.doesNotMatch(bookingHero, /hero\.style\.filter/);
+  assert.match(bookingHome, /const googleRedirectPendingKey/);
+  assert.match(bookingHome, /if \(hasPendingGoogleRedirect\(\)\)/);
+  assert.match(bookingHome, /\.finally\(clearPendingGoogleRedirect\)/);
+  assert.match(bookingHome, /await signInWithGoogleRedirect\(firebaseAuth, provider\)/);
   assert.match(styles, /\.client-service-picker \.service-list/);
+});
+
+test("offers an explicit retry when appointment data cannot refresh", async () => {
+  const bookingHome = await readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8");
+
+  assert.match(bookingHome, /const retryClientAppointmentData = useCallback/);
+  assert.match(bookingHome, /Appointment data refresh failed/);
+  assert.match(bookingHome, /Spróbuj ponownie/);
+  assert.match(bookingHome, /aria-busy=\{isRetryingData\}/);
 });
 
 test("keeps the client-focused sign-in experience concise", async () => {

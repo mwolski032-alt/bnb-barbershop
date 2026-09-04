@@ -1,6 +1,24 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
+const performanceProfileScript = `
+  (() => {
+    try {
+      const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      const memory = Number(navigator.deviceMemory) || 0;
+      const cores = Number(navigator.hardwareConcurrency) || 0;
+      const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      const reduceEffects = Boolean(
+        reduceMotion ||
+        connection?.saveData ||
+        (memory > 0 && memory <= 4) ||
+        (cores > 0 && cores <= 4)
+      );
+      document.documentElement.classList.toggle("reduced-effects", reduceEffects);
+    } catch {}
+  })();
+`;
+
 export const metadata: Metadata = {
   title: "BNB Barbershop | Rezerwacje",
   description: "Niezależna aplikacja do umawiania usług barberskich.",
@@ -35,7 +53,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pl">
+    <html lang="pl" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: performanceProfileScript }} />
+      </head>
       <body className="antialiased">{children}</body>
     </html>
   );
