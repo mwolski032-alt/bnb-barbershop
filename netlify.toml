@@ -7,6 +7,12 @@
   NETLIFY_NEXT_PLUGIN_SKIP = "true"
   NODE_VERSION = "22.13.0"
 
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    Service-Worker-Allowed = "/"
+
 [[redirects]]
   from = "/__/auth/*"
   to = "https://bnbbarber-9a7bd.firebaseapp.com/__/auth/:splat"

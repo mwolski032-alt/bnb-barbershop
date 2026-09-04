@@ -1,4 +1,4 @@
-const CACHE_NAME = "bnb-barbershop-v5";
+const CACHE_NAME = "bnb-barbershop-v6";
 const APP_SHELL_URL = "/";
 const APP_SHELL = [
   APP_SHELL_URL,
@@ -81,20 +81,17 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith(
       caches.open(CACHE_NAME).then(async (cache) => {
-        const cachedShell = await cache.match(APP_SHELL_URL);
-        const networkResponse = fetch(request).then(async (response) => {
-          if (response.ok) {
-            await cache.put(APP_SHELL_URL, response.clone());
+        try {
+          const networkResponse = await fetch(request);
+          if (networkResponse.ok) {
+            await cache.put(APP_SHELL_URL, networkResponse.clone());
           }
-          return response;
-        });
-
-        if (cachedShell) {
-          event.waitUntil(networkResponse.catch(() => undefined));
-          return cachedShell;
+          return networkResponse;
+        } catch (error) {
+          const cachedShell = await cache.match(APP_SHELL_URL);
+          if (cachedShell) return cachedShell;
+          throw error;
         }
-
-        return networkResponse;
       }),
     );
     return;

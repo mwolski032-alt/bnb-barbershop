@@ -21,12 +21,15 @@ test("pre-renders the BNB booking app shell", async () => {
 });
 
 test("keeps BNB metadata and production assets wired", async () => {
-  const [page, layout, manifest, serviceWorker, notifications] = await Promise.all([
+  const [page, layout, manifest, serviceWorker, notifications, bookingHome, netlifyConfig] =
+    await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/notifications.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../netlify.toml", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /BNB Barbershop \| Rezerwacja wizyty/);
@@ -38,8 +41,12 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(manifest, /\/icons\/icon-192\.png\?v=3/);
   assert.match(manifest, /\/icons\/icon-512\.png\?v=3/);
   assert.match(manifest, /maskable-512\.png\?v=3/);
-  assert.match(serviceWorker, /bnb-barbershop-v5/);
+  assert.match(serviceWorker, /bnb-barbershop-v6/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
+  assert.match(bookingHome, /updateViaCache:\s*"none"/);
+  assert.match(bookingHome, /registration\.update\(\)/);
+  assert.match(netlifyConfig, /for\s*=\s*"\/sw\.js"/);
+  assert.match(netlifyConfig, /max-age=0, must-revalidate/);
   assert.match(serviceWorker, /icon:.*\/icons\/icon-192\.png/);
   assert.match(serviceWorker, /badge:.*\/icons\/notification-b-v4\.png/);
   assert.match(notifications, /badge:\s*"\/icons\/notification-b-v4\.png"/);
@@ -70,6 +77,10 @@ test("ships a static lightweight startup with an offline app shell", async () =>
   assert.equal(hero1440.size < 150_000, true);
   assert.match(serviceWorker, /APP_SHELL_URL/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
+  assert.match(
+    serviceWorker,
+    /try \{[\s\S]*const networkResponse = await fetch\(request\)[\s\S]*catch \(error\)[\s\S]*cache\.match\(APP_SHELL_URL\)/,
+  );
   assert.equal((await stat(new URL("../dist/client/index.html", import.meta.url))).size > 0, true);
 });
 
@@ -164,7 +175,10 @@ test("keeps the premium client booking flow and safety controls", async () => {
   assert.match(styles, /html\.reduced-effects \.admin-bottom-nav/);
   assert.doesNotMatch(bookingHero, /hero\.style\.filter/);
   assert.match(bookingHome, /const googleRedirectPendingKey/);
-  assert.match(bookingHome, /if \(hasPendingGoogleRedirect\(\)\)/);
+  assert.match(bookingHome, /const shouldResolveGoogleRedirect/);
+  assert.match(bookingHome, /standaloneNavigator\.standalone === true/);
+  assert.match(bookingHome, /display-mode: standalone/);
+  assert.match(bookingHome, /if \(shouldResolveGoogleRedirect\(\)\)/);
   assert.match(bookingHome, /\.finally\(clearPendingGoogleRedirect\)/);
   assert.match(bookingHome, /await signInWithGoogleRedirect\(firebaseAuth, provider\)/);
   assert.match(styles, /\.client-service-picker \.service-list/);

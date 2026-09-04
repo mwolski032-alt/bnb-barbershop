@@ -108,6 +108,16 @@ const clearPendingGoogleRedirect = () => {
   } catch {}
 };
 
+const shouldResolveGoogleRedirect = () => {
+  const standaloneNavigator = window.navigator as Navigator & { standalone?: boolean };
+  return (
+    hasPendingGoogleRedirect() ||
+    shouldUseRedirectSignIn(window.navigator) ||
+    standaloneNavigator.standalone === true ||
+    window.matchMedia("(display-mode: standalone)").matches
+  );
+};
+
 const signInWithGoogleRedirect = async (firebaseAuth: Auth, provider: GoogleAuthProvider) => {
   try {
     window.sessionStorage.setItem(googleRedirectPendingKey, "1");
@@ -2806,7 +2816,10 @@ export function BookingHome() {
       return;
     }
 
-    navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    navigator.serviceWorker
+      .register("/sw.js", { updateViaCache: "none" })
+      .then((registration) => registration.update())
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -2887,7 +2900,7 @@ export function BookingHome() {
   useEffect(() => {
     const firebaseAuth = getAuth(firebaseApp);
 
-    if (hasPendingGoogleRedirect()) {
+    if (shouldResolveGoogleRedirect()) {
       void getRedirectResult(firebaseAuth)
         .catch((error: { code?: string }) => {
           setAuthError(getGoogleSignInErrorMessage(error.code));
