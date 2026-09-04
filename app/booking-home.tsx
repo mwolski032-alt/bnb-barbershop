@@ -2802,6 +2802,32 @@ export function BookingHome() {
   }, [actionFeedback]);
 
   useEffect(() => {
+    const performanceNavigator = window.navigator as Navigator & {
+      deviceMemory?: number;
+      connection?: { saveData?: boolean };
+    };
+    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updateEffectsProfile = () => {
+      const memory = Number(performanceNavigator.deviceMemory) || 0;
+      const cores = Number(performanceNavigator.hardwareConcurrency) || 0;
+      const reduceEffects = Boolean(
+        motionQuery.matches ||
+        performanceNavigator.connection?.saveData ||
+        (memory > 0 && memory <= 4) ||
+        (cores > 0 && cores <= 4)
+      );
+      document.documentElement.classList.toggle("reduced-effects", reduceEffects);
+    };
+
+    updateEffectsProfile();
+    motionQuery.addEventListener("change", updateEffectsProfile);
+    return () => {
+      motionQuery.removeEventListener("change", updateEffectsProfile);
+      document.documentElement.classList.remove("reduced-effects");
+    };
+  }, []);
+
+  useEffect(() => {
     const touchQuery = window.matchMedia("(pointer: coarse)");
     const updateTouchMode = () => setIsTouchDevice(touchQuery.matches);
 

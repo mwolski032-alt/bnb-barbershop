@@ -168,10 +168,11 @@ test("keeps the premium client booking flow and safety controls", async () => {
   assert.match(bookingHome, /event\.key !== "Escape"/);
   assert.doesNotMatch(bookingHome, /silentNewAppointmentToastIdRef/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(layout, /navigator\.deviceMemory/);
-  assert.match(layout, /navigator\.hardwareConcurrency/);
-  assert.match(layout, /connection\?\.saveData/);
-  assert.match(layout, /classList\.toggle\("reduced-effects"/);
+  assert.match(bookingHome, /performanceNavigator\.deviceMemory/);
+  assert.match(bookingHome, /performanceNavigator\.hardwareConcurrency/);
+  assert.match(bookingHome, /performanceNavigator\.connection\?\.saveData/);
+  assert.match(bookingHome, /classList\.toggle\("reduced-effects"/);
+  assert.doesNotMatch(layout, /dangerouslySetInnerHTML/);
   assert.match(styles, /html\.reduced-effects \.admin-bottom-nav/);
   assert.doesNotMatch(bookingHero, /hero\.style\.filter/);
   assert.match(bookingHome, /const googleRedirectPendingKey/);
