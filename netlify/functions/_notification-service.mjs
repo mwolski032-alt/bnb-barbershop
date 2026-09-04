@@ -3,6 +3,7 @@ import {
   getAccessToken,
   patchDatabase,
   readDatabase,
+  readDatabaseQuery,
   readDatabaseWithEtag,
   writeDatabaseIfUnchanged,
 } from "./_firebase-admin.mjs";
@@ -296,18 +297,30 @@ const collectTargetDevices = ({ tokensByUser, ownerUid, barber, appointment, cop
   return [...byToken.values()];
 };
 
-const readDeliveryContext = async (accessToken, appointment) => {
-  const [tokensByUser, owner, member] = await Promise.all([
-    readDatabase("notificationTokens", accessToken),
+const readDeliveryContext = async (accessToken, appointment, copy) => {
+  const [owner, member] = await Promise.all([
     readDatabase("team/owner", accessToken),
     readDatabase(`team/barbers/${encodeURIComponent(appointment.barberId)}`, accessToken),
   ]);
+  const ownerUid = String(owner?.userId || "");
+  const barberUid = member?.active === true ? String(member?.userId || "") : "";
+  const targetUserIds = new Set();
+  if (copy.clientPush !== false && appointment.userId) targetUserIds.add(String(appointment.userId));
+  if (copy.target === "barber" && barberUid) targetUserIds.add(barberUid);
+  targetUserIds.delete(ownerUid);
+  const targetTokens = await Promise.all(
+    [...targetUserIds].map((uid) =>
+      readDatabase(`notificationTokens/${encodeURIComponent(uid)}`, accessToken),
+    ),
+  );
   return {
-    tokensByUser: tokensByUser ?? {},
-    ownerUid: String(owner?.userId || ""),
+    tokensByUser: Object.fromEntries(
+      [...targetUserIds].map((uid, index) => [uid, targetTokens[index] ?? {}]),
+    ),
+    ownerUid,
     barber: {
       active: member?.active === true,
-      userId: member?.active === true ? String(member?.userId || "") : "",
+      userId: barberUid,
       name: String(member?.name || ""),
       email: member?.active === true
         ? String(member?.email || barberFallbackEmail(appointment.barberId)).trim().toLowerCase()
@@ -405,7 +418,7 @@ const processClaimedJob = async (accessToken, job, siteUrl) => {
     });
   }
 
-  const context = await readDeliveryContext(accessToken, appointment);
+  const context = await readDeliveryContext(accessToken, appointment, copy);
   const devices = collectTargetDevices({ ...context, appointment, copy });
   const previous = job.deliveries ?? {};
   const deviceDeliveries = { ...(previous.devices ?? {}) };
@@ -569,7 +582,13 @@ export const processNotificationJob = async (operationId, options = {}) => {
 export const processDueNotificationJobs = async (options = {}) => {
   const accessToken = options.accessToken || await getAccessToken();
   const now = Number(options.now) || Date.now();
-  const jobs = (await readDatabase("notificationOutbox", accessToken)) ?? {};
+  const scanLimit = Math.max(1, Math.min(50, Number(options.limit) || 20));
+  const jobs =
+    (await readDatabaseQuery(
+      "notificationOutbox",
+      { orderBy: "nextAttemptAt", startAt: 0, endAt: now, limitToFirst: scanLimit },
+      accessToken,
+    )) ?? {};
   const due = Object.entries(jobs)
     .filter(([, job]) => {
       if (["delivered", "exhausted"].includes(job?.status)) return false;
@@ -577,7 +596,7 @@ export const processDueNotificationJobs = async (options = {}) => {
       return Number(job?.nextAttemptAt) <= now;
     })
     .sort(([, first], [, second]) => (Number(first?.nextAttemptAt) || Number(first?.createdAt) || 0) - (Number(second?.nextAttemptAt) || Number(second?.createdAt) || 0))
-    .slice(0, Math.max(1, Math.min(50, Number(options.limit) || 20)));
+    .slice(0, scanLimit);
 
   const results = await Promise.all(due.map(([operationId]) =>
     processNotificationJob(operationId, {
@@ -599,12 +618,12 @@ export const processDueNotificationJobs = async (options = {}) => {
 
 export const sendTestDeviceNotification = async ({ uid, appointment, siteUrl }) => {
   const accessToken = await getAccessToken();
-  const [tokensByUser, owner] = await Promise.all([
-    readDatabase("notificationTokens", accessToken),
+  const [tokensForUser, owner] = await Promise.all([
+    readDatabase(`notificationTokens/${encodeURIComponent(uid)}`, accessToken),
     readDatabase("team/owner", accessToken),
   ]);
   if (!uid || uid === owner?.userId) return { ok: false, sent: 0, targets: 0, failed: 0, error: "Owner notifications are disabled." };
-  const devices = Object.entries(tokensByUser?.[uid] ?? {})
+  const devices = Object.entries(tokensForUser ?? {})
     .filter(([, device]) => device?.token && device.active !== false)
     .map(([deviceKey, device]) => ({ uid, deviceKey, token: device.token, audience: "client" }));
   const copy = eventCopy.test_push;

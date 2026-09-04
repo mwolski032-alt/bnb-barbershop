@@ -8,10 +8,12 @@ import {
 } from "../shared/appointment-sync.mjs";
 import {
   createClientAppointment,
+  clientAUid,
   installAppointmentsFixture,
   kacperUid,
   makeAppointmentRequest,
   mateuszUid,
+  ownerUid,
   tokens,
 } from "./helpers/appointments-fixture.mjs";
 
@@ -42,7 +44,11 @@ test("duplicate operationId creates one appointment, revision and notification j
   assert.equal(results.filter(({ idempotent }) => idempotent).length, 1);
   assert.equal(fixture.database.appointments[appointment.id].version, 1);
   assert.equal(fixture.database.appointments[appointment.id].lastOperationId, operationId);
-  assert.equal(fixture.database.appointmentSync.revision, 2);
+  assert.equal(fixture.database.appointmentSync.revision, 1);
+  assert.equal(fixture.database.appointmentSync.users[clientAUid].revision > 1, true);
+  assert.equal(fixture.database.appointmentSync.users[mateuszUid].revision > 1, true);
+  assert.equal(fixture.database.appointmentSync.users[ownerUid].revision > 1, true);
+  assert.equal(fixture.database.appointmentSync.users[kacperUid], undefined);
   assert.deepEqual(Object.keys(fixture.database.appointmentOperations), [operationId]);
   assert.deepEqual(Object.keys(fixture.database.notificationOutbox), [operationId]);
 });
@@ -72,7 +78,8 @@ test("two roles cannot update the same appointment version", async () => {
   assert.deepEqual(responses.map(({ status }) => status).sort(), [200, 409]);
   assert.equal(results.find(({ code }) => code === "stale_version")?.currentAppointment.version, 2);
   assert.equal(fixture.database.appointments["mateusz-upcoming"].version, 2);
-  assert.equal(fixture.database.appointmentSync.revision, 2);
+  assert.equal(fixture.database.appointmentSync.revision, 1);
+  assert.equal(fixture.database.appointmentSync.users[clientAUid].revision > 1, true);
 });
 
 test("two client sessions cannot reserve one barber slot", async () => {
@@ -148,10 +155,10 @@ test("client, Mateusz and owner receive the same committed version while Kacper 
     Array(3).fill({ version: 2, startTime: "13:30" }),
   );
   assert.equal(select(kacper.adminAppointments), undefined);
-  assert.deepEqual(
-    [client.syncRevision, mateusz.syncRevision, kacper.syncRevision, owner.syncRevision],
-    [2, 2, 2, 2],
-  );
+  assert.equal(client.syncRevision, mateusz.syncRevision);
+  assert.equal(client.syncRevision, owner.syncRevision);
+  assert.equal(client.syncRevision > 1, true);
+  assert.equal(kacper.syncRevision, 1);
 });
 
 test("Mateusz and Kacper can book with each other without crossing admin calendars", async () => {
@@ -192,8 +199,8 @@ test("Mateusz and Kacper can book with each other without crossing admin calenda
     kacper.clientAppointments.map(({ id }) => id),
     ["kacper-visits-mateusz"],
   );
-  assert.equal(new Set(mateusz.occupancy.map(({ barberId }) => barberId)).size, 2);
-  assert.equal(new Set(kacper.occupancy.map(({ barberId }) => barberId)).size, 2);
+  assert.deepEqual([...new Set(mateusz.occupancy.map(({ barberId }) => barberId))], ["mateusz"]);
+  assert.deepEqual([...new Set(kacper.occupancy.map(({ barberId }) => barberId))], ["kacper"]);
 });
 
 test("stale frontend responses are rejected by the shared revision guard", () => {

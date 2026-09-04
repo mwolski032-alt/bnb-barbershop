@@ -3,11 +3,11 @@ import {
   getAdminContext,
   jsonResponse,
   readDatabase,
-  readDatabaseWithEtag,
+  readDatabaseQuery,
   readTeamMember,
   verifyRequestUser,
-  writeDatabaseIfUnchanged,
 } from "./_firebase-admin.mjs";
+import { mutateScopedDatabase } from "./_scoped-database.mjs";
 import {
   cleanText,
   isFirebaseKeySafe,
@@ -221,17 +221,8 @@ const readAdminBookingConfiguration = async (appointment, accessToken) => {
   appointment.durationMinutes = Number(service.durationMinutes);
 };
 
-const mutateDatabaseRoot = async (accessToken, mutation) => {
-  for (let attempt = 0; attempt < 7; attempt += 1) {
-    const { value, etag } = await readDatabaseWithEtag("", accessToken);
-    const result = await mutation(structuredClone(value ?? {}));
-    if (result.error) return result;
-    if (result.idempotent) return result;
-    if (await writeDatabaseIfUnchanged("", result.database, etag, accessToken)) return result;
-    await new Promise((resolve) => setTimeout(resolve, 20 + attempt * 25));
-  }
-  return { error: "Dane zmieniły się w tym samym momencie. Spróbuj ponownie." };
-};
+const mutateDatabaseRoot = (accessToken, mutation, actorUid = "") =>
+  mutateScopedDatabase(accessToken, mutation, { actorUid });
 
 const relinkClientAliases = (appointments, aliases, operationId) => {
   for (const [appointmentId, raw] of Object.entries(appointments ?? {})) {
@@ -246,6 +237,14 @@ const relinkClientAliases = (appointments, aliases, operationId) => {
   }
 };
 
+const applyCanonicalClientResult = (database, result) => {
+  database.clients ??= {};
+  for (const [id, canonicalId] of Object.entries(result.aliases ?? {})) {
+    if (id !== canonicalId) delete database.clients[id];
+  }
+  database.clients[result.canonicalId] = result.client;
+};
+
 const upsertClientIntoDatabase = (database, requestedId, value, barberId, operationId) => {
   const now = Date.now();
   const existing = database.clients?.[requestedId] ?? {};
@@ -258,7 +257,7 @@ const upsertClientIntoDatabase = (database, requestedId, value, barberId, operat
     updatedAt: now,
   });
   if (result.error) return result;
-  database.clients = result.clients;
+  applyCanonicalClientResult(database, result);
   database.appointments ??= {};
   relinkClientAliases(database.appointments, result.aliases, operationId);
   return result;
@@ -389,8 +388,6 @@ const mutateAppointmentOperation = async (accessToken, operation, action, user, 
     const result = await mutation(database);
     if (result.error) return result;
 
-    const syncRevision = (Number(database.appointmentSync?.revision) || 0) + 1;
-    database.appointmentSync = { revision: syncRevision, updatedAt: Date.now() };
     database.appointmentOperations[operation.operationId] = {
       operationId: operation.operationId,
       action,
@@ -401,7 +398,7 @@ const mutateAppointmentOperation = async (accessToken, operation, action, user, 
       waitlistEntry: result.waitlistEntry,
       notificationPayload: result.notificationPayload,
       notificationOperationIds: result.notificationOperationIds ?? [],
-      syncRevision,
+      syncRevision: 0,
       createdAt: Date.now(),
     };
 
@@ -409,16 +406,60 @@ const mutateAppointmentOperation = async (accessToken, operation, action, user, 
       ...result,
       database,
       operationId: operation.operationId,
-      syncRevision,
+      syncRevision: 0,
       idempotent: false,
     };
-  });
+  }, user.uid);
 
 const linkVerifiedClientAccount = async (user, accessToken) => {
   const verifiedEmail = normalizeEmail(user.email);
   if (!user.emailVerified || !verifiedEmail || !isFirebaseKeySafe(user.uid)) {
     return { linked: false };
   }
+
+  const [accountClient, emailClients, userAppointments, emailAppointments, userWaitlist, emailWaitlist] =
+    await Promise.all([
+      readDatabase(`clients/${encodeURIComponent(user.uid)}`, accessToken),
+      readDatabaseQuery("clients", { orderBy: "email", equalTo: verifiedEmail }, accessToken),
+      readDatabaseQuery("appointments", { orderBy: "userId", equalTo: user.uid }, accessToken),
+      readDatabaseQuery(
+        "appointments",
+        { orderBy: "clientEmail", equalTo: verifiedEmail },
+        accessToken,
+      ),
+      readDatabaseQuery("waitlistEntries", { orderBy: "userId", equalTo: user.uid }, accessToken),
+      readDatabaseQuery(
+        "waitlistEntries",
+        { orderBy: "clientEmail", equalTo: verifiedEmail },
+        accessToken,
+      ),
+    ]);
+  const matchingClientIds = Object.keys(emailClients ?? {});
+  const clientLinkedAppointments = await Promise.all(
+    matchingClientIds.map((clientId) =>
+      readDatabaseQuery("appointments", { orderBy: "clientId", equalTo: clientId }, accessToken),
+    ),
+  );
+  const candidateClients = mergeRecords(
+    emailClients,
+    accountClient ? { [user.uid]: accountClient } : {},
+  );
+  const candidateAppointments = mergeRecords(
+    userAppointments,
+    emailAppointments,
+    ...clientLinkedAppointments,
+  );
+  const candidateWaitlist = mergeRecords(userWaitlist, emailWaitlist);
+  const needsLink =
+    Object.entries(candidateClients).some(
+      ([id, client]) => id !== user.uid || (client?.userId && client.userId !== user.uid),
+    ) ||
+    Object.values(candidateAppointments).some(
+      (appointment) =>
+        appointment?.userId !== user.uid || appointment?.clientId !== user.uid,
+    ) ||
+    Object.values(candidateWaitlist).some((entry) => entry?.userId !== user.uid);
+  if (!needsLink) return { linked: false };
 
   return mutateDatabaseRoot(accessToken, (database) => {
     const normalizedClients = Object.fromEntries(
@@ -522,7 +563,7 @@ const linkVerifiedClientAccount = async (user, accessToken) => {
     );
     if (clientResult.error) return clientResult;
 
-    database.clients = clientResult.clients;
+    applyCanonicalClientResult(database, clientResult);
     database.appointments ??= {};
     const linkOperationId = `link_account:${user.uid}`;
     let linkedAppointments = 0;
@@ -567,21 +608,119 @@ const linkVerifiedClientAccount = async (user, accessToken) => {
       linkedWaitlistEntries += 1;
     }
 
-    const syncRevision = (Number(database.appointmentSync?.revision) || 0) + 1;
-    database.appointmentSync = { revision: syncRevision, updatedAt: now };
     return {
       database,
       linked: true,
       client: clientResult.client,
       linkedAppointments,
       linkedWaitlistEntries,
-      syncRevision,
     };
-  });
+  }, user.uid);
 };
 
-const getAppointmentData = async (user, admin, accessToken, databaseSnapshot = null) => {
-  const database = databaseSnapshot ?? (await readDatabase("", accessToken)) ?? {};
+const mergeRecords = (...collections) => Object.assign({}, ...collections.filter(Boolean));
+
+const readScopedAppointmentData = async (
+  user,
+  admin,
+  accessToken,
+  requestedBarberId,
+  databaseSnapshot,
+) => {
+  if (databaseSnapshot) {
+    const snapshot = { ...databaseSnapshot, occupancyBarberId: requestedBarberId };
+    if (!snapshot.appointmentSync?.users?.[user.uid]?.revision) {
+      const userSync = await readDatabase(
+        `appointmentSync/users/${encodeURIComponent(user.uid)}`,
+        accessToken,
+      );
+      snapshot.appointmentSync = {
+        ...(snapshot.appointmentSync ?? {}),
+        users: { ...(snapshot.appointmentSync?.users ?? {}), [user.uid]: userSync ?? {} },
+      };
+    }
+    return snapshot;
+  }
+
+  const rawTeam = (await readDatabase("team/barbers", accessToken)) ?? {};
+  const activeBarberIds = Object.entries(rawTeam)
+    .filter(([, member]) => member?.active === true && member?.userId)
+    .map(([id]) => id);
+  const occupancyBarberId = activeBarberIds.includes(requestedBarberId)
+    ? requestedBarberId
+    : admin.barberId || activeBarberIds[0] || "";
+  const queryBy = (path, child, value) =>
+    value ? readDatabaseQuery(path, { orderBy: child, equalTo: value }, accessToken) : Promise.resolve({});
+
+  const [
+    ownAppointments,
+    adminAppointments,
+    occupancyAppointments,
+    ownWaitlist,
+    adminWaitlist,
+    occupancyWaitlist,
+    adminClients,
+    userSync,
+    barberSync,
+    legacyRevision,
+  ] = await Promise.all([
+    queryBy("appointments", "userId", user.uid),
+    admin.isOwner
+      ? readDatabase("appointments", accessToken)
+      : canReadAdminAppointments(admin)
+        ? queryBy("appointments", "barberId", admin.barberId)
+        : Promise.resolve({}),
+    queryBy("appointments", "barberId", occupancyBarberId),
+    queryBy("waitlistEntries", "userId", user.uid),
+    admin.isOwner
+      ? readDatabase("waitlistEntries", accessToken)
+      : canReadAdminAppointments(admin)
+        ? queryBy("waitlistEntries", "barberId", admin.barberId)
+        : Promise.resolve({}),
+    queryBy("waitlistEntries", "barberId", occupancyBarberId),
+    canAdminAccess(admin, "clients")
+      ? admin.isOwner
+        ? readDatabase("clients", accessToken)
+        : queryBy("clients", `barberIds/${admin.barberId}`, true)
+      : Promise.resolve({}),
+    readDatabase(`appointmentSync/users/${encodeURIComponent(user.uid)}`, accessToken),
+    occupancyBarberId
+      ? readDatabase(
+          `appointmentSync/barbers/${encodeURIComponent(occupancyBarberId)}`,
+          accessToken,
+        )
+      : Promise.resolve(null),
+    readDatabase("appointmentSync/revision", accessToken),
+  ]);
+
+  return {
+    team: { barbers: rawTeam },
+    appointments: mergeRecords(ownAppointments, adminAppointments, occupancyAppointments),
+    waitlistEntries: mergeRecords(ownWaitlist, adminWaitlist, occupancyWaitlist),
+    clients: adminClients ?? {},
+    appointmentSync: {
+      users: { [user.uid]: userSync ?? {} },
+      barbers: occupancyBarberId ? { [occupancyBarberId]: barberSync ?? {} } : {},
+      revision: Number(legacyRevision) || 0,
+    },
+    occupancyBarberId,
+  };
+};
+
+const getAppointmentData = async (
+  user,
+  admin,
+  accessToken,
+  databaseSnapshot = null,
+  requestedBarberId = "",
+) => {
+  const database = await readScopedAppointmentData(
+    user,
+    admin,
+    accessToken,
+    requestedBarberId,
+    databaseSnapshot,
+  );
   const rawTeam = database.team?.barbers ?? {};
   const teamMembers = Object.entries(rawTeam)
     .filter(([, member]) => admin.isOwner || (member?.active === true && member?.userId))
@@ -621,6 +760,7 @@ const getAppointmentData = async (user, admin, accessToken, databaseSnapshot = n
       adminAppointments.push(appointment);
     }
     if (
+      (!database.occupancyBarberId || appointment.barberId === database.occupancyBarberId) &&
       appointment.status !== "cancelled" &&
       appointment.status !== "completed" &&
       appointment.status !== "no_show" &&
@@ -651,7 +791,8 @@ const getAppointmentData = async (user, admin, accessToken, databaseSnapshot = n
     if (
       entry.status !== "offered" ||
       entry.userId === user.uid ||
-      Number(entry.offer?.expiresAt) <= now
+      Number(entry.offer?.expiresAt) <= now ||
+      (database.occupancyBarberId && entry.offer?.barberId !== database.occupancyBarberId)
     ) {
       continue;
     }
@@ -690,7 +831,11 @@ const getAppointmentData = async (user, admin, accessToken, databaseSnapshot = n
       adminWaitlist: waitlistEntries.filter(
         (entry) => admin.isOwner || entry.barberId === admin.barberId,
       ),
-      syncRevision: Number(database.appointmentSync?.revision) || 0,
+      syncRevision: Math.max(
+        Number(database.appointmentSync?.users?.[user.uid]?.revision) || 0,
+        Number(database.appointmentSync?.barbers?.[database.occupancyBarberId]?.revision) || 0,
+        Number(database.appointmentSync?.revision) || 0,
+      ),
       occupancy,
     };
   }
@@ -701,7 +846,11 @@ const getAppointmentData = async (user, admin, accessToken, databaseSnapshot = n
     occupancy,
     clientAppointments,
     clientWaitlist,
-    syncRevision: Number(database.appointmentSync?.revision) || 0,
+    syncRevision: Math.max(
+      Number(database.appointmentSync?.users?.[user.uid]?.revision) || 0,
+      Number(database.appointmentSync?.barbers?.[database.occupancyBarberId]?.revision) || 0,
+      Number(database.appointmentSync?.revision) || 0,
+    ),
   };
 };
 
@@ -717,7 +866,19 @@ const synchronizedOperationResponse = async (
     ...(notificationEvent && result.operationId ? [result.operationId] : []),
     ...(Array.isArray(result.notificationOperationIds) ? result.notificationOperationIds : []),
   ].filter((operationId, index, values) => operationId && values.indexOf(operationId) === index);
-  const snapshot = await getAppointmentData(user, admin, accessToken, result.database);
+  const snapshotBarberId =
+    result.appointment?.barberId ||
+    result.waitlistEntry?.barberId ||
+    result.notificationPayload?.barberId ||
+    admin.barberId ||
+    "";
+  const snapshot = await getAppointmentData(
+    user,
+    admin,
+    accessToken,
+    result.database,
+    snapshotBarberId,
+  );
   return jsonResponse(
     {
       ok,
@@ -1090,10 +1251,17 @@ const handler = async (request) => {
     const admin = await getAdminContext(user, accessToken);
 
     if (request.method === "GET") {
+      const requestedBarberId = cleanText(new URL(request.url).searchParams.get("barberId"), 80);
       const identityLink = await linkVerifiedClientAccount(user, accessToken);
       return jsonResponse({
         ok: true,
-        ...(await getAppointmentData(user, admin, accessToken, identityLink.database)),
+        ...(await getAppointmentData(
+          user,
+          admin,
+          accessToken,
+          identityLink.database,
+          requestedBarberId,
+        )),
       });
     }
     if (request.method !== "POST") return jsonResponse({ ok: false, error: "Method not allowed." }, 405);

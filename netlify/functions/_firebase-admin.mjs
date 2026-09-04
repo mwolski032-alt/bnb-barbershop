@@ -107,21 +107,33 @@ export const verifyRequestUser = async (request) => {
 
 const databaseRequest = async (path, options = {}) => {
   const accessToken = options.accessToken ?? (await getAccessToken());
+  const query = options.query ?? {};
+  const requestOptions = { ...options };
+  delete requestOptions.query;
+  delete requestOptions.accessToken;
   const normalizedPath = String(path).replace(/^\/+|\/+$/g, "");
-  return fetch(`${databaseUrl}/${normalizedPath}.json`, {
-    ...options,
+  const url = new URL(`${databaseUrl}/${normalizedPath}.json`);
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === "") continue;
+    url.searchParams.set(key, JSON.stringify(value));
+  }
+  return fetch(url, {
+    ...requestOptions,
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      ...(options.headers ?? {}),
+      ...(requestOptions.headers ?? {}),
     },
   });
 };
 
-export const readDatabase = async (path, accessToken) => {
-  const response = await databaseRequest(path, { accessToken });
+export const readDatabase = async (path, accessToken, query) => {
+  const response = await databaseRequest(path, { accessToken, query });
   if (!response.ok) throw new Error(`Database read failed: ${response.status}`);
   return (await response.json()) ?? null;
 };
+
+export const readDatabaseQuery = (path, query, accessToken) =>
+  readDatabase(path, accessToken, query);
 
 export const readDatabaseWithEtag = async (path = "", accessToken) => {
   const response = await databaseRequest(path, {
@@ -170,6 +182,46 @@ export const writeDatabaseIfUnchanged = async (path, value, etag, accessToken) =
   if (response.status === 412) return false;
   if (!response.ok) throw new Error(`Conditional database write failed: ${response.status}`);
   return true;
+};
+
+const lockPath = (scope) =>
+  `systemLocks/${String(scope).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80)}`;
+
+export const withDatabaseLock = async (scope, accessToken, task) => {
+  const path = lockPath(scope);
+  const owner = crypto.randomUUID();
+  const deadline = Date.now() + 8000;
+  let acquired = false;
+
+  while (!acquired && Date.now() < deadline) {
+    const { etag, value } = await readDatabaseWithEtag(path, accessToken);
+    const now = Date.now();
+    if (value?.owner && Number(value.expiresAt) > now) {
+      await new Promise((resolve) => setTimeout(resolve, 35 + Math.floor(Math.random() * 40)));
+      continue;
+    }
+    acquired = await writeDatabaseIfUnchanged(
+      path,
+      { owner, acquiredAt: now, expiresAt: now + 15000 },
+      etag || "null_etag",
+      accessToken,
+    );
+  }
+
+  if (!acquired) throw new Error("Operacja jest chwilowo zajęta. Spróbuj ponownie.");
+
+  try {
+    return await task();
+  } finally {
+    try {
+      const { etag, value } = await readDatabaseWithEtag(path, accessToken);
+      if (value?.owner === owner) {
+        await writeDatabaseIfUnchanged(path, null, etag || "null_etag", accessToken);
+      }
+    } catch {
+      // The short lease releases itself if cleanup is interrupted.
+    }
+  }
 };
 
 export const readAppointmentsWithEtag = async (accessToken) => {
@@ -232,8 +284,11 @@ export const readTeamMember = async (barberId, accessToken) =>
   (await readDatabase(`team/barbers/${encodeURIComponent(barberId)}`, accessToken)) ?? {};
 
 export const getAdminContext = async (user, accessToken) => {
-  const team = (await readDatabase("team", accessToken)) ?? {};
-  const owner = team.owner ?? {};
+  const [ownerValue, assignedBarbers] = await Promise.all([
+    readDatabase("team/owner", accessToken),
+    readDatabaseQuery("team/barbers", { orderBy: "userId", equalTo: user.uid }, accessToken),
+  ]);
+  const owner = ownerValue ?? {};
   if (owner.userId === user.uid && owner.active === true) {
     return {
       role: "owner",
@@ -245,7 +300,7 @@ export const getAdminContext = async (user, accessToken) => {
     };
   }
 
-  const assignments = Object.entries(team.barbers ?? {}).filter(
+  const assignments = Object.entries(assignedBarbers ?? {}).filter(
     ([, member]) => member?.userId === user.uid,
   );
   if (assignments.length === 0) {

@@ -10,9 +10,18 @@ test("Firebase rules deny root access and keep client records admin-only", async
   assert.equal(rules.rules.clients[".read"], false);
   assert.equal(rules.rules.appointmentSync.revision[".read"], "auth != null");
   assert.equal(rules.rules.appointmentSync.revision[".write"], false);
+  assert.equal(
+    rules.rules.appointmentSync.users.$uid[".read"],
+    "auth != null && auth.uid === $uid",
+  );
+  assert.equal(rules.rules.appointmentSync.users.$uid[".write"], false);
+  assert.equal(rules.rules.appointmentSync.barbers.$barberId[".read"], "auth != null");
+  assert.equal(rules.rules.appointmentSync.barbers.$barberId[".write"], false);
   assert.equal(rules.rules.notificationTokens.$uid[".read"], "auth != null && auth.uid === $uid");
   assert.equal(rules.rules.notificationTokens.$uid[".write"], "auth != null && auth.uid === $uid");
-  assert.equal(rules.rules.notificationOutbox, undefined);
+  assert.equal(rules.rules.notificationOutbox[".read"], false);
+  assert.equal(rules.rules.notificationOutbox[".write"], false);
+  assert.deepEqual(rules.rules.notificationOutbox[".indexOn"], ["nextAttemptAt"]);
   assert.equal(rules.rules.appointmentOperations, undefined);
   assert.equal(rules.rules.inAppNotifications, undefined);
 });

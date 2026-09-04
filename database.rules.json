@@ -8,6 +8,7 @@
         ".write": "auth != null && data.child('userId').val() === auth.uid && data.child('active').val() === true && newData.child('userId').val() === auth.uid"
       },
       "barbers": {
+        ".indexOn": ["userId"],
         ".read": "auth != null && root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true",
         "$barberId": {
           ".read": "auth != null && ((root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true) || (data.child('active').val() === true && data.child('userId').val() === auth.uid))",
@@ -39,12 +40,18 @@
     },
     "appointments": {
       ".read": "auth != null && root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true",
-      ".indexOn": ["userId", "barberId"],
+      ".indexOn": ["userId", "barberId", "clientId", "clientEmail"],
       "$appointmentId": {
         ".write": "auth != null && ((root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true) || (data.exists() && data.child('barberId').val() === newData.child('barberId').val() && root.child('team/barbers').child(data.child('barberId').val()).child('active').val() === true && root.child('team/barbers').child(data.child('barberId').val()).child('userId').val() === auth.uid && root.child('team/barbers').child(data.child('barberId').val()).child('access/schedule').val() === true))"
       }
     },
     "clients": {
+      ".indexOn": ["email", "barberIds/mateusz", "barberIds/kacper"],
+      ".read": false,
+      ".write": false
+    },
+    "waitlistEntries": {
+      ".indexOn": ["userId", "barberId", "clientEmail"],
       ".read": false,
       ".write": false
     },
@@ -52,6 +59,18 @@
       "revision": {
         ".read": "auth != null",
         ".write": false
+      },
+      "users": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": false
+        }
+      },
+      "barbers": {
+        "$barberId": {
+          ".read": "auth != null",
+          ".write": false
+        }
       }
     },
     "notificationTokens": {
@@ -59,6 +78,11 @@
         ".read": "auth != null && auth.uid === $uid",
         ".write": "auth != null && auth.uid === $uid"
       }
+    },
+    "notificationOutbox": {
+      ".indexOn": ["nextAttemptAt"],
+      ".read": false,
+      ".write": false
     }
   }
 }

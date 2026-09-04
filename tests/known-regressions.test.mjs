@@ -64,9 +64,9 @@ test("FIXED IN STAGE 3: disabling schedule access blocks appointment mutations i
   assert.equal(fixture.database.appointments["mateusz-upcoming"].status, "confirmed");
 });
 
-test("FIXED IN STAGE 4: client booking rolls back when the atomic root write fails", async () => {
+test("FIXED IN STAGE 4: client booking rolls back when the atomic path patch fails", async () => {
   fixture.reset();
-  fixture.failPut("");
+  fixture.failPatch("");
   const appointment = createClientAppointment({ id: "partial-client-booking", startTime: "12:00" });
 
   const response = await request(tokens.clientA, "POST", {

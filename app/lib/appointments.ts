@@ -124,8 +124,9 @@ export const mutateAppointment = async <T>(
   return result;
 };
 
-export const fetchClientAppointmentData = async <T>() => {
-  const response = await fetch("/.netlify/functions/appointments", {
+export const fetchClientAppointmentData = async <T>(barberId = "") => {
+  const query = barberId ? `?barberId=${encodeURIComponent(barberId)}` : "";
+  const response = await fetch(`/.netlify/functions/appointments${query}`, {
     method: "GET",
     headers: await getAuthorizationHeaders(),
     cache: "no-store",

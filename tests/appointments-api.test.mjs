@@ -119,7 +119,19 @@ const writePath = (path, value) => {
   const keys = parts(path);
   let target = database;
   for (const key of keys.slice(0, -1)) target = target[key] ??= {};
-  target[keys.at(-1)] = value;
+  if (value === null) delete target[keys.at(-1)];
+  else target[keys.at(-1)] = value;
+};
+
+const applyQuery = (value, searchParams) => {
+  const orderBy = JSON.parse(searchParams.get("orderBy") ?? "null");
+  if (!orderBy || !value || typeof value !== "object") return value;
+  const equalTo = JSON.parse(searchParams.get("equalTo") ?? "null");
+  const readChild = (record) =>
+    String(orderBy).split("/").reduce((current, key) => current?.[key], record);
+  return Object.fromEntries(
+    Object.entries(value).filter(([, record]) => readChild(record) === equalTo),
+  );
 };
 
 globalThis.fetch = async (input, options = {}) => {
@@ -146,12 +158,12 @@ globalThis.fetch = async (input, options = {}) => {
     const path = parsed.pathname.replace(/^\//, "").replace(/\.json$/, "");
     const method = options.method ?? "GET";
     if (method === "GET") {
-      return new Response(JSON.stringify(readPath(path) ?? null), {
-        headers: path === "appointments" || path === "" ? { ETag: `"${revision}"` } : {},
+      return new Response(JSON.stringify(applyQuery(readPath(path), parsed.searchParams) ?? null), {
+        headers: options.headers?.["X-Firebase-ETag"] ? { ETag: `"${revision}"` } : {},
       });
     }
     if (method === "PUT") {
-      if (["appointments", ""].includes(path) && options.headers?.["If-Match"] !== `"${revision}"`) {
+      if (options.headers?.["If-Match"] && options.headers["If-Match"] !== `"${revision}"`) {
         return new Response("Precondition failed", { status: 412 });
       }
       if (path === "") {
@@ -164,7 +176,14 @@ globalThis.fetch = async (input, options = {}) => {
       revision += 1;
       return Response.json(readPath(path));
     }
-    if (method === "PATCH") return Response.json({ ok: true });
+    if (method === "PATCH") {
+      const updates = JSON.parse(options.body);
+      for (const [relativePath, value] of Object.entries(updates)) {
+        writePath(`${path}/${relativePath}`, value);
+      }
+      revision += 1;
+      return Response.json({ ok: true });
+    }
   }
   throw new Error(`Unexpected request in test: ${url}`);
 };
@@ -206,7 +225,7 @@ test("client data contains only own details and sanitized occupancy", async () =
   const result = await response.json();
   assert.equal(response.status, 200);
   assert.deepEqual(result.clientAppointments.map((item) => item.id), ["own"]);
-  assert.equal(result.occupancy.length, 2);
+  assert.equal(result.occupancy.length, 1);
   assert.equal("clientName" in result.occupancy[0], false);
   assert.equal(JSON.stringify(result.occupancy).includes("private@example.com"), false);
 });
@@ -257,7 +276,7 @@ test("Mateusz receives only his own calendar from the canonical team assignment"
   assert.deepEqual(result.adminAppointments.map((item) => item.id), ["own"]);
   assert.equal(result.adminAppointments.some((item) => item.clientEmail === "private@example.com"), false);
   assert.deepEqual(result.clientAppointments, []);
-  assert.equal(result.occupancy.length, 2);
+  assert.equal(result.occupancy.length, 1);
 });
 
 test("a stale team assignment revokes Mateusz admin context", async () => {

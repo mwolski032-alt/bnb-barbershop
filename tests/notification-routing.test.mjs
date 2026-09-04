@@ -178,7 +178,9 @@ globalThis.fetch = async (input, options = {}) => {
       return Response.json(readPath(path) ?? null);
     }
     if (method === "PATCH") {
-      writePath(path, { ...(readPath(path) ?? {}), ...JSON.parse(options.body) });
+      for (const [relativePath, value] of Object.entries(JSON.parse(options.body))) {
+        writePath(`${path}/${relativePath}`, value);
+      }
       revision += 1;
       return Response.json(readPath(path) ?? null);
     }

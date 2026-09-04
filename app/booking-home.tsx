@@ -2440,7 +2440,7 @@ export function BookingHome() {
   const refreshClientAppointmentData = useCallback(async () => {
     if (pendingAppointmentRefreshRef.current) return pendingAppointmentRefreshRef.current;
 
-    const refresh = fetchClientAppointmentData<AdminAppointment>()
+    const refresh = fetchClientAppointmentData<AdminAppointment>(activeBarberId)
       .then((result) => {
         applyAppointmentSnapshot(result);
         return result;
@@ -2450,7 +2450,7 @@ export function BookingHome() {
       });
     pendingAppointmentRefreshRef.current = refresh;
     return refresh;
-  }, [applyAppointmentSnapshot]);
+  }, [activeBarberId, applyAppointmentSnapshot]);
 
   const applyOptimisticAppointmentOperation = useCallback(
     (action: AppointmentMutationAction, payload: Record<string, unknown>, operationId: string) => {
@@ -2740,9 +2740,14 @@ export function BookingHome() {
   }, [activeUser, isAdmin, isOwner]);
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => setCurrentDate(new Date()), 30000);
-
-    return () => window.clearInterval(intervalId);
+    let timerId = 0;
+    const updateAtNextMinute = () => {
+      const now = new Date();
+      setCurrentDate(now);
+      timerId = window.setTimeout(updateAtNextMinute, 60000 - (now.getTime() % 60000) + 25);
+    };
+    updateAtNextMinute();
+    return () => window.clearTimeout(timerId);
   }, []);
 
   useEffect(() => {
@@ -3012,7 +3017,6 @@ export function BookingHome() {
     }
 
     let stopped = false;
-    let refreshTimer = 0;
     let requestInProgress = false;
     const loadClientAppointments = async () => {
       if (requestInProgress || stopped) return;
@@ -3026,26 +3030,18 @@ export function BookingHome() {
         }
       } finally {
         requestInProgress = false;
-        if (!stopped) {
-          refreshTimer = window.setTimeout(
-            loadClientAppointments,
-            document.visibilityState === "visible" ? 30000 : 120000,
-          );
-        }
       }
     };
 
     void loadClientAppointments();
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") {
-        window.clearTimeout(refreshTimer);
         void loadClientAppointments();
       }
     };
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       stopped = true;
-      window.clearTimeout(refreshTimer);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [activeUser, refreshClientAppointmentData]);
@@ -3053,18 +3049,24 @@ export function BookingHome() {
   useEffect(() => {
     if (!activeUser) return undefined;
 
-    const revisionRef = ref(realtimeDb, "appointmentSync/revision");
-    return onValue(
-      revisionRef,
-      (snapshot) => {
-        const revision = Math.max(0, Number(snapshot.val()) || 0);
-        if (revision > latestSyncRevisionRef.current) void refreshClientAppointmentData();
-      },
-      () => {
-        // The periodic authenticated API refresh remains the fallback when the signal is unavailable.
-      },
+    const syncPaths = [
+      `appointmentSync/users/${activeUser.uid}/revision`,
+      ...(activeBarberId ? [`appointmentSync/barbers/${activeBarberId}/revision`] : []),
+    ];
+    const unsubscribers = syncPaths.map((path) =>
+      onValue(
+        ref(realtimeDb, path),
+        (snapshot) => {
+          const revision = Math.max(0, Number(snapshot.val()) || 0);
+          if (revision > latestSyncRevisionRef.current) void refreshClientAppointmentData();
+        },
+        () => {
+          // Visibility changes and push messages remain lightweight fallbacks.
+        },
+      ),
     );
-  }, [activeUser, refreshClientAppointmentData]);
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [activeBarberId, activeUser, refreshClientAppointmentData]);
 
   useEffect(() => {
     if (!activeUser || typeof BroadcastChannel === "undefined") return undefined;

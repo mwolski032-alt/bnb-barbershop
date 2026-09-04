@@ -95,7 +95,14 @@ before(async () => {
           status: "confirmed",
         },
       },
-      appointmentSync: { revision: 1 },
+      appointmentSync: {
+        revision: 1,
+        users: {
+          [clientUid]: { revision: 2, updatedAt: 2 },
+          "other-client": { revision: 3, updatedAt: 3 },
+        },
+        barbers: { mateusz: { revision: 4, updatedAt: 4 } },
+      },
       clients: {
         [clientUid]: { id: clientUid, barberIds: { mateusz: true } },
       },
@@ -134,7 +141,17 @@ test("Firebase rules: client cannot read private team assignments, appointments 
   await assertSucceeds(get(ref(database, "barbers/mateusz/services")));
   const revision = await assertSucceeds(get(ref(database, "appointmentSync/revision")));
   assert.equal(revision.val(), 1);
+  const ownSignal = await assertSucceeds(
+    get(ref(database, `appointmentSync/users/${clientUid}/revision`)),
+  );
+  assert.equal(ownSignal.val(), 2);
+  await assertFails(get(ref(database, "appointmentSync/users/other-client/revision")));
+  const barberSignal = await assertSucceeds(
+    get(ref(database, "appointmentSync/barbers/mateusz/revision")),
+  );
+  assert.equal(barberSignal.val(), 4);
   await assertFails(set(ref(database, "appointmentSync/revision"), 2));
+  await assertFails(set(ref(database, `appointmentSync/users/${clientUid}/revision`), 5));
 });
 
 test("Firebase rules: barber can update own appointment but cannot take over a foreign one", async () => {

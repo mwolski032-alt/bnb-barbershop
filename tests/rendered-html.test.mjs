@@ -87,9 +87,28 @@ test("shows immediate progress and keeps notification delivery off the critical 
   assert.match(styles, /button\[aria-busy="true"\]/);
   assert.match(styles, /\.action-feedback-toast/);
   assert.match(appointmentClient, /notification-dispatch[\s\S]*keepalive: true/);
-  assert.match(appointmentApi, /getAppointmentData\(user, admin, accessToken, result\.database\)/);
+  assert.match(
+    appointmentApi,
+    /const snapshot = await getAppointmentData\([\s\S]*?result\.database,[\s\S]*?snapshotBarberId/,
+  );
   assert.doesNotMatch(appointmentApi, /await processNotificationJob/);
   assert.match(backgroundDispatch, /background: true/);
+});
+
+test("uses scoped Firebase reads, atomic path patches and per-user realtime signals", async () => {
+  const [bookingHome, appointmentApi, scopedDatabase] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/_scoped-database.mjs", import.meta.url), "utf8"),
+  ]);
+
+  assert.doesNotMatch(appointmentApi, /readDatabase\("",/);
+  assert.match(appointmentApi, /readDatabaseQuery\("appointments", \{ orderBy: "userId"/);
+  assert.match(scopedDatabase, /patchDatabase\("", updates/);
+  assert.doesNotMatch(scopedDatabase, /writeDatabaseIfUnchanged\("",/);
+  assert.match(bookingHome, /appointmentSync\/users\/\$\{activeUser\.uid\}\/revision/);
+  assert.match(bookingHome, /appointmentSync\/barbers\/\$\{activeBarberId\}\/revision/);
+  assert.doesNotMatch(bookingHome, /setTimeout\([\s\S]{0,160}30000/);
 });
 
 test("keeps the premium client booking flow and safety controls", async () => {
@@ -483,7 +502,8 @@ test("keeps barber ownership and excludes the owner from appointment notificatio
   assert.match(notificationService, /process\.env\.BARBER_KACPER_EMAIL/);
   assert.doesNotMatch(notificationService, /process\.env\.ADMIN_EMAIL/);
   assert.match(notificationService, /String\(member\?\.userId \|\| ""\)/);
-  assert.match(adminHelper, /readDatabase\("team", accessToken\)/);
+  assert.match(adminHelper, /readDatabase\("team\/owner", accessToken\)/);
+  assert.match(adminHelper, /readDatabaseQuery\("team\/barbers"/);
   assert.match(notificationService, /if \(copy\.target === "barber" && barber\.active/);
   assert.match(notificationService, /target: "barber"/);
   assert.match(notificationService, /audiences\.delete\(ownerUid\)/);

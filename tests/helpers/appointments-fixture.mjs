@@ -159,6 +159,19 @@ const writePath = (database, path, value) => {
   else target[finalKey] = value;
 };
 
+const applyQuery = (value, searchParams) => {
+  const orderBy = JSON.parse(searchParams.get("orderBy") ?? "null");
+  if (!orderBy || !value || typeof value !== "object") return value;
+  const equalTo = JSON.parse(searchParams.get("equalTo") ?? "null");
+  const readChild = (record) =>
+    String(orderBy)
+      .split("/")
+      .reduce((current, key) => current?.[key], record);
+  return Object.fromEntries(
+    Object.entries(value).filter(([, record]) => readChild(record) === equalTo),
+  );
+};
+
 const tokenUsers = {
   [tokens.owner]: { localId: ownerUid, email: "owner@example.com", emailVerified: true },
   [tokens.mateusz]: { localId: mateuszUid, email: "mateusz@example.com", emailVerified: true },
@@ -214,8 +227,9 @@ export const installAppointmentsFixture = () => {
     const method = options.method ?? "GET";
 
     if (method === "GET") {
-      return new Response(JSON.stringify(readPath(database, path) ?? null), {
-        headers: path === "appointments" || path === "" ? { ETag: `"${revision}"` } : {},
+      const value = applyQuery(readPath(database, path), parsed.searchParams);
+      return new Response(JSON.stringify(value ?? null), {
+        headers: options.headers?.["X-Firebase-ETag"] ? { ETag: `"${revision}"` } : {},
       });
     }
 
@@ -223,7 +237,7 @@ export const installAppointmentsFixture = () => {
       if (failingPutPaths.has(path)) {
         return new Response("Forced put failure", { status: 500 });
       }
-      if (["appointments", ""].includes(path) && options.headers?.["If-Match"] !== `"${revision}"`) {
+      if (options.headers?.["If-Match"] && options.headers["If-Match"] !== `"${revision}"`) {
         return new Response("Precondition failed", { status: 412 });
       }
       if (path === "") database = JSON.parse(options.body);
@@ -240,6 +254,7 @@ export const installAppointmentsFixture = () => {
       for (const [relativePath, value] of Object.entries(updates)) {
         writePath(database, `${path}/${relativePath}`, value);
       }
+      revision += 1;
       return Response.json(readPath(database, path) ?? null);
     }
 

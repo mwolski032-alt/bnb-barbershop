@@ -1,9 +1,8 @@
 import {
   getAccessToken,
   jsonResponse,
-  readDatabaseWithEtag,
-  writeDatabaseIfUnchanged,
 } from "./_firebase-admin.mjs";
+import { mutateScopedDatabase } from "./_scoped-database.mjs";
 import { processDueNotificationJobs } from "./_notification-service.mjs";
 import {
   advanceExpiredWaitlistOffers,
@@ -11,9 +10,9 @@ import {
 } from "../../shared/waitlist.mjs";
 
 const advanceWaitlist = async (accessToken, now) => {
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    const { value, etag } = await readDatabaseWithEtag("", accessToken);
-    const database = structuredClone(value ?? {});
+  return mutateScopedDatabase(
+    accessToken,
+    (database) => {
     const expired = advanceExpiredWaitlistOffers(database, now);
     const available = offerAvailableWaitlistSlots(database, {
       now,
@@ -29,14 +28,21 @@ const advanceWaitlist = async (accessToken, now) => {
         ...available.notificationOperationIds,
       ],
     };
-    if (!changed) return result;
-    const revision = (Number(database.appointmentSync?.revision) || 0) + 1;
-    database.appointmentSync = { revision, updatedAt: now };
-    if (await writeDatabaseIfUnchanged("", database, etag, accessToken)) {
-      return { ...result, syncRevision: revision };
-    }
-  }
-  throw new Error("Nie udało się przekazać wygasłej oferty kolejnej osobie.");
+    if (!changed) return { ...result, database, idempotent: true };
+    return { ...result, database };
+    },
+    {
+      lockScope: "appointments",
+      sections: [
+        "appointments",
+        "waitlistEntries",
+        "appointmentOperations",
+        "notificationOutbox",
+        "team",
+        "barbers",
+      ],
+    },
+  );
 };
 
 const handler = async () => {
