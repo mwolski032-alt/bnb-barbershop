@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -31,7 +33,6 @@ import {
   Calendar,
   CalendarClock,
   CalendarDays,
-  CalendarPlus,
   CheckCircle2,
   ChevronRight,
   CircleUserRound,
@@ -47,13 +48,15 @@ import {
   Share2,
   Smartphone,
   SquarePlus,
-  Trash2,
   Users,
   UsersRound,
   X,
 } from "lucide-react";
 
 import { firebaseApp, realtimeDb } from "./lib/firebase";
+import BookingHero from "./components/booking-hero";
+import ProfileAvatar from "./components/profile-avatar";
+import ClientScreen from "./components/screens/client-screen";
 import {
   AppointmentApiError,
   createAppointmentOperationId,
@@ -75,16 +78,18 @@ import {
   resolveActiveBarberId,
   shouldApplyAppointmentSnapshot,
 } from "../shared/appointment-sync.mjs";
-import {
-  formatNearestAppointmentLabel,
-  selectNearestAppointments,
-} from "../shared/appointment-label.mjs";
+import { selectNearestAppointments } from "../shared/appointment-label.mjs";
 import {
   getGoogleSignInErrorMessage,
   shouldFallbackToRedirect,
   shouldUseRedirectSignIn,
 } from "../shared/auth-flow.mjs";
 import { isBookableStartTime } from "../shared/booking-time.mjs";
+
+const AdminCalendarScreen = lazy(() => import("./components/screens/admin-calendar-screen"));
+const AdminClientsScreen = lazy(() => import("./components/screens/admin-clients-screen"));
+const AdminAnalyticsScreen = lazy(() => import("./components/screens/admin-analytics-screen"));
+const AdminSettingsScreen = lazy(() => import("./components/screens/admin-settings-screen"));
 
 type Availability = "high" | "medium" | "low" | "none";
 type Step = "booking" | "confirm" | "success" | "admin";
@@ -389,13 +394,6 @@ const appointmentActionFeedback: Record<
   remove_waitlist_admin: { pending: "Usuwam osobę z listy…", success: "Osoba została usunięta z listy." },
 };
 
-type ProfileAvatarProps = {
-  className: string;
-  name: string;
-  photoUrl?: string | null;
-  alt?: string;
-};
-
 const barberAdminSections: BarberAdminSection[] = [
   "schedule",
   "clients",
@@ -436,32 +434,6 @@ const waitlistTimePreferenceLabels: Record<WaitlistTimePreference, string> = {
   afternoon: "Popołudnie · 12:00–17:00",
   evening: "Wieczór · od 17:00",
 };
-
-function ProfileAvatar({ className, name, photoUrl, alt = "" }: ProfileAvatarProps) {
-  const [failedPhotoUrl, setFailedPhotoUrl] = useState("");
-  const normalizedPhotoUrl = photoUrl?.trim() ?? "";
-  const showPhoto = Boolean(normalizedPhotoUrl && failedPhotoUrl !== normalizedPhotoUrl);
-  const initial = name.trim().slice(0, 1).toLocaleUpperCase("pl") || "?";
-
-  return (
-    <span className={`profile-avatar ${className}`}>
-      {showPhoto ? (
-        <img
-          src={normalizedPhotoUrl}
-          alt={alt}
-          loading="lazy"
-          decoding="async"
-          referrerPolicy="no-referrer"
-          onError={() => setFailedPhotoUrl(normalizedPhotoUrl)}
-        />
-      ) : (
-        <span className="profile-avatar-fallback" aria-hidden={alt ? undefined : true}>
-          {initial}
-        </span>
-      )}
-    </span>
-  );
-}
 
 const unavailableService: Service = {
   id: "",
@@ -534,13 +506,6 @@ const adminNavigationIcons = {
   profile: CircleUserRound,
   team: UsersRound,
 } satisfies Record<AdminSection, typeof CalendarDays>;
-
-const analyticsPeriodLabels: Record<AnalyticsPeriod, string> = {
-  week: "Tydzień",
-  month: "Miesiąc",
-  quarter: "3 mies.",
-  year: "Rok",
-};
 
 const getAppointmentDistanceLabel = (dateKeyValue: string, today: Date) => {
   const currentDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -636,14 +601,6 @@ const shiftDateKey = (key: string, days: number) => {
 
 const getServicePriceValue = (value: string) =>
   Number(value.trim().replace(",", ".").replace(/[^\d.]/g, ""));
-
-const currencyFormatter = new Intl.NumberFormat("pl-PL", {
-  style: "currency",
-  currency: "PLN",
-  maximumFractionDigits: 0,
-});
-
-const formatCurrency = (value: number) => currencyFormatter.format(Math.round(value));
 
 const getAppointmentRevenue = (appointment: AdminAppointment) =>
   Number.isFinite(Number(appointment.settlement?.amount))
@@ -797,22 +754,6 @@ const canSettleAppointment = (appointment: AdminAppointment, now: Date) => {
 const isPotentialNoShow = (appointment: AdminAppointment, now: Date) =>
   !isClosedAppointmentStatus(appointment.status) &&
   now.getTime() > getAppointmentEndDateTime(appointment).getTime();
-
-const getCalendarAppointmentState = (appointment: AdminAppointment, now: Date) => {
-  const status = normalizeAppointmentStatus(appointment.status);
-  if (status === "no_show") return { className: "no-show", label: "Nieobecność" };
-  if (status === "completed") return { className: "completed", label: "Rozliczona" };
-  if (isPotentialNoShow(appointment, now)) {
-    return { className: "missed", label: "Nierozliczona" };
-  }
-  if (status === "rescheduled" && appointment.rescheduledBy !== "admin") {
-    return { className: "settlement-due", label: "Do potwierdzenia" };
-  }
-  if (canSettleAppointment(appointment, now)) {
-    return { className: "settlement-due", label: "Do rozliczenia" };
-  }
-  return { className: status, label: appointmentStatusLabels[status] };
-};
 
 const smsTemplates: SmsTemplate[] = ["confirmation", "reschedule", "reminder", "custom"];
 
@@ -1057,9 +998,6 @@ const getDateKeysInRange = (startKey: string, endKey: string) => {
 
   return keys;
 };
-
-const formatWorkRange = (settings: AvailabilityWindow | null) =>
-  settings ? `${settings.startTime} - ${settings.endTime}` : "Niedostępny";
 
 const isTimeAvailable = (
   dateKeyValue: string,
@@ -1586,7 +1524,6 @@ export function BookingHome() {
   const calendarGestureRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const calendarSwipeConsumedRef = useRef(false);
   const sheetGestureRef = useRef<{ pointerId: number; y: number } | null>(null);
-  const [heroScrollProgress, setHeroScrollProgress] = useState(0);
   const [availabilityDraft, setAvailabilityDraft] = useState(() => ({
     start: dayKey(today),
     end: dayKey(today),
@@ -3530,33 +3467,6 @@ export function BookingHome() {
   ]);
 
   useEffect(() => {
-    if (visibleStep !== "booking") {
-      setHeroScrollProgress(0);
-      return undefined;
-    }
-
-    let frame = 0;
-    const updateHeroProgress = () => {
-      window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(() => {
-        const heroHeight = Math.max(1, window.innerWidth * 0.5625);
-        const progress = Math.min(1, Math.max(0, window.scrollY / (heroHeight * 0.62)));
-        setHeroScrollProgress(Number(progress.toFixed(3)));
-      });
-    };
-
-    updateHeroProgress();
-    window.addEventListener("scroll", updateHeroProgress, { passive: true });
-    window.addEventListener("resize", updateHeroProgress);
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", updateHeroProgress);
-      window.removeEventListener("resize", updateHeroProgress);
-    };
-  }, [visibleStep]);
-
-  useEffect(() => {
     if (visibleStep !== "admin") return;
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" }));
   }, [adminSection, adminWorkspaceTab, visibleStep]);
@@ -4785,13 +4695,6 @@ export function BookingHome() {
       ? "ready"
       : ""
   }`;
-  const heroStyle = {
-    opacity: 1 - heroScrollProgress,
-    transform: `translateY(${-18 * heroScrollProgress}px) scale(${1 - 0.035 * heroScrollProgress})`,
-    filter: `saturate(${1 - 0.28 * heroScrollProgress}) brightness(${
-      1 - 0.38 * heroScrollProgress
-    })`,
-  } as CSSProperties;
   const openSmsComposer = (client: AdminClientProfile, appointment: AdminAppointment) => {
     if (getPhoneDigits(client.phone).length !== 9) return;
 
@@ -5431,8 +5334,6 @@ export function BookingHome() {
           visibleStep === "confirm" || visibleStep === "success" ? "confirm-page" : ""
         } ${
           visibleStep === "admin" ? "admin-page" : ""
-        } ${
-          visibleStep === "booking" && heroScrollProgress > 0.48 ? "hero-collapsed" : ""
         }`}
       >
       {actionFeedback ? (
@@ -5562,1761 +5463,209 @@ export function BookingHome() {
               ) : null}
 
               <div className="admin-content-frame">
-            <div
-              className={`admin-tab-panel admin-workspace-panel nearest-workspace-panel ${
-                adminSection === "schedule" && adminWorkspaceTab === "upcoming" ? "active" : ""
-              }`}
-            >
-              {renderAdminWorkspaceTabs()}
-              <div className="admin-section-header nearest-section-header">
-                <div>
-                  <p className="eyebrow">Pierwszy rzut oka</p>
-                  <h2>4 najbliższe wizyty</h2>
-                </div>
-                <div className="admin-section-stats" aria-label="Podsumowanie najbliższych wizyt">
-                  <span>
-                    <strong>{upcomingAdminAppointments.length}</strong>
-                    nadchodzących
-                  </span>
-                  <span>
-                    <strong>
-                      {
-                        upcomingAdminAppointments.filter(
-                          (appointment) => appointment.dateKey === dayKey(today),
-                        ).length
-                      }
-                    </strong>
-                    dzisiaj
-                  </span>
-                </div>
-              </div>
-
-              <div className="nearest-appointments-view">
-                {nearestAdminAppointments.length > 0 ? (
-                  <div className="nearest-appointments-list">
-                    {nearestAdminAppointments.map((appointment, index) => {
-                      const client = adminClientProfiles.find((profile) =>
-                        profile.appointments.some((item) => item.id === appointment.id),
-                      );
-                      const appointmentStart = getAppointmentDateTime(appointment);
-                      const appointmentEnd = getAppointmentEndDateTime(appointment);
-                      const isInProgress =
-                        appointmentStart.getTime() <= currentDate.getTime() &&
-                        appointmentEnd.getTime() > currentDate.getTime();
-                      const nearestAppointmentLabel =
-                        index === 0
-                          ? formatNearestAppointmentLabel({
-                              distanceLabel: getAppointmentDistanceLabel(
-                                appointment.dateKey,
-                                today,
-                              ),
-                              startTime: appointment.startTime,
-                              startTimestamp: appointmentStart.getTime(),
-                              nowTimestamp: currentDate.getTime(),
-                            })
-                          : "";
-                      const settlementAvailable = canSettleAppointment(appointment, currentDate);
-                      const hasPhone = getPhoneDigits(client?.phone ?? appointment.phone ?? "").length === 9;
-
-                      return (
-                        <article
-                          className={`nearest-appointment-card ${appointment.color} ${
-                            index === 0 ? "primary" : ""
-                          }`}
-                          key={appointment.id}
-                        >
-                          <div
-                            className={`nearest-appointment-order ${
-                              index === 0 ? "primary-label" : ""
-                            }`}
-                          >
-                            {index === 0 ? (
-                              <strong>{nearestAppointmentLabel}</strong>
-                            ) : (
-                              <>
-                                <span>{index + 1}</span>
-                                <small>
-                                  {getAppointmentDistanceLabel(appointment.dateKey, today)}
-                                </small>
-                              </>
-                            )}
-                          </div>
-                          <div className="nearest-appointment-time">
-                            <strong>{appointment.startTime}</strong>
-                            <span>
-                              do {addMinutesToTime(appointment.startTime, appointment.durationMinutes)}
-                            </span>
-                          </div>
-                          <ProfileAvatar
-                            className="nearest-appointment-avatar"
-                            name={appointment.clientName}
-                            photoUrl={appointment.clientPhotoUrl}
-                          />
-                          <div className="nearest-appointment-main">
-                            <small>
-                              {adminClientDateFormatter.format(dateFromKey(appointment.dateKey))}
-                            </small>
-                            <h3>{appointment.clientName}</h3>
-                            <span>{appointment.serviceName} · {appointment.price}</span>
-                          </div>
-                          <div className="nearest-appointment-state">
-                            {isInProgress ? <strong>W trakcie</strong> : null}
-                            <em
-                              className={`appointment-status ${normalizeAppointmentStatus(
-                                appointment.status,
-                              )}`}
-                            >
-                              {appointmentStatusLabels[normalizeAppointmentStatus(appointment.status)]}
-                            </em>
-                          </div>
-                          <div className="nearest-appointment-actions">
-                            {canAccessAdminSchedule && settlementAvailable ? (
-                              <button
-                                className="settle"
-                                type="button"
-                                disabled={Boolean(settlingAppointmentId)}
-                                aria-busy={isActionPending(`settle_admin:${appointment.id}`)}
-                                onClick={() => void settleAdminAppointment(appointment)}
-                              >
-                                {settlingAppointmentId === appointment.id ? "Zapisywanie..." : "Rozlicz"}
-                              </button>
-                            ) : null}
-                            {canAccessAdminSchedule ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setAdminSelectedKey(appointment.dateKey);
-                                  setAdminWorkspaceTab("schedule");
-                                  openAdminAppointmentEdit(appointment);
-                                }}
-                              >
-                                Edytuj
-                              </button>
-                            ) : null}
-                            {canAccessAdminClients && client ? (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedAdminClientId(client.id)}
-                              >
-                                Karta
-                              </button>
-                            ) : null}
-                            {canAccessAdminClients && client && hasPhone ? (
-                              <button
-                                className="sms"
-                                type="button"
-                                onClick={() => openSmsComposer(client, appointment)}
-                              >
-                                SMS
-                              </button>
-                            ) : null}
-                            {canAccessAdminSchedule ? (
-                              <button
-                                className="cancel"
-                                type="button"
-                                onClick={() => void declineAdminAppointment(appointment.id)}
-                                aria-label={`Odwołaj wizytę ${appointment.clientName} o ${appointment.startTime}`}
-                              >
-                                Odwołaj
-                              </button>
-                            ) : null}
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="nearest-appointments-empty">
-                    <span className="workspace-empty-icon" aria-hidden="true" />
-                    <strong>Brak nadchodzących wizyt</strong>
-                    <p>Nowe rezerwacje pojawią się tutaj automatycznie.</p>
-                    {canAccessAdminClients ? (
-                      <button type="button" onClick={() => setAdminWorkspaceTab("clients")}>
-                        Przejdź do klientów
-                      </button>
-                    ) : canAccessAdminSchedule ? (
-                      <button type="button" onClick={() => setAdminWorkspaceTab("schedule")}>
-                        Otwórz kalendarz
-                      </button>
-                    ) : null}
-                  </div>
-                )}
-              </div>
-
-              <section className="admin-waitlist" aria-labelledby="admin-waitlist-title">
-                <header>
-                  <span className="admin-waitlist-icon" aria-hidden="true">
-                    <BellRing />
-                  </span>
-                  <div>
-                    <p className="eyebrow">Automatyczne uzupełnianie luk</p>
-                    <h3 id="admin-waitlist-title">Lista rezerwowa</h3>
-                  </div>
-                  <strong>{adminWaitlistEntries.length}</strong>
-                </header>
-                {adminWaitlistEntries.length > 0 ? (
-                  <div className="admin-waitlist-list">
-                    {adminWaitlistEntries.map((entry) => {
-                      const phoneDigits = getPhoneDigits(entry.phone);
-                      const offerMinutes = entry.offer
-                        ? Math.max(
-                            0,
-                            Math.ceil(
-                              (Number(entry.offer.expiresAt) - currentDate.getTime()) / 60000,
-                            ),
-                          )
-                        : 0;
-                      return (
-                        <article
-                          className={`admin-waitlist-row ${entry.status}`}
-                          key={entry.id}
-                        >
-                          <ProfileAvatar
-                            className="admin-waitlist-avatar"
-                            name={entry.clientName}
-                          />
-                          <div className="admin-waitlist-main">
-                            <span>
-                              <strong>{entry.clientName}</strong>
-                              <em>{entry.status === "offered" ? "Oferta wysłana" : "Oczekuje"}</em>
-                            </span>
-                            <small>{entry.serviceName}</small>
-                            <p>
-                              {entry.dateFrom === entry.dateTo
-                                ? adminClientDateFormatter.format(dateFromKey(entry.dateFrom))
-                                : `${dayFormatter.format(dateFromKey(entry.dateFrom))} – ${dayFormatter.format(
-                                    dateFromKey(entry.dateTo),
-                                  )}`}
-                              {" · "}
-                              {waitlistTimePreferenceLabels[entry.timePreference]}
-                            </p>
-                            {entry.offer ? (
-                              <b>
-                                {entry.offer.dateKey}, {entry.offer.startTime} · jeszcze {offerMinutes} min
-                              </b>
-                            ) : null}
-                          </div>
-                          <div className="admin-waitlist-actions">
-                            {canAccessAdminSchedule ? (
-                              <button
-                                className="admin-waitlist-book"
-                                type="button"
-                                onClick={() => openWaitlistBooking(entry)}
-                                aria-label={`Umów wizytę dla ${entry.clientName}`}
-                              >
-                                <CalendarPlus aria-hidden="true" />
-                                <span>Umów</span>
-                              </button>
-                            ) : null}
-                            {phoneDigits.length === 9 ? (
-                              <>
-                                <a href={`tel:+48${phoneDigits}`} aria-label={`Zadzwoń do ${entry.clientName}`}>
-                                  <Phone aria-hidden="true" />
-                                </a>
-                                <a href={`sms:+48${phoneDigits}`} aria-label={`Napisz SMS do ${entry.clientName}`}>
-                                  <MessageSquare aria-hidden="true" />
-                                </a>
-                              </>
-                            ) : null}
-                            <button
-                              type="button"
-                              disabled={isWaitlistSaving}
-                              aria-busy={isActionPending(`remove_waitlist_admin:${entry.id}`)}
-                              onClick={() => void removeAdminWaitlistEntry(entry)}
-                              aria-label={`Usuń ${entry.clientName} z listy rezerwowej`}
-                            >
-                              <Trash2 aria-hidden="true" />
-                            </button>
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="admin-waitlist-empty">
-                    <strong>Nikt teraz nie oczekuje</strong>
-                    <span>Nowe zgłoszenia klientów pojawią się tutaj automatycznie.</span>
-                  </div>
-                )}
-              </section>
-            </div>
-
-            <div
-              className={`admin-tab-panel admin-workspace-panel ${
-                adminSection === "schedule" && adminWorkspaceTab === "schedule" ? "active" : ""
-              }`}
-            >
-              {renderAdminWorkspaceTabs()}
-              <div className="admin-section-header schedule-section-header">
-                <div className="schedule-heading-main">
-                  <p className="eyebrow">Wybrany dzień</p>
-                  <h2>{adminClientDateFormatter.format(dateFromKey(adminSelectedKey))}</h2>
-                  <button
-                    className="schedule-add-appointment"
-                    type="button"
-                    onClick={openCalendarAppointmentCreator}
-                  >
-                    <span aria-hidden="true">+</span>
-                    Dodaj wizytę
-                  </button>
-                </div>
-                <div className="admin-section-stats" aria-label="Podsumowanie dnia">
-                  <span>
-                    <strong>{adminDayAppointments.length}</strong>
-                    wizyty
-                  </span>
-                  <span>
-                    <strong>
-                      {adminDayAvailability
-                        ? `${adminDayAvailability.startTime}-${adminDayAvailability.endTime}`
-                        : "brak"}
-                    </strong>
-                    dostępność
-                  </span>
-                </div>
-                <div className="schedule-date-controls" aria-label="Zmień dzień terminarza">
-                  <button
-                    type="button"
-                    onClick={() => shiftAdminSelectedDay(-1)}
-                    aria-label="Poprzedni dzień"
-                  >
-                    ‹
-                  </button>
-                  <label>
-                    <span>Data</span>
-                    <input
-                      type="date"
-                      value={adminSelectedKey}
-                      onChange={(event) => setAdminSelectedKey(event.target.value)}
-                    />
-                  </label>
-                  <button
-                    className={adminSelectedKey === dayKey(today) ? "today active" : "today"}
-                    type="button"
-                    onClick={() => setAdminSelectedKey(dayKey(today))}
-                  >
-                    Dzisiaj
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => shiftAdminSelectedDay(1)}
-                    aria-label="Następny dzień"
-                  >
-                    ›
-                  </button>
-                </div>
-              </div>
-
-              <div className="schedule-desktop-grid">
-                <aside className="schedule-side-panel">
-                  <div className="admin-days" aria-label="Dni z wizytami">
-                    {adminScheduleDays.length > 0 ? (
-                      adminScheduleDays.map((key) => {
-                        const date = dateFromKey(key);
-                        const appointmentsCount = adminAppointments.filter(
-                          (appointment) => appointment.dateKey === key,
-                        ).length;
-                        const dayAvailability = getAvailabilityForDate(key, workSettings);
-
-                        return (
-                          <button
-                            className={`${key === adminSelectedKey ? "active" : ""} ${
-                              appointmentsCount > 0 ? "has-appointments" : ""
-                            }`}
-                            key={key}
-                            type="button"
-                            onClick={() => setAdminSelectedKey(key)}
-                            aria-label={`${adminClientDateFormatter.format(date)}, ${appointmentsCount} wizyt, ${
-                              dayAvailability
-                                ? `dostępność ${dayAvailability.startTime}-${dayAvailability.endTime}`
-                                : "brak dostępności"
-                            }`}
-                          >
-                            <span>
-                              {new Intl.DateTimeFormat("pl-PL", { weekday: "short" })
-                                .format(date)
-                                .replace(".", "")}
-                            </span>
-                            <strong>{String(date.getDate()).padStart(2, "0")}</strong>
-                            <small>
-                              {new Intl.DateTimeFormat("pl-PL", { month: "short" })
-                                .format(date)
-                                .replace(".", "")}
-                              {appointmentsCount > 0 ? ` · ${appointmentsCount}` : ""}
-                            </small>
-                          </button>
-                        );
-                      })
-                    ) : (
-                      <p className="admin-days-empty">Brak zaplanowanych wizyt.</p>
-                    )}
-                  </div>
-
-                  <div className="client-strip" aria-label="Klienci z wybranego dnia">
-                    {adminDayAppointments.length > 0 ? (
-                      adminDayAppointments.map((appointment) => (
-                        <button
-                          className="client-chip"
-                          key={appointment.id}
-                          type="button"
-                          onClick={() => openAdminAppointmentEdit(appointment)}
-                          aria-label={`Edytuj wizytę ${appointment.clientName} o ${appointment.startTime}`}
-                        >
-                          <span>{appointment.clientName.slice(0, 1)}</span>
-                          <strong>{appointment.clientName}</strong>
-                          <small>{appointment.startTime}</small>
-                        </button>
-                      ))
-                    ) : (
-                      <p>Brak klientów w tym dniu.</p>
-                    )}
-                  </div>
-                </aside>
-
-                <section className="schedule-mobile-agenda" aria-label="Plan wybranego dnia">
-                  <div
-                    className={`mobile-availability-banner ${adminDayAvailability ? "open" : "closed"}`}
-                  >
-                    <span aria-hidden="true" />
-                    <div>
-                      <strong>{adminDayAvailability ? "Dzień otwarty" : "Brak dostępności"}</strong>
-                      <small>
-                        {adminDayAvailability
-                          ? `${adminDayAvailability.startTime}-${adminDayAvailability.endTime} dla klientów`
-                          : "Klienci nie mogą rezerwować tego dnia"}
-                      </small>
-                    </div>
-                    <button type="button" onClick={openSelectedDayInWorkEditor}>
-                      {adminDayAvailability ? "Zmień" : "Ustaw"}
-                    </button>
-                  </div>
-
-                  <div className="mobile-agenda-heading">
-                    <div>
-                      <p className="section-label">Plan dnia</p>
-                      <strong>
-                        {adminDayAppointments.length === 0
-                          ? "Spokojny dzień"
-                          : `${adminDayAppointments.length} ${
-                              adminDayAppointments.length === 1 ? "wizyta" : "wizyty"
-                            }`}
-                      </strong>
-                    </div>
-                    <span>{getAppointmentDistanceLabel(adminSelectedKey, today)}</span>
-                  </div>
-
-                  <div className="mobile-agenda-list">
-                    {adminDayAppointments.length > 0 ? (
-                      adminDayAppointments.map((appointment) => {
-                        const calendarState = getCalendarAppointmentState(appointment, currentDate);
-
-                        return (
-                          <article
-                            className={`mobile-agenda-appointment ${appointment.color}`}
-                            key={appointment.id}
-                          >
-                          <div className="mobile-agenda-time">
-                            <strong>{appointment.startTime}</strong>
-                            <span>
-                              {addMinutesToTime(appointment.startTime, appointment.durationMinutes)}
-                            </span>
-                          </div>
-                          <div className="mobile-agenda-client">
-                            <strong>{appointment.clientName}</strong>
-                            <span>{appointment.serviceName}</span>
-                            <small>{appointment.price}</small>
-                          </div>
-                          <em className={`appointment-status ${calendarState.className}`}>
-                            {calendarState.label}
-                          </em>
-                          {renderCalendarAppointmentActions(appointment, true)}
-                          </article>
-                        );
-                      })
-                    ) : (
-                      <div className="mobile-agenda-empty">
-                        <strong>Nie ma tu jeszcze żadnej wizyty</strong>
-                        <span>
-                          {adminDayAvailability
-                            ? "Wolne okno jest widoczne dla klientów."
-                            : "Ustaw dostępność, jeśli chcesz przyjmować rezerwacje."}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </section>
-
-                <div
-                  className="admin-schedule"
-                  style={{ height: `${Math.max(8, adminScheduleSlots.length) * 2.8 + 1.5}rem` }}
-                >
-                  {adminDayAppointments.length === 0 ? (
-                    <p className="admin-empty-state">Brak wizyt w tym dniu.</p>
-                  ) : null}
-                  <div
-                    className="time-axis"
-                    aria-hidden="true"
-                    style={{ gridTemplateRows: `repeat(${adminScheduleHours.length}, 11.2rem)` }}
-                  >
-                    {adminScheduleHours.map((time) => (
-                      <span key={time}>{time}</span>
-                    ))}
-                  </div>
-
-                  <div className="schedule-column">
-                    {adminScheduleSlots.map((time) => (
-                      <div
-                        className="schedule-drop-zone"
-                        key={time}
-                        onDragOver={(event) => event.preventDefault()}
-                        onDrop={() => {
-                          if (draggedAppointmentId) moveAdminAppointment(draggedAppointmentId, time);
-                        }}
-                      />
-                    ))}
-
-                    {currentTimeLineVisible ? (
-                      <div
-                        className="current-time-line"
-                        style={{ top: `${currentTimeLineTop}rem` }}
-                        aria-label={`Aktualna godzina ${minutesToTime(currentTimeLineMinutes ?? 0)}`}
-                      >
-                        <span>{minutesToTime(currentTimeLineMinutes ?? 0)}</span>
-                      </div>
-                    ) : null}
-
-                    {adminDayAppointments.map((appointment) => {
-                      const top =
-                        ((timeToMinutes(appointment.startTime) - adminScheduleStartMinutes) / 15) *
-                        2.8;
-                      const height = Math.max(4.8, (appointment.durationMinutes / 15) * 2.8 - 0.35);
-                      const calendarState = getCalendarAppointmentState(appointment, currentDate);
-                      const appointmentIsEditable =
-                        !isClosedAppointmentStatus(appointment.status) &&
-                        !isPotentialNoShow(appointment, currentDate);
-
-                      return (
-                        <article
-                          className={`admin-appointment ${appointment.color}`}
-                          draggable={
-                            !isTouchDevice &&
-                            appointmentIsEditable
-                          }
-                          key={appointment.id}
-                          onDragStart={() => {
-                            if (appointmentIsEditable) {
-                              setDraggedAppointmentId(appointment.id);
-                            }
-                          }}
-                          style={{ top: `${top}rem`, height: `${height}rem` }}
-                        >
-                          <div>
-                            <strong>
-                              {appointment.startTime} -{" "}
-                              {addMinutesToTime(appointment.startTime, appointment.durationMinutes)}
-                            </strong>
-                            <span>
-                              {appointment.clientName} · {appointment.serviceName}
-                            </span>
-                            <small className={`appointment-status ${calendarState.className}`}>
-                              {calendarState.label}
-                            </small>
-                          </div>
-                          {renderCalendarAppointmentActions(appointment)}
-                        </article>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div
-              className={`admin-tab-panel admin-workspace-panel ${
-                adminSection === "schedule" && adminWorkspaceTab === "clients" ? "active" : ""
-              }`}
-            >
-              {renderAdminWorkspaceTabs()}
-              <div className="admin-section-header">
-                <div className="client-section-title">
-                  <div>
-                    <p className="eyebrow">
-                      {clientWorkspaceTab === "appointments" ? "Bieżąca obsługa" : "Kartoteka kontaktów"}
-                    </p>
-                    <h2>{clientWorkspaceTab === "appointments" ? "Aktywne wizyty" : "Klienci"}</h2>
-                  </div>
-                  {canAccessAdminClients ? (
-                    <button className="add-client-button" type="button" onClick={() => openClientCreator()}>
-                      <span aria-hidden="true">+</span>
-                      Dodaj klienta
-                    </button>
-                  ) : null}
-                </div>
-                <div className="admin-section-stats" aria-label="Podsumowanie klientów">
-                  <span>
-                    <strong>
-                      {clientWorkspaceTab === "appointments"
-                        ? activeAdminClientProfiles.length
-                        : directoryAdminClientProfiles.length}
-                    </strong>
-                    {clientWorkspaceTab === "appointments" ? "aktywnych" : "klientów"}
-                  </span>
-                  <span>
-                    <strong>
-                      {clientWorkspaceTab === "appointments"
-                        ? activeAdminClientProfiles.filter((client) => client.rescheduledCount > 0).length
-                        : directoryAdminClientProfiles.filter((client) => !client.nextAppointment).length}
-                    </strong>
-                    {clientWorkspaceTab === "appointments" ? "do potwierdzenia" : "bez wizyty"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="clients-view" aria-label="Lista klientów">
-                <div className="client-workspace-tabs" role="tablist" aria-label="Widok bazy klientów">
-                  <button
-                    className={clientWorkspaceTab === "appointments" ? "active" : ""}
-                    type="button"
-                    role="tab"
-                    aria-selected={clientWorkspaceTab === "appointments"}
-                    onClick={() => {
-                      setClientWorkspaceTab("appointments");
-                      setClientFilter("all");
-                      setClientSearch("");
-                    }}
-                  >
-                    <Calendar
-                      className="client-workspace-tab-icon appointments"
-                      aria-hidden="true"
-                      strokeWidth={2.1}
-                    />
-                    Aktywne wizyty
-                    <small>{activeAdminClientProfiles.length}</small>
-                  </button>
-                  <button
-                    className={clientWorkspaceTab === "directory" ? "active" : ""}
-                    type="button"
-                    role="tab"
-                    aria-selected={clientWorkspaceTab === "directory"}
-                    onClick={() => {
-                      setClientWorkspaceTab("directory");
-                      setClientFilter("all");
-                      setClientSearch("");
-                    }}
-                  >
-                    <Users
-                      className="client-workspace-tab-icon directory"
-                      aria-hidden="true"
-                      strokeWidth={2.1}
-                    />
-                    Klienci
-                    <small>{directoryAdminClientProfiles.length}</small>
-                  </button>
-                </div>
-
-                {clientFeedback ? (
-                  <div className={`client-feedback ${clientFeedback.kind}`} role="status">
-                    {clientFeedback.message}
-                  </div>
-                ) : null}
-                <div className="client-directory-tools">
-                  <label className="client-search">
-                    <span className="client-search-icon" aria-hidden="true" />
-                    <input
-                      type="search"
-                      value={clientSearch}
-                      onChange={(event) => setClientSearch(event.target.value)}
-                      placeholder="Szukaj po nazwisku, telefonie lub usłudze"
-                      aria-label="Szukaj klientów"
-                    />
-                    {clientSearch ? (
-                      <button
-                        type="button"
-                        onClick={() => setClientSearch("")}
-                        aria-label="Wyczyść wyszukiwanie"
-                      >
-                        ×
-                      </button>
-                    ) : null}
-                  </label>
-                  <div className="client-filters" aria-label="Filtry klientów">
-                    {(
-                      (clientWorkspaceTab === "appointments"
-                        ? [
-                            ["all", "Wszystkie"],
-                            ["upcoming", "Nadchodzące"],
-                            ["rescheduled", "Do potwierdzenia"],
-                          ]
-                        : [
-                            ["all", "Wszyscy"],
-                            ["upcoming", "Z terminem"],
-                            ["missing-phone", "Brak telefonu"],
-                          ]) as [ClientFilter, string][]
-                    ).map(([filter, label]) => (
-                      <button
-                        className={clientFilter === filter ? "active" : ""}
-                        key={filter}
-                        type="button"
-                        onClick={() => setClientFilter(filter)}
-                        aria-pressed={clientFilter === filter}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="client-directory-summary" aria-live="polite">
-                  <strong>{filteredAdminClients.length}</strong>
-                  <span>
-                    {filteredAdminClients.length === 1 ? "wynik" : "wyników"}
-                    {clientSearch ? ` dla „${clientSearch}”` : ""}
-                  </span>
-                </div>
-
-                <div className="client-directory-list">
-                  {filteredAdminClients.length > 0 ? (
-                    filteredAdminClients.map((client) => {
-                    const phoneDigits = getPhoneDigits(client.phone);
-                    const hasPhone = phoneDigits.length === 9;
-                    const contactAppointment =
-                      client.nextAppointment ?? client.appointments.at(-1) ?? null;
-                    const settlementAppointment = [...client.appointments]
-                      .reverse()
-                      .find((appointment) => canSettleAppointment(appointment, currentDate));
-
-                    return (
-                      <article className="client-row" key={client.id}>
-                        <button
-                          className="client-profile-trigger"
-                          type="button"
-                          onClick={() => setSelectedAdminClientId(client.id)}
-                          aria-label={`Otwórz kartę klienta ${client.name}`}
-                        >
-                          <ProfileAvatar
-                            className="client-row-avatar"
-                            name={client.name}
-                            photoUrl={client.photoUrl}
-                          />
-                          <span className="client-row-main">
-                            <span className="client-row-name">
-                              <strong>{client.name}</strong>
-                              <small>{client.appointments.length} wizyt</small>
-                            </span>
-                            {client.nextAppointment ? (
-                              <span>
-                                {adminClientDateFormatter.format(
-                                  dateFromKey(client.nextAppointment.dateKey),
-                                )},{" "}
-                                {client.nextAppointment.startTime} · {client.nextAppointment.serviceName}
-                              </span>
-                            ) : (
-                              <span>Brak kolejnej wizyty</span>
-                            )}
-                            <small>
-                              {hasPhone ? formatPhoneNumber(phoneDigits) : "Brak numeru telefonu"}
-                              {client.email ? ` · ${client.email}` : ""}
-                            </small>
-                          </span>
-                          <span className="client-row-statuses">
-                            {settlementAppointment ? (
-                              <em
-                                className={`appointment-status ${
-                                  isPotentialNoShow(settlementAppointment, currentDate)
-                                    ? "missed"
-                                    : "settlement-due"
-                                }`}
-                              >
-                                {isPotentialNoShow(settlementAppointment, currentDate)
-                                  ? "Nierozliczona"
-                                  : "Do rozliczenia"}
-                              </em>
-                            ) : client.rescheduledCount > 0 ? (
-                              <em className="appointment-status rescheduled">
-                                Do potwierdzenia
-                              </em>
-                            ) : client.nextAppointment ? (
-                              <em className="appointment-status">Aktywny</em>
-                            ) : client.appointments.length === 0 ? (
-                              <em className="client-history-status">Nowy klient</em>
-                            ) : (
-                              <em className="client-history-status">Historia</em>
-                            )}
-                            <i aria-hidden="true">›</i>
-                          </span>
-                        </button>
-
-                        <div className="client-quick-actions" aria-label={`Szybkie akcje dla ${client.name}`}>
-                          {canAccessAdminSchedule && settlementAppointment ? (
-                            <button
-                              className="settle-appointment-button"
-                              type="button"
-                              disabled={Boolean(settlingAppointmentId)}
-                              aria-busy={isActionPending(`settle_admin:${settlementAppointment.id}`)}
-                              onClick={() => void settleAdminAppointment(settlementAppointment)}
-                            >
-                              {settlingAppointmentId === settlementAppointment.id
-                                ? "Zapisywanie..."
-                                : "Rozlicz"}
-                            </button>
-                          ) : null}
-                          {canAccessAdminSchedule ? (
-                            <button
-                              className="book-client-button"
-                              type="button"
-                              onClick={() => openManualClientBooking(client)}
-                              aria-label={`Umów wizytę dla ${client.name}`}
-                              title="Umów wizytę"
-                            >
-                              <Calendar className="small-calendar-icon" aria-hidden="true" strokeWidth={2.1} />
-                            </button>
-                          ) : null}
-                          {hasPhone ? (
-                            <a
-                              className="client-phone-button"
-                              href={`tel:+48${phoneDigits}`}
-                              aria-label={`Zadzwoń do ${client.name}`}
-                              title="Zadzwoń"
-                            >
-                              <Phone className="phone-icon" aria-hidden="true" strokeWidth={2.1} />
-                            </a>
-                          ) : (
-                            <span className="client-phone-button disabled" aria-label="Brak numeru telefonu">
-                              <Phone className="phone-icon" aria-hidden="true" strokeWidth={2.1} />
-                            </span>
-                          )}
-                          {contactAppointment ? (
-                            <button
-                              className="sms-button"
-                              type="button"
-                              disabled={!hasPhone}
-                              onClick={() => openSmsComposer(client, contactAppointment)}
-                              aria-label={hasPhone ? `Napisz SMS do ${client.name}` : "Brak numeru telefonu"}
-                            >
-                              <MessageSquare className="sms-icon" aria-hidden="true" strokeWidth={2.1} />
-                            </button>
-                          ) : hasPhone ? (
-                            <a
-                              className="sms-button"
-                              href={`sms:+48${phoneDigits}`}
-                              aria-label={`Napisz SMS do ${client.name}`}
-                            >
-                              <MessageSquare className="sms-icon" aria-hidden="true" strokeWidth={2.1} />
-                            </a>
-                          ) : (
-                            <span className="sms-button disabled" aria-label="Brak numeru telefonu">
-                              <MessageSquare className="sms-icon" aria-hidden="true" strokeWidth={2.1} />
-                            </span>
-                          )}
-                          {client.email ? (
-                            <a
-                              className="client-email-button"
-                              href={`mailto:${client.email}?subject=${encodeURIComponent("BNB Barbershop - Twoja wizyta")}`}
-                              aria-label={`Napisz e-mail do ${client.name}`}
-                            >
-                              <Mail className="email-icon" aria-hidden="true" strokeWidth={2.1} />
-                            </a>
-                          ) : (
-                            <span className="client-email-button disabled" aria-label="Brak adresu e-mail">
-                              <Mail className="email-icon" aria-hidden="true" strokeWidth={2.1} />
-                            </span>
-                          )}
-                          <button
-                            className="client-card-button"
-                            type="button"
-                            onClick={() => setSelectedAdminClientId(client.id)}
-                            aria-label={`Otwórz kartę klienta ${client.name}`}
-                          >
-                            Karta
-                          </button>
-                        </div>
-                      </article>
-                    );
-                    })
-                  ) : (
-                    <div className="clients-empty-state">
-                      <strong>
-                        {clientWorkspaceTab === "appointments"
-                          ? "Brak aktywnych wizyt"
-                          : "Brak pasujących klientów"}
-                      </strong>
-                      <span>
-                        {clientWorkspaceTab === "appointments"
-                          ? "Klienci z nadchodzącym terminem lub wizytą do rozliczenia pojawią się tutaj."
-                          : "Zmień filtr albo wyczyść wyszukiwanie."}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className={`admin-tab-panel ${adminSection === "analytics" ? "active" : ""}`}>
-              <div className="admin-section-header analytics-section-header">
-                <div>
-                  <p className="eyebrow">Wyniki biznesu</p>
-                  <h2>{analytics.periodLabel}</h2>
-                </div>
-                <div className="analytics-period-control" aria-label="Zakres analizy">
-                  {(Object.keys(analyticsPeriodLabels) as AnalyticsPeriod[]).map((period) => (
-                    <button
-                      className={analyticsPeriod === period ? "active" : ""}
-                      key={period}
-                      type="button"
-                      onClick={() => setAnalyticsPeriod(period)}
-                      aria-pressed={analyticsPeriod === period}
-                    >
-                      {analyticsPeriodLabels[period]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="analytics-view" aria-label="Analiza działalności">
-                <div className="analytics-kpi-grid">
-                  <article className="analytics-kpi revenue">
-                    <span>Przychód</span>
-                    <strong>{formatCurrency(analytics.revenue)}</strong>
-                    <small className={analytics.revenueChange < 0 ? "negative" : "positive"}>
-                      {analytics.revenueChange > 0 ? "+" : ""}
-                      {analytics.revenueChange}% do poprzedniego okresu
-                    </small>
-                  </article>
-                  <article className="analytics-kpi visits">
-                    <span>Rozliczone wizyty</span>
-                    <strong>{analytics.visits}</strong>
-                    <small className={analytics.visitsChange < 0 ? "negative" : "positive"}>
-                      {analytics.visitsChange > 0 ? "+" : ""}
-                      {analytics.visitsChange} do poprzedniego okresu
-                    </small>
-                  </article>
-                  <article className="analytics-kpi clients">
-                    <span>Klienci</span>
-                    <strong>{analytics.clients}</strong>
-                    <small>
-                      {analytics.newClients} nowych · {analytics.returningClients} powracających
-                    </small>
-                  </article>
-                  <article className="analytics-kpi occupancy">
-                    <span>Obłożenie</span>
-                    <strong>{analytics.occupancy}%</strong>
-                    <small>zajęty czas w dostępnych godzinach</small>
-                  </article>
-                </div>
-
-                <div className="analytics-main-grid">
-                  <section className="analytics-panel analytics-trend-panel">
-                    <div className="analytics-panel-heading">
-                      <div>
-                        <p className="section-label">Przychód w czasie</p>
-                        <strong>{formatCurrency(analytics.revenue)}</strong>
-                      </div>
-                      <span>{analyticsPeriodLabels[analyticsPeriod]}</span>
-                    </div>
-
-                    <div className="analytics-chart" aria-label="Wykres przychodu">
-                      {analytics.trend.map((bucket) => (
-                        <div className="analytics-bar-column" key={`${bucket.label}-${analyticsPeriod}`}>
-                          <strong>{bucket.revenue > 0 ? formatCurrency(bucket.revenue) : "—"}</strong>
-                          <div className="analytics-bar-track" aria-hidden="true">
-                            <span
-                              style={
-                                {
-                                  "--bar-height": `${Math.max(
-                                    bucket.revenue > 0 ? 8 : 0,
-                                    Math.round((bucket.revenue / analytics.maxTrendRevenue) * 100),
-                                  )}%`,
-                                } as CSSProperties
-                              }
-                            />
-                          </div>
-                          <small>{bucket.label}</small>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-
-                  <section className="analytics-panel analytics-services-panel">
-                    <div className="analytics-panel-heading">
-                      <div>
-                        <p className="section-label">Usługi</p>
-                        <strong>Największy udział</strong>
-                      </div>
-                      <span>{analytics.servicesSummary.length}</span>
-                    </div>
-
-                    {analytics.servicesSummary.length > 0 ? (
-                      <div className="analytics-service-list">
-                        {analytics.servicesSummary.slice(0, 5).map((service) => (
-                          <div className="analytics-service-row" key={service.name}>
-                            <div>
-                              <strong>{service.name}</strong>
-                              <span>
-                                {service.visits} {service.visits === 1 ? "wizyta" : "wizyt"}
-                              </span>
-                            </div>
-                            <b>{formatCurrency(service.revenue)}</b>
-                            <div className="analytics-service-meter" aria-hidden="true">
-                              <span
-                                style={{
-                                  width: `${Math.max(
-                                    4,
-                                    Math.round(
-                                      (service.revenue / analytics.maxServiceRevenue) * 100,
-                                    ),
-                                  )}%`,
-                                }}
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="analytics-empty-state">
-                        <strong>Brak rozliczonych usług</strong>
-                        <span>Pierwsze wyniki pojawią się po rozliczeniu wizyty.</span>
-                      </div>
-                    )}
-                  </section>
-                </div>
-
-                <div className="analytics-insight-grid">
-                  <article>
-                    <span>Średnia wizyta</span>
-                    <strong>{formatCurrency(analytics.averageTicket)}</strong>
-                    <small>średni przychód z rozliczenia</small>
-                  </article>
-                  <article>
-                    <span>Przyszłe rezerwacje</span>
-                    <strong>{formatCurrency(analytics.plannedRevenue)}</strong>
-                    <small>w wybranym okresie</small>
-                  </article>
-                  <article className={analytics.potentialNoShows > 0 ? "attention" : ""}>
-                    <span>Potencjalne nieobecności</span>
-                    <strong>{analytics.potentialNoShows}</strong>
-                    <small>{formatCurrency(analytics.potentialNoShowValue)} bez rozliczenia</small>
-                  </article>
-                </div>
-              </div>
-            </div>
-
-            <div
-              className={`admin-tab-panel work-workspace-panel ${adminSection === "work" ? "active" : ""}`}
-            >
-              {renderWorkWorkspaceTabs()}
-              {canAccessAdminWork && workWorkspaceTab === "days" ? (
-                <>
-                  <div className="admin-section-header">
-                <div>
-                  <p className="eyebrow">Dorywczo</p>
-                  <h2>Dni dostępne dla klientów</h2>
-                </div>
-                <div className="admin-section-stats" aria-label="Podsumowanie dostępności">
-                  <span>
-                    <strong>{availabilityWindows.length}</strong>
-                    dni
-                  </span>
-                  <span>
-                    <strong>{nearestAvailability?.startTime ?? "—"}</strong>
-                    najbliżej
-                  </span>
-                </div>
-              </div>
-
-              <div className="work-view casual" aria-label="Moja dostępność">
-                <section
-                  className="work-editor-card availability-maker"
-                  id="availability-maker"
-                >
-                  <div className="work-editor-top">
-                    <div>
-                      <p className="eyebrow">
-                        {editingAvailabilityKey ? "Edycja dostępności" : "Nowa dostępność"}
-                      </p>
-                      <h2>
-                        {editingAvailabilityKey ? "Zmień dzień pracy" : "Okienko w kalendarzu"}
-                      </h2>
-                    </div>
-                    {editingAvailabilityKey ? (
-                      <button
-                        className="work-editor-cancel"
-                        type="button"
-                        onClick={resetAvailabilityEditor}
-                      >
-                        Anuluj
-                      </button>
-                    ) : null}
-                  </div>
-
-                  <div className="work-preset-grid">
-                    {[
-                      { label: "Po pracy", startTime: "17:00", endTime: "20:00" },
-                      { label: "Wolne rano", startTime: "10:00", endTime: "13:00" },
-                      { label: "Krótko", startTime: "18:00", endTime: "19:30" },
-                    ].map((preset) => (
-                      <button
-                        className={
-                          availabilityDraft.startTime === preset.startTime &&
-                          availabilityDraft.endTime === preset.endTime
-                            ? "active"
-                            : ""
-                        }
-                        key={preset.label}
-                        type="button"
-                        onClick={() => {
-                          setWorkFeedback(null);
-                          setAvailabilityDraft((current) => ({
-                            ...current,
-                            startTime: preset.startTime,
-                            endTime: preset.endTime,
-                          }));
-                        }}
-                        aria-pressed={
-                          availabilityDraft.startTime === preset.startTime &&
-                          availabilityDraft.endTime === preset.endTime
-                        }
-                      >
-                        <strong>{preset.label}</strong>
-                        <span>
-                          {preset.startTime} - {preset.endTime}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="work-time-controls pro">
-                    <label>
-                      Od daty
-                      <input
-                        type="date"
-                        min={dayKey(today)}
-                        value={availabilityDraft.start}
-                        onChange={(event) =>
-                          updateAvailabilityDraft("start", event.target.value)
-                        }
-                      />
-                    </label>
-                    <label>
-                      Do daty
-                      <input
-                        type="date"
-                        min={availabilityDraft.start}
-                        value={availabilityDraft.end}
-                        onChange={(event) => updateAvailabilityDraft("end", event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Od godziny
-                      <select
-                        value={availabilityDraft.startTime}
-                        onChange={(event) =>
-                          updateAvailabilityDraft("startTime", event.target.value)
-                        }
-                      >
-                        {workTimeOptions.slice(0, -1).map((time) => (
-                          <option key={time} value={time}>
-                            {time}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Do godziny
-                      <select
-                        value={availabilityDraft.endTime}
-                        onChange={(event) =>
-                          updateAvailabilityDraft("endTime", event.target.value)
-                        }
-                      >
-                        {workTimeOptions.slice(1).map((time) => (
-                          <option key={time} value={time}>
-                            {time}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-
-                  <div className="availability-summary-panel">
-                    <div>
-                      <strong>
-                        {editingAvailabilityKey ? "Zapiszesz zmianę" : "Dodasz dostępność"}
-                      </strong>
-                      <span>
-                        {availabilityDraftKeys.length}{" "}
-                        {availabilityDraftKeys.length === 1 ? "dzień" : "dni"} ·{" "}
-                        {formatDuration(Math.max(0, availabilityDraftDuration))} dziennie
-                      </span>
-                      {availabilityOverwriteCount > 0 ? (
-                        <small>
-                          {availabilityOverwriteCount === 1
-                            ? "1 istniejący dzień zostanie zaktualizowany"
-                            : `${availabilityOverwriteCount} istniejące dni zostaną zaktualizowane`}
-                        </small>
-                      ) : null}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void addAvailabilityRange()}
-                      disabled={!canSaveAvailability || isWorkSaving}
-                      aria-busy={isDirectActionPending("save_availability")}
-                    >
-                      {isWorkSaving
-                        ? "Zapisywanie..."
-                        : editingAvailabilityKey
-                          ? "Zapisz zmiany"
-                          : "Dodaj dostępność"}
-                    </button>
-                  </div>
-                  {workFeedback ? (
-                    <p className={`work-feedback ${workFeedback.kind}`} role="status">
-                      {workFeedback.message}
-                    </p>
-                  ) : null}
-                </section>
-
-                <section className="work-editor-card">
-                  <div className="work-editor-top">
-                    <div>
-                      <p className="eyebrow">Szybkie dodawanie</p>
-                      <h2>Gotowe okienka</h2>
-                    </div>
-                  </div>
-
-                  <div className="quick-availability-list">
-                    {quickAvailabilityOptions.map((option) => (
-                      <button
-                        className={workSettings.availability[option.dateKey] ? "existing" : ""}
-                        key={`${option.dateKey}-${option.startTime}`}
-                        type="button"
-                        disabled={isWorkSaving}
-                        aria-busy={isDirectActionPending("quick_availability")}
-                        onClick={() =>
-                          void quickAddAvailability(
-                            option.offset,
-                            option.startTime,
-                            option.endTime,
-                          )
-                        }
-                      >
-                        <span className="quick-availability-date">
-                          <strong>{option.label}</strong>
-                          <small>{adminClientDateFormatter.format(option.date)}</small>
-                        </span>
-                        <span className="quick-availability-time">
-                          <strong>
-                            {option.startTime}-{option.endTime}
-                          </strong>
-                          <small>
-                            {workSettings.availability[option.dateKey] ? "Zaktualizuj" : "Dodaj"}
-                          </small>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="availability-list-card">
-                  <div className="work-card-heading">
-                    <div>
-                      <p className="eyebrow">Widoczne dla klientów</p>
-                      <h2>Aktywne dni</h2>
-                    </div>
-                  </div>
-
-                  <div className="availability-month-list">
-                    {availabilityMonthGroups.length > 0 ? (
-                      availabilityMonthGroups.map((monthGroup) => {
-                        const isExpanded = expandedAvailabilityMonth === monthGroup.key;
-
-                        return (
-                          <section
-                            className={`availability-month ${isExpanded ? "expanded" : ""}`}
-                            key={monthGroup.key}
-                          >
-                            <button
-                              className="availability-month-toggle"
-                              type="button"
-                              aria-expanded={isExpanded}
-                              onClick={() =>
-                                setExpandedAvailabilityMonth(isExpanded ? null : monthGroup.key)
-                              }
-                            >
-                              <span>
-                                <strong>{monthGroup.label}</strong>
-                                <small>
-                                  {monthGroup.items.length}{" "}
-                                  {monthGroup.items.length === 1 ? "dzień" : "dni"} ·{" "}
-                                  {formatDuration(monthGroup.totalMinutes)}
-                                </small>
-                              </span>
-                              <b aria-hidden="true">⌄</b>
-                            </button>
-
-                            <div className="availability-window-list">
-                              {monthGroup.items.map((windowItem) => (
-                                <article className="availability-window-row" key={windowItem.id}>
-                                  <div>
-                                    <strong>
-                                      {adminClientDateFormatter.format(dateFromKey(windowItem.dateKey))}
-                                    </strong>
-                                    <span>{formatWorkRange(windowItem)}</span>
-                                  </div>
-                                  <div className="availability-window-actions">
-                                    <button
-                                      type="button"
-                                      onClick={() => beginAvailabilityEdit(windowItem)}
-                                    >
-                                      Edytuj
-                                    </button>
-                                    <button
-                                      className={
-                                        pendingAvailabilityRemovalKey === windowItem.dateKey
-                                          ? "confirm-remove"
-                                          : "remove"
-                                      }
-                                      type="button"
-                                      disabled={isWorkSaving}
-                                      aria-busy={isDirectActionPending("remove_availability")}
-                                      onClick={() => void removeAvailabilityDate(windowItem.dateKey)}
-                                    >
-                                      {pendingAvailabilityRemovalKey === windowItem.dateKey
-                                        ? "Potwierdź"
-                                        : "Usuń"}
-                                    </button>
-                                  </div>
-                                </article>
-                              ))}
-                            </div>
-                          </section>
-                        );
-                      })
-                    ) : (
-                      <p>Nie masz jeszcze żadnego dostępnego dnia.</p>
-                    )}
-                  </div>
-                </section>
-                  </div>
-                </>
-              ) : null}
-
-              {canAccessAdminServices && workWorkspaceTab === "services" ? (
-                <>
-                  <div className="admin-section-header">
-                <div>
-                  <p className="eyebrow">Oferta</p>
-                  <h2>Usługi w aplikacji</h2>
-                </div>
-                <div className="admin-section-stats" aria-label="Podsumowanie usług">
-                  <span>
-                    <strong>{services.length}</strong>
-                    usług
-                  </span>
-                  <span>
-                    <strong>
-                      {formatDuration(
-                        Math.round(
-                          services.reduce((sum, service) => sum + service.durationMinutes, 0) /
-                            Math.max(services.length, 1),
-                        ),
-                      )}
-                    </strong>
-                    średnio
-                  </span>
-                </div>
-              </div>
-
-              <div className="services-admin-view" aria-label="Zarządzanie usługami">
-                <section className="service-editor-panel">
-                  <div className="work-editor-top">
-                    <div>
-                      <p className="eyebrow">{editingService ? "Edycja" : "Nowa usługa"}</p>
-                      <h2>{editingService ? editingService.name : "Dodaj usługę"}</h2>
-                    </div>
-                    {editingService ? (
-                      <button className="service-cancel-button" type="button" onClick={resetServiceDraft}>
-                        Anuluj
-                      </button>
-                    ) : null}
-                  </div>
-
-                  <div className="service-form-grid">
-                    <label>
-                      Nazwa usługi
-                      <input
-                        type="text"
-                        value={serviceDraft.name}
-                        onChange={(event) => updateServiceDraft("name", event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Cena
-                      <input
-                        inputMode="decimal"
-                        type="text"
-                        value={serviceDraft.price}
-                        onChange={(event) => updateServiceDraft("price", event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Czas trwania
-                      <input
-                        inputMode="numeric"
-                        min="15"
-                        step="15"
-                        type="number"
-                        value={serviceDraft.durationMinutes}
-                        onChange={(event) =>
-                          updateServiceDraft("durationMinutes", event.target.value)
-                        }
-                      />
-                    </label>
-                  </div>
-
-                  <div className="service-editor-summary">
-                    <span>
-                      {serviceDraft.name.trim() || "Nazwa usługi"} ·{" "}
-                      {serviceDraft.price.trim() ? formatServicePrice(serviceDraft.price) : "0 zł"} ·{" "}
-                      {formatDuration(Number(serviceDraft.durationMinutes) || 0) || "0min"}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={!canSaveService || isSaving}
-                      aria-busy={isDirectActionPending("save_service")}
-                      onClick={() => {
-                        void saveService();
-                      }}
-                    >
-                      {editingService ? "Zapisz zmiany" : "Dodaj usługę"}
-                    </button>
-                  </div>
-                </section>
-
-                <section className="service-management-list">
-                  {services.map((service) => (
-                    <article className="service-management-card" key={service.id}>
-                      <div>
-                        <strong>{service.name}</strong>
-                        <span>
-                          {service.price} · {formatDuration(service.durationMinutes)}
-                        </span>
-                      </div>
-                      <div className="service-management-actions">
-                        <button type="button" onClick={() => editService(service)}>
-                          Edytuj
-                        </button>
-                        <button
-                          className="danger"
-                          type="button"
-                          disabled={services.length <= 1 || isSaving}
-                          aria-busy={isDirectActionPending(`delete_service:${service.id}`)}
-                          onClick={() => {
-                            void deleteService(service.id);
-                          }}
-                        >
-                          Usuń
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </section>
-                  </div>
-                </>
-              ) : null}
-            </div>
-
-            {isOwner ? (
-              <div className={`admin-tab-panel ${adminSection === "team" ? "active" : ""}`}>
-                <div className="admin-section-header team-section-header">
-                  <div>
-                    <p className="eyebrow">Ustawienia właściciela</p>
-                    <h2>Zespół BNB</h2>
-                  </div>
-                  <div className="admin-section-stats" aria-label="Stan zespołu">
-                    <span>
-                      <strong>{teamMembers.length}</strong>
-                      barberzy
-                    </span>
-                    <span>
-                      <strong>{activeTeamMembersCount}</strong>
-                      aktywne konta
-                    </span>
-                  </div>
-                </div>
-
-                <div className="team-management-view">
-                  <div className="team-management-toolbar">
-                    <div>
-                      <p className="section-label">Stały skład</p>
-                      <strong>Konta i zakres dostępu</strong>
-                    </div>
-                  </div>
-
-                  {teamFeedback && !teamDialogMemberId ? (
-                    <p className={`work-feedback ${teamFeedback.kind}`}>{teamFeedback.message}</p>
-                  ) : null}
-
-                  <div className="team-member-list">
-                    {teamMembers.map((member) => {
-                      const profile = barberProfiles[member.id] ?? emptyBarberDetails;
-                      return (
-                        <article
-                          className={`team-member-card ${member.active ? "active" : "inactive"}`}
-                          key={member.id}
-                        >
-                          <header className="team-member-header">
-                            <ProfileAvatar
-                              className={`team-member-avatar ${member.accent}`}
-                              name={profile.displayName || member.name}
-                              photoUrl={profile.photoUrl}
-                            />
-                            <div>
-                              <small>{member.label}</small>
-                              <strong>{profile.displayName || member.name}</strong>
-                              <span>
-                                {member.email || profile.email || "Brak adresu e-mail"}
-                              </span>
-                            </div>
-                            <label className="team-active-switch">
-                              <input
-                                type="checkbox"
-                                checked={member.active}
-                                disabled={isTeamSaving}
-                                onChange={(event) =>
-                                  void updateTeamMemberActive(member, event.target.checked)
-                                }
-                              />
-                              <span aria-hidden="true" />
-                              {member.active ? "Aktywne" : "Wyłączone"}
-                            </label>
-                          </header>
-
-                          <div className="team-member-account">
-                            <span>
-                              <small>Konto Google</small>
-                              <strong>Połączone</strong>
-                            </span>
-                            <div className="team-member-account-actions">
-                              <button type="button" onClick={() => openTeamMemberEditDialog(member)}>
-                                Edytuj dane
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="team-member-quick-actions">
-                            <button
-                              type="button"
-                              onClick={() => openOwnerBarberPanel(member.id, "schedule")}
-                            >
-                              <span className="schedule-icon" aria-hidden="true" />
-                              Terminarz
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openOwnerBarberPanel(member.id, "analytics")}
-                            >
-                              <span className="analytics-icon" aria-hidden="true" />
-                              Analiza
-                            </button>
-                          </div>
-
-                          <fieldset className="team-access-grid">
-                            <legend>Zakres dostępu</legend>
-                            {barberAdminSections.map((section) => (
-                              <label key={section}>
-                                <input
-                                  type="checkbox"
-                                  checked={member.access[section]}
-                                  disabled={isTeamSaving}
-                                  onChange={(event) =>
-                                    void updateTeamMemberAccess(
-                                      member,
-                                      section,
-                                      event.target.checked,
-                                    )
-                                  }
-                                />
-                                <span aria-hidden="true" />
-                                {teamAccessLabels[section]}
-                              </label>
-                            ))}
-                          </fieldset>
-                        </article>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
+            {adminSection === "schedule" && adminWorkspaceTab === "upcoming" ? (
+              <Suspense fallback={<div className="admin-panel-loading" aria-label="Ładowanie terminarza" />}>
+                <AdminCalendarScreen
+                  mode="upcoming"
+                  workspaceTabs={renderAdminWorkspaceTabs()}
+                  upcomingAppointments={upcomingAdminAppointments}
+                  nearestAppointments={nearestAdminAppointments}
+                  clients={adminClientProfiles}
+                  waitlistEntries={adminWaitlistEntries}
+                  today={today}
+                  currentDate={currentDate}
+                  canManageSchedule={canAccessAdminSchedule}
+                  canManageClients={canAccessAdminClients}
+                  settlingAppointmentId={settlingAppointmentId}
+                  isWaitlistSaving={isWaitlistSaving}
+                  isActionPending={isActionPending}
+                  onWorkspaceChange={setAdminWorkspaceTab}
+                  onSettleAppointment={(appointment) => void settleAdminAppointment(appointment)}
+                  onEditAppointment={(appointment) => {
+                    setAdminSelectedKey(appointment.dateKey);
+                    setAdminWorkspaceTab("schedule");
+                    openAdminAppointmentEdit(appointment);
+                  }}
+                  onOpenClient={setSelectedAdminClientId}
+                  onOpenSms={openSmsComposer}
+                  onCancelAppointment={(appointmentId) => void declineAdminAppointment(appointmentId)}
+                  onBookWaitlist={openWaitlistBooking}
+                  onRemoveWaitlist={(entry) => void removeAdminWaitlistEntry(entry)}
+                />
+              </Suspense>
             ) : null}
 
-            <div className={`admin-tab-panel ${adminSection === "profile" ? "active" : ""}`}>
-              <div className="admin-section-header">
-                <div>
-                  <p className="eyebrow">Wizytówka barbera</p>
-                  <h2>Profil {activeBarberName}</h2>
-                </div>
-                <div className="admin-section-stats" aria-label="Stan profilu">
-                  <span>
-                    <strong>{profileDraft.photoUrl ? "jest" : "brak"}</strong>
-                    zdjęcie
-                  </span>
-                  <span>
-                    <strong>{profileDraft.bio ? "gotowy" : "pusty"}</strong>
-                    opis
-                  </span>
-                </div>
-              </div>
+            {adminSection === "schedule" && adminWorkspaceTab === "schedule" ? (
+              <Suspense fallback={<div className="admin-panel-loading" aria-label="Ładowanie kalendarza" />}>
+                <AdminCalendarScreen
+                  mode="calendar"
+                  workspaceTabs={renderAdminWorkspaceTabs()}
+                  selectedDateKey={adminSelectedKey}
+                  dayAppointments={adminDayAppointments}
+                  dayAvailability={adminDayAvailability}
+                  scheduleDays={adminScheduleDays}
+                  allAppointments={adminAppointments}
+                  availability={workSettings.availability}
+                  scheduleSlots={adminScheduleSlots}
+                  scheduleHours={adminScheduleHours}
+                  scheduleStartMinutes={adminScheduleStartMinutes}
+                  today={today}
+                  currentDate={currentDate}
+                  draggedAppointmentId={draggedAppointmentId}
+                  currentTimeLineVisible={currentTimeLineVisible}
+                  currentTimeLineTop={currentTimeLineTop}
+                  currentTimeLineMinutes={currentTimeLineMinutes}
+                  isTouchDevice={isTouchDevice}
+                  onCreateAppointment={openCalendarAppointmentCreator}
+                  onShiftDay={shiftAdminSelectedDay}
+                  onSelectDate={setAdminSelectedKey}
+                  onEditAppointment={openAdminAppointmentEdit}
+                  onOpenWorkEditor={openSelectedDayInWorkEditor}
+                  onMoveAppointment={moveAdminAppointment}
+                  onDragStart={setDraggedAppointmentId}
+                  renderAppointmentActions={renderCalendarAppointmentActions}
+                />
+              </Suspense>
+            ) : null}
 
-              <div className="barber-profile-view">
-                <section className="barber-profile-preview">
-                  <ProfileAvatar
-                    className={`barber-profile-photo ${activeClientBarber.accent}`}
-                    name={activeBarberName}
-                    photoUrl={profileDraft.photoUrl}
-                    alt={`Profil ${activeBarberName}`}
-                  />
-                  <div className="barber-profile-preview-copy">
-                    <p className="eyebrow">{activeClientBarber.label}</p>
-                    <h3>{profileDraft.displayName || activeClientBarber.name}</h3>
-                    {profileDraft.instagram ? <span>@{profileDraft.instagram}</span> : null}
-                  </div>
-                  <div className="barber-photo-actions">
-                    <label className="profile-photo-button">
-                      <input
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        onChange={(event) => void handleProfilePhotoChange(event)}
-                      />
-                      {isProfilePhotoProcessing ? "Przetwarzanie..." : "Wybierz zdjęcie"}
-                    </label>
-                    {profileDraft.photoUrl ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setProfileDraft((current) => ({ ...current, photoUrl: "" }))
-                        }
-                      >
-                        Usuń
-                      </button>
-                    ) : null}
-                  </div>
-                </section>
-
-                <form
-                  className="barber-profile-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void saveBarberProfile();
+            {adminSection === "schedule" && adminWorkspaceTab === "clients" ? (
+              <Suspense fallback={<div className="admin-panel-loading" aria-label="Ładowanie klientów" />}>
+                <AdminClientsScreen
+                  workspaceTabs={renderAdminWorkspaceTabs()}
+                  workspaceTab={clientWorkspaceTab}
+                  canManageClients={canAccessAdminClients}
+                  canManageSchedule={canAccessAdminSchedule}
+                  activeClients={activeAdminClientProfiles}
+                  directoryClients={directoryAdminClientProfiles}
+                  filteredClients={filteredAdminClients}
+                  feedback={clientFeedback}
+                  search={clientSearch}
+                  filter={clientFilter}
+                  currentDate={currentDate}
+                  settlingAppointmentId={settlingAppointmentId}
+                  onCreateClient={() => openClientCreator()}
+                  onWorkspaceChange={(tab) => {
+                    setClientWorkspaceTab(tab);
+                    setClientFilter("all");
+                    setClientSearch("");
                   }}
-                >
-                  <div className="barber-profile-form-heading">
-                    <div>
-                      <p className="eyebrow">Informacje</p>
-                      <h3>Dane profilu</h3>
-                    </div>
-                    <span>Opcjonalne</span>
-                  </div>
+                  onSearchChange={setClientSearch}
+                  onFilterChange={setClientFilter}
+                  onOpenClient={setSelectedAdminClientId}
+                  onSettleAppointment={(appointment) => void settleAdminAppointment(appointment)}
+                  onBookClient={openManualClientBooking}
+                  onOpenSms={openSmsComposer}
+                  canSettleAppointment={canSettleAppointment}
+                  isPotentialNoShow={isPotentialNoShow}
+                  isActionPending={isActionPending}
+                />
+              </Suspense>
+            ) : null}
 
-                  <div className="barber-profile-fields">
-                    <label>
-                      Imię wyświetlane
-                      <input
-                        type="text"
-                        maxLength={50}
-                        value={profileDraft.displayName}
-                        onChange={(event) =>
-                          setProfileDraft((current) => ({
-                            ...current,
-                            displayName: event.target.value,
-                          }))
-                        }
-                        placeholder={activeClientBarber.name}
-                      />
-                    </label>
-                    <label>
-                      Numer telefonu
-                      <input
-                        type="tel"
-                        inputMode="tel"
-                        autoComplete="tel"
-                        value={profileDraft.phone}
-                        onChange={(event) =>
-                          setProfileDraft((current) => ({
-                            ...current,
-                            phone: formatPhoneNumber(getPhoneDigits(event.target.value)),
-                          }))
-                        }
-                        placeholder="500 000 000"
-                      />
-                    </label>
-                    <label>
-                      E-mail
-                      <input
-                        type="email"
-                        inputMode="email"
-                        autoComplete="email"
-                        maxLength={100}
-                        value={profileDraft.email}
-                        onChange={(event) =>
-                          setProfileDraft((current) => ({ ...current, email: event.target.value }))
-                        }
-                        placeholder="barber@example.com"
-                      />
-                    </label>
-                    <label>
-                      Instagram
-                      <span className="profile-instagram-input">
-                        <b aria-hidden="true">@</b>
-                        <input
-                          type="text"
-                          inputMode="text"
-                          maxLength={40}
-                          value={profileDraft.instagram}
-                          onChange={(event) =>
-                            setProfileDraft((current) => ({
-                              ...current,
-                              instagram: event.target.value.replace(/^@+/, ""),
-                            }))
-                          }
-                          placeholder="nazwa_profilu"
-                        />
-                      </span>
-                    </label>
-                    <label className="barber-profile-bio">
-                      Krótki opis
-                      <textarea
-                        maxLength={280}
-                        value={profileDraft.bio}
-                        onChange={(event) =>
-                          setProfileDraft((current) => ({ ...current, bio: event.target.value }))
-                        }
-                        placeholder="Kilka słów o specjalizacji i stylu pracy"
-                      />
-                      <small>{profileDraft.bio.length}/280</small>
-                    </label>
-                  </div>
+            {adminSection === "analytics" ? (
+              <Suspense fallback={<div className="admin-panel-loading" aria-label="Ładowanie analityki" />}>
+                <AdminAnalyticsScreen
+                  analytics={analytics}
+                  period={analyticsPeriod}
+                  onPeriodChange={setAnalyticsPeriod}
+                />
+              </Suspense>
+            ) : null}
 
-                  <div className="barber-profile-submit">
-                    {profileFeedback ? (
-                      <p className={`work-feedback ${profileFeedback.kind}`}>
-                        {profileFeedback.message}
-                      </p>
-                    ) : (
-                      <span />
-                    )}
-                    <button
-                      type="submit"
-                      disabled={isProfileSaving || isProfilePhotoProcessing}
-                      aria-busy={
-                        isDirectActionPending("save_profile") || isProfilePhotoProcessing
-                      }
-                    >
-                      {isProfileSaving ? "Zapisywanie..." : "Zapisz profil"}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
+            {adminSection === "work" ? (
+              <Suspense fallback={<div className="admin-panel-loading" aria-label="Ładowanie ustawień pracy" />}>
+                <AdminSettingsScreen
+                  mode="work"
+                  workspaceTabs={renderWorkWorkspaceTabs()}
+                  workspaceTab={workWorkspaceTab}
+                  canManageDays={canAccessAdminWork}
+                  canManageServices={canAccessAdminServices}
+                  availabilityWindows={availabilityWindows}
+                  nearestAvailability={nearestAvailability}
+                  editingAvailabilityKey={editingAvailabilityKey}
+                  availabilityDraft={availabilityDraft}
+                  availabilityDraftDays={availabilityDraftKeys.length}
+                  availabilityDraftDuration={availabilityDraftDuration}
+                  availabilityOverwriteCount={availabilityOverwriteCount}
+                  canSaveAvailability={canSaveAvailability}
+                  isWorkSaving={isWorkSaving}
+                  feedback={workFeedback}
+                  today={today}
+                  timeOptions={workTimeOptions}
+                  quickAvailabilityOptions={quickAvailabilityOptions}
+                  availability={workSettings.availability}
+                  availabilityMonthGroups={availabilityMonthGroups}
+                  expandedAvailabilityMonth={expandedAvailabilityMonth}
+                  pendingAvailabilityRemovalKey={pendingAvailabilityRemovalKey}
+                  services={services}
+                  editingService={editingService}
+                  serviceDraft={serviceDraft}
+                  canSaveService={canSaveService}
+                  isSavingService={isSaving}
+                  isActionPending={isDirectActionPending}
+                  onResetAvailability={resetAvailabilityEditor}
+                  onSetAvailabilityPreset={(startTime, endTime) => {
+                    setWorkFeedback(null);
+                    setAvailabilityDraft((current) => ({ ...current, startTime, endTime }));
+                  }}
+                  onUpdateAvailability={updateAvailabilityDraft}
+                  onSaveAvailability={() => void addAvailabilityRange()}
+                  onQuickAddAvailability={(offset, startTime, endTime) =>
+                    void quickAddAvailability(offset, startTime, endTime)
+                  }
+                  onToggleAvailabilityMonth={setExpandedAvailabilityMonth}
+                  onEditAvailability={beginAvailabilityEdit}
+                  onRemoveAvailability={(dateKeyValue) => void removeAvailabilityDate(dateKeyValue)}
+                  onResetService={resetServiceDraft}
+                  onUpdateService={updateServiceDraft}
+                  onSaveService={() => void saveService()}
+                  onEditService={editService}
+                  onDeleteService={(serviceId) => void deleteService(serviceId)}
+                />
+              </Suspense>
+            ) : null}
+
+            {isOwner && adminSection === "team" ? (
+              <Suspense fallback={<div className="admin-panel-loading" aria-label="Ładowanie zespołu" />}>
+                <AdminSettingsScreen
+                  mode="team"
+                  members={teamMembers}
+                  activeMembersCount={activeTeamMembersCount}
+                  profiles={barberProfiles}
+                  feedback={teamFeedback}
+                  editedMemberId={teamDialogMemberId}
+                  isSaving={isTeamSaving}
+                  adminSections={barberAdminSections}
+                  accessLabels={teamAccessLabels}
+                  onActiveChange={(member, active) => void updateTeamMemberActive(member, active)}
+                  onEditMember={openTeamMemberEditDialog}
+                  onOpenBarberPanel={openOwnerBarberPanel}
+                  onAccessChange={(member, section, enabled) =>
+                    void updateTeamMemberAccess(member, section, enabled)
+                  }
+                />
+              </Suspense>
+            ) : null}
+
+            {adminSection === "profile" ? (
+              <Suspense fallback={<div className="admin-panel-loading" aria-label="Ładowanie profilu" />}>
+                <AdminSettingsScreen
+                  mode="profile"
+                  barberName={activeBarberName}
+                  barber={activeClientBarber}
+                  draft={profileDraft}
+                  feedback={profileFeedback}
+                  isSaving={isProfileSaving}
+                  isPhotoProcessing={isProfilePhotoProcessing}
+                  isSaveActionPending={isDirectActionPending("save_profile")}
+                  onPhotoChange={(event) => void handleProfilePhotoChange(event)}
+                  onChange={(field, value) =>
+                    setProfileDraft((current) => ({ ...current, [field]: value }))
+                  }
+                  onSave={() => void saveBarberProfile()}
+                />
+              </Suspense>
+            ) : null}
           </div>
 
           <nav
@@ -7359,29 +5708,8 @@ export function BookingHome() {
           )}
         </section>
       ) : visibleStep === "booking" ? (
-        <>
-          <div className="home-hero" style={heroStyle} aria-hidden="true">
-            <picture>
-              <source
-                type="image/avif"
-                srcSet="/brand/bnb-hero-960.avif 960w, /brand/bnb-hero-1440.avif 1440w"
-                sizes="(max-width: 767px) 100vw, 720px"
-              />
-              <source
-                type="image/webp"
-                srcSet="/brand/bnb-hero-960.webp 960w, /brand/bnb-hero-1440.webp 1440w"
-                sizes="(max-width: 767px) 100vw, 720px"
-              />
-              <img
-                src="/brand/bnb-hero-1440.jpg"
-                alt=""
-                width="1440"
-                height="811"
-                decoding="async"
-                fetchPriority="high"
-              />
-            </picture>
-          </div>
+        <ClientScreen>
+          <BookingHero />
           <section className="booking-panel" aria-label="Kalendarz rezerwacji">
             <div className="topbar">
               <div className="topbar-title">
@@ -7890,7 +6218,7 @@ export function BookingHome() {
               </div>
             )}
           </aside>
-        </>
+        </ClientScreen>
       ) : visibleStep === "confirm" ? (
         <section className="confirm-view" aria-label="Wypełnij i potwierdź">
           <button className="back-button" type="button" onClick={() => setStep("booking")}>

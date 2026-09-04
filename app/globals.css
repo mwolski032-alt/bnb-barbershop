@@ -3071,6 +3071,22 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   overflow: hidden;
 }
 
+.admin-panel-loading {
+  display: grid;
+  place-items: center;
+  min-height: 45vh;
+}
+
+.admin-panel-loading::before {
+  width: 1.65rem;
+  height: 1.65rem;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  content: "";
+  animation: action-spin 680ms linear infinite;
+}
+
 .admin-tab-panel {
   width: 100%;
   opacity: 0;

@@ -46,12 +46,13 @@ test("keeps BNB metadata and production assets wired", async () => {
 });
 
 test("ships a static lightweight startup with an offline app shell", async () => {
-  const [nextConfig, netlifyConfig, layout, bookingHome, serviceWorker, hero960, hero1440] =
+  const [nextConfig, netlifyConfig, layout, bookingHome, bookingHero, serviceWorker, hero960, hero1440] =
     await Promise.all([
       readFile(new URL("../next.config.ts", import.meta.url), "utf8"),
       readFile(new URL("../netlify.toml", import.meta.url), "utf8"),
       readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
       readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+      readFile(new URL("../app/components/booking-hero.tsx", import.meta.url), "utf8"),
       readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
       stat(new URL("../public/brand/bnb-hero-960.avif", import.meta.url)),
       stat(new URL("../public/brand/bnb-hero-1440.avif", import.meta.url)),
@@ -60,15 +61,44 @@ test("ships a static lightweight startup with an offline app shell", async () =>
   assert.match(nextConfig, /output:\s*"export"/);
   assert.match(netlifyConfig, /publish\s*=\s*"dist\/client"/);
   assert.doesNotMatch(layout, /next\/font\/google/);
-  assert.match(bookingHome, /bnb-hero-960\.avif/);
-  assert.match(bookingHome, /bnb-hero-1440\.webp/);
-  assert.match(bookingHome, /bnb-hero-1440\.jpg/);
-  assert.doesNotMatch(bookingHome, /src="\/brand\/bnb-hero\.png"/);
+  assert.match(bookingHome, /import BookingHero/);
+  assert.match(bookingHero, /bnb-hero-960\.avif/);
+  assert.match(bookingHero, /bnb-hero-1440\.webp/);
+  assert.match(bookingHero, /bnb-hero-1440\.jpg/);
+  assert.doesNotMatch(bookingHero, /src="\/brand\/bnb-hero\.png"/);
   assert.equal(hero960.size < 100_000, true);
   assert.equal(hero1440.size < 150_000, true);
   assert.match(serviceWorker, /APP_SHELL_URL/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.equal((await stat(new URL("../dist/client/index.html", import.meta.url))).size > 0, true);
+});
+
+test("loads barber workspaces on demand and isolates hero scrolling", async () => {
+  const [bookingHome, bookingHero, calendarScreen, clientsScreen, analyticsScreen, settingsScreen] = await Promise.all([
+    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/booking-hero.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/screens/admin-calendar-screen.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/screens/admin-clients-screen.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/screens/admin-analytics-screen.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/screens/admin-settings-screen.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /import ClientScreen from "\.\/components\/screens\/client-screen"/);
+  assert.match(bookingHome, /lazy\(\(\) => import\("\.\/components\/screens\/admin-calendar-screen"\)\)/);
+  assert.match(bookingHome, /lazy\(\(\) => import\("\.\/components\/screens\/admin-clients-screen"\)\)/);
+  assert.match(bookingHome, /lazy\(\(\) => import\("\.\/components\/screens\/admin-analytics-screen"\)\)/);
+  assert.match(bookingHome, /lazy\(\(\) => import\("\.\/components\/screens\/admin-settings-screen"\)\)/);
+  assert.match(bookingHome, /adminSection === "analytics" \? \(/);
+  assert.match(bookingHome, /adminWorkspaceTab === "clients" \? \(/);
+  assert.doesNotMatch(bookingHome, /heroScrollProgress/);
+  assert.match(bookingHero, /requestAnimationFrame/);
+  assert.match(bookingHero, /addEventListener\("scroll", update, \{ passive: true \}\)/);
+  assert.doesNotMatch(bookingHero, /useState/);
+  assert.match(calendarScreen, /function ScheduleCalendarScreen/);
+  assert.match(clientsScreen, /export default function AdminClientsScreen/);
+  assert.match(analyticsScreen, /export default function AdminAnalyticsScreen/);
+  assert.match(settingsScreen, /function WorkSettingsScreen/);
+  assert.match(settingsScreen, /function TeamSettingsScreen/);
 });
 
 test("shows immediate progress and keeps notification delivery off the critical path", async () => {
@@ -186,14 +216,15 @@ test("keeps the mobile booking gestures and bottom-sheet interactions", async ()
 });
 
 test("keeps the professional admin client directory and SMS workflow", async () => {
-  const [bookingHome, styles] = await Promise.all([
+  const [bookingHome, clientsScreen, styles] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/screens/admin-clients-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
   assert.match(bookingHome, /const getAdminClientId/);
   assert.match(bookingHome, /const adminClientProfiles = useMemo/);
-  assert.match(bookingHome, /className="client-search"/);
+  assert.match(clientsScreen, /className="client-search"/);
   assert.match(bookingHome, /Historia wizyt/);
   assert.match(bookingHome, /sms-composer-modal/);
   assert.match(bookingHome, /Otwórz aplikację SMS/);
@@ -204,8 +235,9 @@ test("keeps the professional admin client directory and SMS workflow", async () 
 });
 
 test("keeps the client and admin waitlist workflow visible and actionable", async () => {
-  const [bookingHome, styles, appointmentsApi, notificationService, worker] = await Promise.all([
+  const [bookingHome, calendarScreen, styles, appointmentsApi, notificationService, worker] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/screens/admin-calendar-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/_notification-service.mjs", import.meta.url), "utf8"),
@@ -214,11 +246,11 @@ test("keeps the client and admin waitlist workflow visible and actionable", asyn
 
   assert.match(bookingHome, /Powiadom mnie o wolnym terminie/);
   assert.match(bookingHome, /Powiadom mnie o terminie/);
-  assert.match(bookingHome, /Lista rezerwowa/);
+  assert.match(calendarScreen, /Lista rezerwowa/);
   assert.match(bookingHome, /acceptWaitlistOffer/);
   assert.match(bookingHome, /Notification\.requestPermission\(\)/);
   assert.match(bookingHome, /openWaitlistBooking/);
-  assert.match(bookingHome, />Umów</);
+  assert.match(calendarScreen, />Umów</);
   assert.match(appointmentsApi, /"join_waitlist"/);
   assert.match(appointmentsApi, /hasBlockingWaitlistOffer/);
   assert.match(notificationService, /waitlist_slot_open/);
@@ -298,25 +330,28 @@ test("keeps the scoped barber profile and centered client action", async () => {
 });
 
 test("keeps the mastered admin schedule and availability editor", async () => {
-  const [bookingHome, styles] = await Promise.all([
+  const [bookingHome, calendarScreen, settingsScreen, styles] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/screens/admin-calendar-screen.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/screens/admin-settings-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
-  assert.match(bookingHome, /className="schedule-mobile-agenda"/);
-  assert.match(bookingHome, /className="schedule-date-controls"/);
+  assert.match(calendarScreen, /className="schedule-mobile-agenda"/);
+  assert.match(calendarScreen, /className="schedule-date-controls"/);
   assert.match(bookingHome, /openSelectedDayInWorkEditor/);
   assert.match(bookingHome, /beginAvailabilityEdit/);
   assert.match(bookingHome, /pendingAvailabilityRemovalKey/);
-  assert.match(bookingHome, /istniejące dni zostaną zaktualizowane/);
+  assert.match(settingsScreen, /istniejące dni zostaną zaktualizowane/);
   assert.match(styles, /@media \(max-width: 767px\)/);
   assert.match(styles, /\.mobile-agenda-actions/);
   assert.match(styles, /\.work-feedback\.success/);
 });
 
 test("merges schedule and clients into a permission-aware nearest appointments workspace", async () => {
-  const [bookingHome, styles] = await Promise.all([
+  const [bookingHome, calendarScreen, styles] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/screens/admin-calendar-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
@@ -327,19 +362,19 @@ test("merges schedule and clients into a permission-aware nearest appointments w
     bookingHome,
     /standaloneAdminSections\.filter\(\(section\) => canAccessAdminSection\(section\)\)/,
   );
-  assert.match(bookingHome, /4 najbliższe wizyty/);
+  assert.match(calendarScreen, /4 najbliższe wizyty/);
   assert.match(
     bookingHome,
     /const nearestAdminAppointments = selectNearestAppointments\(upcomingAdminAppointments, 4\)/,
   );
-  assert.match(bookingHome, /getAppointmentEndDateTime\(appointment\)\.getTime\(\) > currentDate\.getTime\(\)/);
-  assert.match(bookingHome, /formatNearestAppointmentLabel\(\{/);
-  assert.match(bookingHome, /<strong>\{nearestAppointmentLabel\}<\/strong>/);
-  assert.match(bookingHome, /canAccessAdminSchedule && settlementAvailable/);
-  assert.match(bookingHome, /canAccessAdminClients && client/);
+  assert.match(calendarScreen, /getAppointmentEndDateTime\(appointment\)/);
+  assert.match(calendarScreen, /formatNearestAppointmentLabel\(\{/);
+  assert.match(calendarScreen, /<strong>\{nearestLabel\}<\/strong>/);
+  assert.match(calendarScreen, /props\.canManageSchedule && settlementAvailable/);
+  assert.match(calendarScreen, /props\.canManageClients && client/);
   assert.match(
-    bookingHome,
-    /className="cancel"[\s\S]*declineAdminAppointment\(appointment\.id\)[\s\S]*Odwołaj/,
+    calendarScreen,
+    /className="cancel"[\s\S]*onCancelAppointment\(appointment\.id\)[\s\S]*Odwołaj/,
   );
   assert.match(styles, /\.admin-workspace-tabs/);
   assert.match(styles, /\.nearest-appointment-card\.primary/);
@@ -348,8 +383,9 @@ test("merges schedule and clients into a permission-aware nearest appointments w
 });
 
 test("moves the complete client directory into the shared appointments workspace", async () => {
-  const [bookingHome, styles, appointmentApi] = await Promise.all([
+  const [bookingHome, clientsScreen, styles, appointmentApi] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/screens/admin-clients-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
   ]);
@@ -359,14 +395,14 @@ test("moves the complete client directory into the shared appointments workspace
     /type AdminSection = Exclude<BarberAdminSection, "clients" \| "services"> \| "team"/,
   );
   assert.match(bookingHome, /<span>Klienci<\/span>/);
-  assert.match(bookingHome, /className="client-search"/);
-  assert.match(bookingHome, /className="client-filters"/);
-  assert.match(bookingHome, /Aktywne wizyty/);
+  assert.match(clientsScreen, /className="client-search"/);
+  assert.match(clientsScreen, /className="client-filters"/);
+  assert.match(clientsScreen, /Aktywne wizyty/);
   assert.match(bookingHome, /Historia wizyt/);
-  assert.match(bookingHome, /Dodaj klienta/);
-  assert.match(bookingHome, /canAccessAdminSchedule \? \([\s\S]*openManualClientBooking/);
-  assert.match(bookingHome, /href=\{`tel:\+48\$\{phoneDigits\}`\}/);
-  assert.match(bookingHome, /href=\{`sms:\+48\$\{phoneDigits\}`\}/);
+  assert.match(clientsScreen, /Dodaj klienta/);
+  assert.match(clientsScreen, /canManageSchedule \? \([\s\S]*onBookClient/);
+  assert.match(clientsScreen, /href=\{`tel:\+48\$\{phoneDigits\}`\}/);
+  assert.match(clientsScreen, /href=\{`sms:\+48\$\{phoneDigits\}`\}/);
   assert.match(bookingHome, /Usuń klienta/);
   assert.match(bookingHome, /isVisibleInClientDatabase/);
   assert.match(appointmentApi, /"delete_admin_client"/);
@@ -405,8 +441,9 @@ test("moves the complete appointment workflow into the calendar", async () => {
 });
 
 test("keeps settlement-driven admin analytics", async () => {
-  const [bookingHome, styles, appointmentApi] = await Promise.all([
+  const [bookingHome, analyticsScreen, styles, appointmentApi] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/screens/admin-analytics-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
   ]);
@@ -419,8 +456,8 @@ test("keeps settlement-driven admin analytics", async () => {
   assert.match(appointmentApi, /next\.status = "completed"/);
   assert.match(bookingHome, /const settledAmount = getServicePriceValue/);
   assert.match(appointmentApi, /next\.settlement = \{ barberId: next\.barberId/);
-  assert.match(bookingHome, /aria-label="Analiza działalności"/);
-  assert.match(bookingHome, /Potencjalne nieobecności/);
+  assert.match(analyticsScreen, /aria-label="Analiza działalności"/);
+  assert.match(analyticsScreen, /Potencjalne nieobecności/);
   assert.match(styles, /\.analytics-kpi-grid/);
   assert.match(styles, /\.analytics-chart/);
   assert.match(bookingHome, /visibleAdminSections\.map\(\(section\) =>/);
@@ -430,8 +467,9 @@ test("keeps settlement-driven admin analytics", async () => {
 });
 
 test("merges days and services into one permission-aware work workspace", async () => {
-  const [bookingHome, styles] = await Promise.all([
+  const [bookingHome, settingsScreen, styles] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/screens/admin-settings-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
@@ -442,16 +480,17 @@ test("merges days and services into one permission-aware work workspace", async 
   assert.match(bookingHome, /aria-label="Widok dni pracy i usług"/);
   assert.match(bookingHome, /<span>Dni<\/span>/);
   assert.match(bookingHome, /<span>Usługi<\/span>/);
-  assert.match(bookingHome, /Dni dostępne dla klientów/);
-  assert.match(bookingHome, /Usługi w aplikacji/);
+  assert.match(settingsScreen, /Dni dostępne dla klientów/);
+  assert.match(settingsScreen, /Usługi w aplikacji/);
   assert.doesNotMatch(bookingHome, /adminSection === "services"/);
   assert.doesNotMatch(bookingHome, /setAdminSection\("services"\)/);
   assert.match(styles, /\.work-workspace-panel\.active/);
 });
 
 test("keeps the fixed owner-managed team and role-aware admin avatars", async () => {
-  const [bookingHome, styles] = await Promise.all([
+  const [bookingHome, settingsScreen, styles] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/screens/admin-settings-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
@@ -459,7 +498,7 @@ test("keeps the fixed owner-managed team and role-aware admin avatars", async ()
   assert.match(bookingHome, /const teamPath = isOwner \? "team\/barbers"/);
   assert.match(bookingHome, /const updateTeamMemberActive = async/);
   assert.match(bookingHome, /const updateTeamMemberAccess = async/);
-  assert.match(bookingHome, /className="team-management-view"/);
+  assert.match(settingsScreen, /className="team-management-view"/);
   assert.match(bookingHome, /className="client-appointment-modal team-member-dialog"/);
   assert.match(
     bookingHome,
@@ -467,8 +506,8 @@ test("keeps the fixed owner-managed team and role-aware admin avatars", async ()
   );
   assert.match(bookingHome, /barber\.id === signedInBarberId/);
   assert.match(bookingHome, /const signedInBarberName =/);
-  assert.match(bookingHome, /openOwnerBarberPanel\(member\.id, "schedule"\)/);
-  assert.match(bookingHome, /openOwnerBarberPanel\(member\.id, "analytics"\)/);
+  assert.match(settingsScreen, /onOpenBarberPanel\(member\.id, "schedule"\)/);
+  assert.match(settingsScreen, /onOpenBarberPanel\(member\.id, "analytics"\)/);
   assert.match(bookingHome, /setSessionContext\(result\.context as SessionContext\)/);
   assert.match(bookingHome, /sessionContext\?\.role === "barber"/);
   assert.doesNotMatch(bookingHome, /fixedBarberUserIds|ownerUserIds/);
@@ -574,8 +613,9 @@ test("shows a per-device push toggle and keeps silent token renewal", async () =
 });
 
 test("keeps barber calendars scoped and client directory counters current", async () => {
-  const [bookingHome, appointmentClient, appointmentApi, adminHelper] = await Promise.all([
+  const [bookingHome, clientsScreen, appointmentClient, appointmentApi, adminHelper] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/screens/admin-clients-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/appointments.ts", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/_firebase-admin.mjs", import.meta.url), "utf8"),
@@ -589,14 +629,15 @@ test("keeps barber calendars scoped and client directory counters current", asyn
   assert.match(bookingHome, /listenForForegroundPushNotifications\(\(\) => \{[\s\S]*refreshClientAppointmentData\(\)/);
   assert.match(bookingHome, /new BroadcastChannel\("bnb-appointment-sync"\)/);
   assert.match(
-    bookingHome,
-    /Klienci\s*<small>\{directoryAdminClientProfiles\.length\}<\/small>/,
+    clientsScreen,
+    /Klienci\s*<small>\{directoryClients\.length\}<\/small>/,
   );
 });
 
 test("separates active visits from the client directory", async () => {
-  const [bookingHome, styles] = await Promise.all([
+  const [bookingHome, clientsScreen, styles] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/screens/admin-clients-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
@@ -610,24 +651,25 @@ test("separates active visits from the client directory", async () => {
     bookingHome,
     /const calendarBookingClients = useMemo\(\(\) => \{[\s\S]*return adminClientProfiles\.filter/,
   );
-  assert.match(bookingHome, /role="tablist" aria-label="Widok bazy klientów"/);
-  assert.match(bookingHome, /Aktywne wizyty/);
-  assert.match(bookingHome, /clientWorkspaceTab === "directory"/);
+  assert.match(clientsScreen, /role="tablist" aria-label="Widok bazy klientów"/);
+  assert.match(clientsScreen, /Aktywne wizyty/);
+  assert.match(clientsScreen, /workspaceTab === "directory"/);
   assert.match(styles, /\.client-workspace-tabs/);
   assert.match(styles, /\.client-workspace-tab-icon/);
-  assert.match(bookingHome, /<Calendar[\s\S]*className="client-workspace-tab-icon appointments"/);
+  assert.match(clientsScreen, /<Calendar[\s\S]*className="client-workspace-tab-icon appointments"/);
 });
 
 test("keeps the client barber selection and resilient profile photos", async () => {
-  const [bookingHome, styles, appointmentApi] = await Promise.all([
+  const [bookingHome, profileAvatar, styles, appointmentApi] = await Promise.all([
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/profile-avatar.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
   ]);
 
-  assert.match(bookingHome, /function ProfileAvatar/);
-  assert.match(bookingHome, /referrerPolicy="no-referrer"/);
-  assert.match(bookingHome, /onError=\{\(\) => setFailedPhotoUrl/);
+  assert.match(profileAvatar, /function ProfileAvatar/);
+  assert.match(profileAvatar, /referrerPolicy="no-referrer"/);
+  assert.match(profileAvatar, /onError=\{\(\) => setFailedPhotoUrl/);
   assert.match(bookingHome, /const sourceSize = Math\.min\(image\.naturalWidth, image\.naturalHeight\)/);
   assert.match(bookingHome, /className="client-barber-picker booking-scroll-target"/);
   assert.match(bookingHome, /<span>1<\/span> Barber/);
