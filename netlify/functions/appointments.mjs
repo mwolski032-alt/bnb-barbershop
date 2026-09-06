@@ -8,6 +8,7 @@ import {
   verifyRequestUser,
 } from "./_firebase-admin.mjs";
 import { mutateScopedDatabase } from "./_scoped-database.mjs";
+import { inspectClientMerge, mergeConfirmedClients } from "./lib/client-merge.mjs";
 import {
   cleanText,
   isFirebaseKeySafe,
@@ -39,6 +40,7 @@ const allowedActions = new Set([
   "settle_admin",
   "mark_no_show_admin",
   "upsert_admin_client",
+  "merge_admin_clients",
   "hide_admin_client",
   "delete_admin_client",
   "join_waitlist",
@@ -421,12 +423,13 @@ const requireCurrentVersion = (operation, appointment) =>
     ? null
     : staleVersionError(operation, appointment);
 
-const mutateAppointmentOperation = async (accessToken, operation, action, user, mutation) =>
+const mutateAppointmentOperation = async (accessToken, operation, action, user, mutation, requestIdentity = "") =>
   mutateDatabaseRoot(accessToken, async (database) => {
     database.appointmentOperations ??= {};
     const existingOperation = database.appointmentOperations[operation.operationId];
     if (existingOperation) {
-      if (existingOperation.actorUid !== user.uid || existingOperation.action !== action) {
+      if (existingOperation.actorUid !== user.uid || existingOperation.action !== action ||
+        (requestIdentity && existingOperation.requestIdentity !== requestIdentity)) {
         return {
           error: "Identyfikator operacji został już użyty przez inną operację.",
           code: "operation_conflict",
@@ -456,6 +459,7 @@ const mutateAppointmentOperation = async (accessToken, operation, action, user, 
       appointmentId: result.appointment?.id ?? result.notificationPayload?.id ?? "",
       appointment: result.appointment,
       client: result.client,
+      ...(result.clientMergeAudit ? { clientMergeAudit: result.clientMergeAudit, requestIdentity } : {}),
       waitlistEntry: result.waitlistEntry,
       notificationPayload: result.notificationPayload,
       notificationOperationIds: result.notificationOperationIds ?? [],
@@ -478,7 +482,7 @@ const linkVerifiedClientAccount = async (user, accessToken) => {
     return { linked: false };
   }
 
-  const [accountClient, emailClients, userAppointments, emailAppointments, userWaitlist, emailWaitlist] =
+  const [accountClient, rawEmailClients, userAppointments, rawEmailAppointments, userWaitlist, rawEmailWaitlist] =
     await Promise.all([
       readDatabase(`clients/${encodeURIComponent(user.uid)}`, accessToken),
       readDatabaseQuery("clients", { orderBy: "email", equalTo: verifiedEmail }, accessToken),
@@ -495,7 +499,14 @@ const linkVerifiedClientAccount = async (user, accessToken) => {
         accessToken,
       ),
     ]);
-  const matchingClientIds = Object.keys(emailClients ?? {});
+  // Repair existing UID links only. A contact match must never claim a manual
+  // card during login; moving that history requires the barber's confirmation.
+  const ownRecords = records => Object.fromEntries(Object.entries(records ?? {})
+    .filter(([, record]) => record.userId === user.uid));
+  const emailClients = ownRecords(rawEmailClients);
+  const emailAppointments = ownRecords(rawEmailAppointments);
+  const emailWaitlist = ownRecords(rawEmailWaitlist);
+  const matchingClientIds = Object.keys(emailClients);
   const clientLinkedAppointments = await Promise.all(
     matchingClientIds.map((clientId) =>
       readDatabaseQuery("appointments", { orderBy: "clientId", equalTo: clientId }, accessToken),
@@ -530,7 +541,7 @@ const linkVerifiedClientAccount = async (user, accessToken) => {
       ]),
     );
     const emailClientEntries = Object.entries(normalizedClients).filter(
-      ([, client]) => normalizeEmail(client.email) === verifiedEmail,
+      ([, client]) => client.userId === user.uid,
     );
     const accountClient = normalizedClients[user.uid];
     const matchingClientIds = new Set(emailClientEntries.map(([id]) => id));
@@ -543,15 +554,14 @@ const linkVerifiedClientAccount = async (user, accessToken) => {
     const relatedAppointments = normalizedAppointments.filter(
       ([, appointment]) =>
         appointment.userId === user.uid ||
-        matchingClientIds.has(appointment.clientId) ||
-        normalizeEmail(appointment.clientEmail) === verifiedEmail,
+        matchingClientIds.has(appointment.clientId),
     );
     const relatedWaitlistEntries = Object.entries(database.waitlistEntries ?? {})
       .filter(([, entry]) => ["waiting", "offered"].includes(entry?.status))
       .map(([id, entry]) => [id, normalizeWaitlistEntry(id, entry)])
       .filter(
         ([, entry]) =>
-          entry.userId === user.uid || normalizeEmail(entry.clientEmail) === verifiedEmail,
+          entry.userId === user.uid,
       );
 
     const hasIdentityToLink =
@@ -632,8 +642,7 @@ const linkVerifiedClientAccount = async (user, accessToken) => {
       const canonicalClientId = clientResult.aliases[appointment.clientId];
       const belongsToAccount =
         appointment.userId === user.uid ||
-        Boolean(canonicalClientId) ||
-        normalizeEmail(appointment.clientEmail) === verifiedEmail;
+        Boolean(canonicalClientId);
       if (!belongsToAccount) continue;
 
       const next = {
@@ -1006,12 +1015,29 @@ const upsertAdminClient = async (body, admin, user, accessToken, operation) => {
     user,
     (database) => {
     database.appointments ??= {};
+    const existingClient = database.clients?.[clientId];
+    if (existingClient && !admin.isOwner && existingClient.barberIds?.[barberId] !== true) {
+      return { error: "Brak dostępu do tej karty klienta.", status: 403 };
+    }
+    if (clientValue.userId && clientValue.userId !== existingClient?.userId) {
+      return { error: "Przypisanie konta wymaga zatwierdzonego scalenia.", status: 403 };
+    }
+    if (existingClient?.userId) {
+      clientValue.userId = existingClient.userId;
+      clientValue.email = existingClient.email;
+    } else {
+      delete clientValue.userId;
+    }
     for (const appointmentId of appointmentIds) {
       const current = database.appointments[appointmentId]
         ? normalizeAppointment(appointmentId, database.appointments[appointmentId])
         : null;
       if (!current || current.barberId !== barberId) {
         return { error: "Brak dostępu do jednej z wizyt klienta.", status: 403 };
+      }
+      if ((current.clientId !== clientId && database.clients?.[current.clientId]) ||
+        (current.userId && current.userId !== existingClient?.userId)) {
+        return { error: "Przeniesienie historii wymaga zatwierdzonego scalenia.", status: 403 };
       }
     }
 
@@ -1036,6 +1062,8 @@ const upsertAdminClient = async (body, admin, user, accessToken, operation) => {
 
     let savedAppointment;
     if (proposed) {
+      proposed.userId = clientResult.client.userId || "";
+      proposed.clientEmail = clientResult.client.email || "";
       if (database.appointments[proposed.id]) return { error: "Ta wizyta już istnieje." };
       if (operation.expectedVersion !== 0) {
         return staleVersionError(operation, null);
@@ -1312,7 +1340,31 @@ const handler = async (request) => {
     const admin = await getAdminContext(user, accessToken);
 
     if (request.method === "GET") {
-      const requestedBarberId = cleanText(new URL(request.url).searchParams.get("barberId"), 80);
+      const params = new URL(request.url).searchParams;
+      if (params.has("mergeSourceId") || params.has("mergeTargetId")) {
+        if (!canAdminAccess(admin, "clients") || !canAdminAccess(admin, "schedule")) {
+          return jsonResponse({ ok: false, error: "Brak uprawnień do scalania klientów." }, 403);
+        }
+        const sourceId = cleanText(params.get("mergeSourceId"), 120);
+        const targetId = cleanText(params.get("mergeTargetId"), 120);
+        if (![sourceId, targetId].every(isFirebaseKeySafe)) {
+          return jsonResponse({ ok: false, error: "Wybierz dwie karty klientów." }, 400);
+        }
+        const [source, target, appointments, waitlistEntries, team] = await Promise.all([
+          readDatabase(`clients/${encodeURIComponent(sourceId)}`, accessToken),
+          readDatabase(`clients/${encodeURIComponent(targetId)}`, accessToken),
+          readDatabaseQuery("appointments", { orderBy: "clientId", equalTo: sourceId }, accessToken),
+          readDatabase("waitlistEntries", accessToken),
+          readDatabase("team", accessToken),
+        ]);
+        const result = inspectClientMerge({
+          clients: { [sourceId]: source, [targetId]: target }, appointments, waitlistEntries, team,
+        }, user.uid, sourceId, targetId);
+        return result.error
+          ? jsonResponse({ ok: false, error: result.error }, result.status)
+          : jsonResponse({ ok: true, mergePreview: result.preview });
+      }
+      const requestedBarberId = cleanText(params.get("barberId"), 80);
       const identityLink = await linkVerifiedClientAccount(user, accessToken);
       return jsonResponse({
         ok: true,
@@ -1336,6 +1388,16 @@ const handler = async (request) => {
     }
     if (scheduleAdminActions.has(action) && !canAdminAccess(admin, "schedule")) {
       return jsonResponse({ ok: false, error: "Brak uprawnień do terminarza." }, 403);
+    }
+
+    if (action === "merge_admin_clients") {
+      if (!canAdminAccess(admin, "clients") || !canAdminAccess(admin, "schedule")) {
+        return jsonResponse({ ok: false, error: "Brak uprawnień do scalania klientów." }, 403);
+      }
+      const result = await mutateAppointmentOperation(accessToken, operation, action, user,
+        database => mergeConfirmedClients(database, user.uid, body, operation.operationId),
+        JSON.stringify([body.sourceClientId, body.targetClientId]));
+      return synchronizedOperationResponse(result, user, admin, accessToken, !result.error);
     }
 
     if (action === "upsert_admin_client") {
@@ -1446,6 +1508,8 @@ const handler = async (request) => {
       if (!client || client.barberIds?.[proposed.barberId] !== true) {
         return jsonResponse({ ok: false, error: "Klient nie jest przypisany do tego barbera." }, 400);
       }
+      proposed.userId = client.userId || "";
+      proposed.clientEmail = client.email || "";
     }
 
     const result = await mutateAppointmentOperation(

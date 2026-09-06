@@ -256,7 +256,7 @@ test("data migration creates a missing client relation from appointment identity
   assert.equal(data.clients["client-uid"].barberIds.mateusz, true);
 });
 
-test("runtime client upsert merges a manual card into the authenticated client identity", () => {
+test("runtime client upsert keeps a manual card separate despite matching contact details", () => {
   const result = upsertCanonicalClient(
     {
       manual: {
@@ -280,9 +280,9 @@ test("runtime client upsert merges a manual card into the authenticated client i
   );
 
   assert.equal(result.error, undefined);
-  assert.deepEqual(Object.keys(result.clients), ["client-uid"]);
-  assert.deepEqual(result.client.barberIds, { mateusz: true, kacper: true });
-  assert.deepEqual(result.aliases, { manual: "client-uid", "client-uid": "client-uid" });
+  assert.deepEqual(Object.keys(result.clients), ["manual", "client-uid"]);
+  assert.deepEqual(result.client.barberIds, { kacper: true });
+  assert.deepEqual(result.aliases, { "client-uid": "client-uid" });
 });
 
 test("runtime client upsert keeps authenticated family members sharing a phone separate", () => {
@@ -316,7 +316,7 @@ test("runtime client upsert keeps authenticated family members sharing a phone s
   assert.equal(result.clients["client-b"].email, "anna@example.com");
 });
 
-test("verified account merge trusts the signed-in email even when a manual phone was mistyped", () => {
+test("even a verified e-mail does not automatically claim a manually entered card", () => {
   const result = upsertCanonicalClient(
     {
       manual: {
@@ -341,9 +341,9 @@ test("verified account merge trusts the signed-in email even when a manual phone
   );
 
   assert.equal(result.error, undefined);
-  assert.deepEqual(Object.keys(result.clients), ["client-uid"]);
+  assert.deepEqual(Object.keys(result.clients), ["manual", "client-uid"]);
   assert.equal(result.client.userId, "client-uid");
-  assert.deepEqual(result.client.barberIds, { mateusz: true, kacper: true });
+  assert.deepEqual(result.client.barberIds, { kacper: true });
 });
 
 test("integrity validation rejects duplicated account assignments and invalid availability ranges", () => {

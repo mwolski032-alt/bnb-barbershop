@@ -79,7 +79,7 @@ test("FIXED IN STAGE 4: client booking rolls back when the atomic path patch fai
   assert.equal(fixture.database.appointments[appointment.id], undefined);
 });
 
-test("FIXED IN STAGE 4: a signed-in client is merged with a manual card sharing the same email", async () => {
+test("manual cards with matching e-mail await barber approval after a new booking", async () => {
   fixture.reset();
   fixture.database.clients["manual-client"] = {
     id: "manual-client",
@@ -101,7 +101,7 @@ test("FIXED IN STAGE 4: a signed-in client is merged with a manual card sharing 
   const matchingRecords = Object.values(fixture.database.clients).filter(
     (client) => client.email === "client-a@example.com",
   );
-  assert.equal(matchingRecords.length, 1);
+  assert.equal(matchingRecords.length, 2);
 });
 
 test("FIXED: authenticated family members sharing a phone can book independently", async () => {

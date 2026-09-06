@@ -6409,6 +6409,35 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   opacity: 0.3;
 }
 
+.client-merge-panel {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid rgba(100, 140, 220, 0.25);
+  border-radius: 16px;
+  background: rgba(100, 140, 220, 0.06);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.client-merge-panel p { margin: 0.5rem 0 0.75rem; overflow-wrap: anywhere; }
+.client-merge-form { display: grid; gap: 0.875rem; margin-top: 1rem; }
+.client-merge-form label { display: grid; gap: 0.375rem; }
+.client-merge-form select {
+  width: 100%; min-width: 0; padding: 0.75rem; border-radius: 10px;
+  border: 1px solid #41516b; background: #172033; color: #f8fafc; font-size: 1rem;
+}
+.client-merge-panel button {
+  min-height: 44px; padding: 0.65rem 1rem; border: 0; border-radius: 10px;
+  background: #21395c; color: #fff; font: inherit; cursor: pointer;
+}
+.client-merge-panel button:disabled { opacity: 0.55; cursor: default; }
+.client-merge-preview { border-top: 1px solid #cbd5e1; padding-top: 0.75rem; }
+.client-merge-form .client-merge-confirm {
+  display: flex; align-items: flex-start; gap: 0.625rem; margin: 1rem 0;
+}
+.client-merge-confirm input { width: 20px; height: 20px; flex-shrink: 0; margin-top: 0.15rem; }
+.client-merge-error { color: #ffaba6; }
+
 .client-profile-footer {
   display: flex;
   justify-content: flex-end;

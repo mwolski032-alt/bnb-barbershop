@@ -15,11 +15,21 @@ export type AppointmentMutationAction =
   | "settle_admin"
   | "mark_no_show_admin"
   | "upsert_admin_client"
+  | "merge_admin_clients"
   | "hide_admin_client"
   | "delete_admin_client"
   | "join_waitlist"
   | "leave_waitlist"
   | "remove_waitlist_admin";
+
+export type ClientMergePreview = {
+  source: { id: string; name: string; email: string; phone: string };
+  target: { id: string; name: string; email: string; phone: string };
+  appointmentCount: number;
+  waitlistCount: number;
+  samePhone: boolean;
+  token: string;
+};
 
 export type AppointmentApiResult<T> = {
   ok: boolean;
@@ -31,6 +41,7 @@ export type AppointmentApiResult<T> = {
   appointment?: T;
   currentAppointment?: T;
   client?: unknown;
+  mergePreview?: ClientMergePreview;
   waitlistEntry?: unknown;
   notificationQueued?: boolean;
   notificationOperationIds?: string[];
@@ -133,4 +144,14 @@ export const fetchClientAppointmentData = async <T>(barberId = "") => {
     cache: "no-store",
   });
   return readResult<T>(response);
+};
+
+export const fetchClientMergePreview = async (sourceId: string, targetId: string) => {
+  const params = new URLSearchParams({ mergeSourceId: sourceId, mergeTargetId: targetId });
+  const response = await fetch(`/.netlify/functions/appointments?${params}`, {
+    headers: await getAuthorizationHeaders(), cache: "no-store",
+  });
+  const result = await readResult<never>(response);
+  if (!result.mergePreview) throw new Error("Nie udało się pobrać podglądu scalenia.");
+  return result.mergePreview;
 };

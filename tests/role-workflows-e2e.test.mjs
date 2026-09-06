@@ -53,7 +53,7 @@ test("E2E roles: client, Mateusz, Kacper and owner see only their API calendars"
   assert.equal(JSON.stringify(client.occupancy).includes("client-b@example.com"), false);
 });
 
-test("E2E Google identity: login links manual visits and routes later notifications to the client", async () => {
+test("E2E Google identity: only an approved merge links manual visits and later notifications", async () => {
   fixture.reset();
   fixture.database.clients["manual-google-client"] = {
     id: "manual-google-client",
@@ -87,8 +87,20 @@ test("E2E Google identity: login links manual visits and routes later notificati
   assert.equal(loginResponse.status, 200, JSON.stringify(loginResult));
   assert.deepEqual(
     loginResult.clientAppointments.map(({ id }) => id).sort(),
-    ["manual-google-visit", "mateusz-upcoming"],
+    ["mateusz-upcoming"],
   );
+  assert.ok(fixture.database.clients["manual-google-client"]);
+  const previewResponse = await appointmentsHandler(new Request(
+    `https://bnb.example/.netlify/functions/appointments?mergeSourceId=manual-google-client&mergeTargetId=${clientAUid}`,
+    { headers: { Authorization: `Bearer ${tokens.mateusz}` } },
+  ));
+  const { mergePreview } = await previewResponse.json();
+  assert.equal(previewResponse.status, 200);
+  const mergeResponse = await request(tokens.mateusz, "POST", {
+    action: "merge_admin_clients", expectedVersion: 0, sourceClientId: "manual-google-client",
+    targetClientId: clientAUid, previewToken: mergePreview.token, confirmed: true,
+  });
+  assert.equal(mergeResponse.status, 200, await mergeResponse.text());
   assert.equal(fixture.database.clients["manual-google-client"], undefined);
   assert.equal(fixture.database.clients[clientAUid].userId, clientAUid);
   assert.equal(fixture.database.appointments["manual-google-visit"].clientId, clientAUid);
@@ -110,7 +122,7 @@ test("E2E Google identity: login links manual visits and routes later notificati
   assert.equal(fixture.database.notificationOutbox[operationId].userId, clientAUid);
 });
 
-test("E2E client identity: first signed-in booking merges a manual card without e-mail by phone", async () => {
+test("E2E client identity: a typed phone cannot claim manual history during booking or login", async () => {
   fixture.reset();
   fixture.database.clients["manual-without-email"] = {
     id: "manual-without-email",
@@ -149,19 +161,19 @@ test("E2E client identity: first signed-in booking merges a manual card without 
     client: { firstName: "Klient", lastName: "A", phone: "511222333" },
   });
   assert.equal(response.status, 200, await response.text());
-  assert.equal(fixture.database.clients["manual-without-email"], undefined);
-  assert.equal(fixture.database.appointments["manual-visit-without-email"].clientId, clientAUid);
-  assert.equal(fixture.database.appointments["manual-visit-without-email"].userId, clientAUid);
+  assert.ok(fixture.database.clients["manual-without-email"]);
+  assert.equal(fixture.database.appointments["manual-visit-without-email"].clientId, "manual-without-email");
+  assert.equal(fixture.database.appointments["manual-visit-without-email"].userId, undefined);
   assert.equal(
     fixture.database.appointments["manual-visit-without-email"].clientEmail,
-    "client-a@example.com",
+    "",
   );
 
   const historyResponse = await request(tokens.clientA, "GET");
   const history = await historyResponse.json();
   assert.equal(
     history.clientAppointments.some(({ id }) => id === "manual-visit-without-email"),
-    true,
+    false,
   );
 });
 

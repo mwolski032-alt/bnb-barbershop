@@ -154,12 +154,14 @@ test("Firebase rules: client cannot read private team assignments, appointments 
   await assertFails(set(ref(database, `appointmentSync/users/${clientUid}/revision`), 5));
 });
 
-test("Firebase rules: barber can update own appointment but cannot take over a foreign one", async () => {
+test("Firebase rules: even barber and owner must use the server for appointment identity changes", async () => {
   const database = databaseFor(mateuszUid);
 
-  await assertSucceeds(
+  await assertFails(
     update(ref(database, "appointments/mateusz-appointment"), { status: "cancelled" }),
   );
+  await assertFails(update(ref(database, "appointments/mateusz-appointment"), { userId: "other-client" }));
+  await assertFails(update(ref(databaseFor(ownerUid), "appointments/mateusz-appointment"), { clientId: "other-client" }));
   await assertFails(
     update(ref(database, "appointments/kacper-appointment"), { barberId: "mateusz" }),
   );

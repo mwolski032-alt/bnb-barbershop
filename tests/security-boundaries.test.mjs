@@ -11,11 +11,10 @@ test("barber appointment reads are scoped instead of granting root collection ac
   assert.doesNotMatch(rules.appointments[".read"], /team\/barbers/);
 });
 
-test("changing barberId cannot grant write access to an existing foreign appointment", () => {
+test("direct appointment writes cannot bypass the server's merge approval and identity checks", () => {
   const writeRule = rules.appointments.$appointmentId[".write"];
 
-  assert.match(writeRule, /data\.child\('barberId'\)/);
-  assert.match(writeRule, /newData\.child\('barberId'\)/);
+  assert.equal(writeRule, false);
 });
 
 test("client directory rules do not grant every active barber collection-wide access", () => {

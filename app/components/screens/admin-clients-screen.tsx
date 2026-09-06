@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Calendar, Mail, MessageSquare, Phone, Users } from "lucide-react";
 
 import ProfileAvatar from "../profile-avatar";
@@ -26,6 +26,7 @@ type AdminAppointment = {
 
 type AdminClientProfile = {
   id: string;
+  userId?: string;
   name: string;
   email: string;
   phone: string;
@@ -111,6 +112,17 @@ export default function AdminClientsScreen({
   isPotentialNoShow,
   isActionPending,
 }: AdminClientsScreenProps) {
+  const matchingPhones = useMemo(() => {
+    const kinds = new Map<string, Set<boolean>>();
+    for (const client of [...directoryClients, ...activeClients]) {
+      const phone = getPhoneDigits(client.phone);
+      if (phone.length !== 9) continue;
+      const group = kinds.get(phone) ?? new Set<boolean>();
+      group.add(Boolean(client.userId));
+      kinds.set(phone, group);
+    }
+    return new Set([...kinds].filter(([, group]) => group.size === 2).map(([phone]) => phone));
+  }, [directoryClients, activeClients]);
   return (
     <div className="admin-tab-panel admin-workspace-panel active">
       {workspaceTabs}
@@ -266,6 +278,9 @@ export default function AdminClientsScreen({
                       </small>
                     </span>
                     <span className="client-row-statuses">
+                      {canManageClients && canManageSchedule && matchingPhones.has(phoneDigits) ? (
+                        <em className="appointment-status rescheduled">Możliwe scalenie</em>
+                      ) : null}
                       {settlementAppointment ? (
                         <em
                           className={`appointment-status ${

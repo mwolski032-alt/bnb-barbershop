@@ -91,6 +91,7 @@ const AdminCalendarScreen = lazy(() => import("./components/screens/admin-calend
 const AdminClientsScreen = lazy(() => import("./components/screens/admin-clients-screen"));
 const AdminAnalyticsScreen = lazy(() => import("./components/screens/admin-analytics-screen"));
 const AdminSettingsScreen = lazy(() => import("./components/screens/admin-settings-screen"));
+const ClientMergePanel = lazy(() => import("./components/client-merge-panel"));
 
 const googleRedirectPendingKey = "bnb-google-redirect-pending";
 
@@ -269,6 +270,7 @@ type AnalyticsPeriod = "week" | "month" | "quarter" | "year";
 
 type AdminClientProfile = {
   id: string;
+  userId?: string;
   name: string;
   email: string;
   phone: string;
@@ -430,6 +432,7 @@ const appointmentActionFeedback: Record<
   settle_admin: { pending: "Rozliczam wizytę…", success: "Wizyta została rozliczona." },
   mark_no_show_admin: { pending: "Zapisuję nieobecność…", success: "Nieobecność została zapisana." },
   upsert_admin_client: { pending: "Zapisuję dane klienta…", success: "Dane klienta zostały zapisane." },
+  merge_admin_clients: { pending: "Łączę karty klientów…", success: "Karty zostały scalone. Historia jest przypisana do wybranego konta." },
   hide_admin_client: { pending: "Aktualizuję kartotekę…", success: "Kartoteka została zaktualizowana." },
   delete_admin_client: { pending: "Usuwam klienta…", success: "Klient został usunięty." },
   join_waitlist: { pending: "Zapisuję na listę rezerwową…", success: "Zapisano na listę rezerwową." },
@@ -1927,6 +1930,7 @@ export function BookingHome() {
 
         return {
           id,
+          userId: clientRecord?.userId,
           name: clientRecord ? getClientFullName(clientRecord) : newestContact?.clientName ?? "Klient",
           email: clientRecord?.email || newestContact?.clientEmail || "",
           phone: clientRecord?.phone || newestContact?.phone || "",
@@ -7107,6 +7111,25 @@ export function BookingHome() {
                 ) : null}
               </div>
             </div>
+
+            {canAccessAdminClients && canAccessAdminSchedule ? (
+              <Suspense fallback={<p>Ładowanie scalania klientów…</p>}>
+                <ClientMergePanel
+                  key={selectedAdminClient.id}
+                  current={selectedAdminClient}
+                  clients={adminClientProfiles.filter(profile => clientRecords.some(record => record.id === profile.id))}
+                  onMerge={async preview => {
+                    await runAppointmentOperation("merge_admin_clients", {
+                      sourceClientId: preview.source.id,
+                      targetClientId: preview.target.id,
+                      previewToken: preview.token,
+                      confirmed: true,
+                    }, { key: `merge_admin_clients:${preview.source.id}:${preview.target.id}:${preview.token}`, expectedVersion: 0 });
+                    setSelectedAdminClientId(preview.target.id);
+                  }}
+                />
+              </Suspense>
+            ) : null}
 
             <div className="client-history-heading">
               <div>

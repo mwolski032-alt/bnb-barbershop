@@ -197,7 +197,13 @@ export const upsertCanonicalClient = (clients = {}, requestedId, value = {}, opt
     ...(normalizedClients[clientId] ?? {}),
     ...value,
   });
-  const group = findDuplicateClientGroups(normalizedClients).find((ids) => ids.includes(clientId)) ?? [clientId];
+  // Contact details entered in a form are not proof of account ownership.
+  // Phone matches are suggestions for an explicit, barber-approved merge.
+  const requested = normalizedClients[clientId];
+  const group = Object.entries(normalizedClients)
+    .filter(([id, client]) => id === clientId ||
+      (requested.userId && client.userId === requested.userId))
+    .map(([id]) => id);
   const records = group.map((id) => ({ id, client: normalizedClients[id] }));
   const mergeError = validateClientGroupCanMerge(records, options);
   if (mergeError) return { error: `Nie można bezpiecznie połączyć klientów: ${mergeError}.` };
