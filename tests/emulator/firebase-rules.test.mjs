@@ -248,3 +248,76 @@ test("Firebase rules: barber configuration enforces canonical barber relations",
     }),
   );
 });
+
+// Exercise the actual REST transport used by the server, not just mocked claims.
+const guardedRestPatch = async (owner, updates, { override = true, admin = true } = {}) => {
+  const emulatorHost = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
+  assert.ok(emulatorHost, "These tests must never contact production");
+  const url = new URL(`http://${emulatorHost}/.json`);
+  url.searchParams.set("ns", projectId);
+  if (override) url.searchParams.set("auth_variable_override", JSON.stringify({
+    uid: "bnb-schedule-writer", token: { bnbScheduleWriter: true, lockOwner: owner },
+  }));
+  return fetch(url, { method: "PATCH", headers: {
+    "Content-Type": "application/json", ...(admin ? { Authorization: "Bearer owner" } : {}),
+  }, body: JSON.stringify(updates) });
+};
+const setLease = (owner, expiresAt) => environment.withSecurityRulesDisabled(context =>
+  set(ref(context.database(), "systemLocks/appointments"), { owner, expiresAt }));
+
+test("Firebase rules: scoped REST commit succeeds only with the live server lease", async () => {
+  await setLease("live-lease", Date.now() + 60000);
+  const updates = {
+    "appointments/fenced-test": { id: "fenced-test", status: "confirmed" },
+    "clients/fenced-client": { id: "fenced-client" },
+    "waitlistEntries/fenced-waitlist": { id: "fenced-waitlist" },
+    "appointmentOperations/fenced-operation": { id: "fenced-operation" },
+    "notificationOutbox/fenced-notification": { id: "fenced-notification" },
+    "appointmentSync/users/fenced-client": { revision: 1 },
+  };
+  const result = await guardedRestPatch("live-lease", updates);
+  assert.equal(result.status, 200, await result.text());
+  await environment.withSecurityRulesDisabled(async context => {
+    for (const [path, value] of Object.entries(updates)) {
+      assert.deepEqual((await get(ref(context.database(), path))).val(), value);
+    }
+  });
+  await setLease("next-lease", Date.now() + 60000);
+  const stale = await guardedRestPatch("live-lease", {
+    "appointments/fenced-test/status": "rescheduled",
+    "appointmentOperations/rejected-operation": { id: "rejected-operation" },
+  });
+  assert.equal(stale.status, 401, await stale.text());
+  await environment.withSecurityRulesDisabled(async context => {
+    assert.equal((await get(ref(context.database(), "appointments/fenced-test/status"))).val(), "confirmed");
+    assert.equal((await get(ref(context.database(), "appointmentOperations/rejected-operation"))).exists(), false);
+  });
+});
+
+test("Firebase rules: expired lease cannot commit or renew itself inside the patch", async () => {
+  await setLease("expired-lease", Date.now() - 1);
+  const expired = await guardedRestPatch("expired-lease", { "appointments/expired-test": { id: "expired-test" } });
+  assert.equal(expired.status, 401, await expired.text());
+  const selfRenewed = await guardedRestPatch("expired-lease", {
+    "systemLocks/appointments/expiresAt": Date.now() + 60000,
+    "appointments/expired-test": { id: "expired-test" },
+  });
+  assert.equal(selfRenewed.status, 401, await selfRenewed.text());
+});
+
+test("Firebase rules: knowing the lease ID does not grant clients writer privileges", async () => {
+  await setLease("known-lease", Date.now() + 60000);
+  const anonymous = await guardedRestPatch("known-lease", { "appointments/spoofed": { id: "spoofed" } }, { admin: false });
+  assert.ok([400, 401, 403].includes(anonymous.status), await anonymous.text());
+  await assertFails(update(ref(databaseFor("bnb-schedule-writer")), { "appointments/spoofed": { id: "spoofed" } }));
+  await assertFails(set(ref(databaseFor(clientUid), "systemLocks/appointments"), { owner: "known-lease", expiresAt: Date.now() + 60000 }));
+  await assertFails(get(ref(databaseFor(clientUid), "systemLocks/appointments")));
+});
+
+test("Firebase rules: even a valid writer cannot change team privileges, tokens or lock records", async () => {
+  await setLease("restricted-lease", Date.now() + 60000);
+  for (const path of ["team/owner/active", "notificationTokens/other-client/device", "systemLocks/appointments/owner"]) {
+    const result = await guardedRestPatch("restricted-lease", { [path]: "forbidden" });
+    assert.equal(result.status, 401, `${path}: ${await result.text()}`);
+  }
+});

@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 
 export const ownerUid = "xkyDu2Lb1Ma8McF7yfyv8PIAj1M2";
 export const mateuszUid = "XxBe4dwVYWZPtl004J4tWq6AMZ73";
@@ -199,7 +199,8 @@ const clone = (value) => structuredClone(value);
 
 export const installAppointmentsFixture = () => {
   let database = createInitialDatabase();
-  let revision = 1;
+  let requestHook = null;
+  const etagFor = (path) => `"${createHash("sha256").update(JSON.stringify(readPath(database, path) ?? null)).digest("hex")}"`;
   const failingPatchPaths = new Set();
   const failingPutPaths = new Set();
 
@@ -225,11 +226,12 @@ export const installAppointmentsFixture = () => {
     const parsed = new URL(url);
     const path = parsed.pathname.replace(/^\//, "").replace(/\.json$/, "");
     const method = options.method ?? "GET";
+    await requestHook?.({ path, method, options, searchParams: parsed.searchParams });
 
     if (method === "GET") {
       const value = applyQuery(readPath(database, path), parsed.searchParams);
       return new Response(JSON.stringify(value ?? null), {
-        headers: options.headers?.["X-Firebase-ETag"] ? { ETag: `"${revision}"` } : {},
+        headers: options.headers?.["X-Firebase-ETag"] ? { ETag: etagFor(path) } : {},
       });
     }
 
@@ -237,12 +239,11 @@ export const installAppointmentsFixture = () => {
       if (failingPutPaths.has(path)) {
         return new Response("Forced put failure", { status: 500 });
       }
-      if (options.headers?.["If-Match"] && options.headers["If-Match"] !== `"${revision}"`) {
+      if (options.headers?.["If-Match"] && options.headers["If-Match"] !== etagFor(path)) {
         return new Response("Precondition failed", { status: 412 });
       }
       if (path === "") database = JSON.parse(options.body);
       else writePath(database, path, JSON.parse(options.body));
-      revision += 1;
       return Response.json(readPath(database, path) ?? null);
     }
 
@@ -250,11 +251,18 @@ export const installAppointmentsFixture = () => {
       if (failingPatchPaths.has(path)) {
         return new Response("Forced patch failure", { status: 500 });
       }
+      const auth = JSON.parse(parsed.searchParams.get("auth_variable_override") ?? "null");
+      if (auth) {
+        const lease = database.systemLocks?.appointments;
+        if (auth.uid !== "bnb-schedule-writer" || auth.token?.bnbScheduleWriter !== true ||
+            auth.token.lockOwner !== lease?.owner || !(lease.expiresAt > Date.now())) {
+          return new Response("Permission denied", { status: 401 });
+        }
+      }
       const updates = JSON.parse(options.body);
       for (const [relativePath, value] of Object.entries(updates)) {
         writePath(database, `${path}/${relativePath}`, value);
       }
-      revision += 1;
       return Response.json(readPath(database, path) ?? null);
     }
 
@@ -272,7 +280,7 @@ export const installAppointmentsFixture = () => {
     },
     reset() {
       database = createInitialDatabase();
-      revision = 1;
+      requestHook = null;
       failingPatchPaths.clear();
       failingPutPaths.clear();
     },
@@ -281,6 +289,9 @@ export const installAppointmentsFixture = () => {
     },
     failPut(path) {
       failingPutPaths.add(path);
+    },
+    onRequest(hook) {
+      requestHook = hook;
     },
     snapshot() {
       return clone(database);

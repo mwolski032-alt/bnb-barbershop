@@ -34,7 +34,7 @@ export type ClientMergePreview = {
 export type AppointmentApiResult<T> = {
   ok: boolean;
   error?: string;
-  code?: "stale_version" | "operation_conflict";
+  code?: "stale_version" | "operation_conflict" | "write_lease_expired";
   operationId?: string;
   idempotent?: boolean;
   syncRevision?: number;

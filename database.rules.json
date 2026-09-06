@@ -39,6 +39,7 @@
       }
     },
     "appointments": {
+      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now",
       ".read": "auth != null && root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true",
       ".indexOn": ["userId", "barberId", "clientId", "clientEmail"],
       "$appointmentId": {
@@ -48,14 +49,15 @@
     "clients": {
       ".indexOn": ["email", "barberIds/mateusz", "barberIds/kacper"],
       ".read": false,
-      ".write": false
+      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now"
     },
     "waitlistEntries": {
       ".indexOn": ["userId", "barberId", "clientEmail"],
       ".read": false,
-      ".write": false
+      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now"
     },
     "appointmentSync": {
+      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now",
       "revision": {
         ".read": "auth != null",
         ".write": false
@@ -82,7 +84,11 @@
     "notificationOutbox": {
       ".indexOn": ["nextAttemptAt"],
       ".read": false,
-      ".write": false
+      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now"
+    },
+    "appointmentOperations": {
+      ".read": false,
+      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now"
     }
   }
 }

@@ -145,7 +145,7 @@ test("uses scoped Firebase reads, atomic path patches and per-user realtime sign
 
   assert.doesNotMatch(appointmentApi, /readDatabase\("",/);
   assert.match(appointmentApi, /readDatabaseQuery\("appointments", \{ orderBy: "userId"/);
-  assert.match(scopedDatabase, /patchDatabase\("", updates/);
+  assert.match(scopedDatabase, /lease\.commit\(updates\)/);
   assert.doesNotMatch(scopedDatabase, /writeDatabaseIfUnchanged\("",/);
   assert.match(bookingHome, /appointmentSync\/users\/\$\{activeUser\.uid\}\/revision/);
   assert.match(bookingHome, /appointmentSync\/barbers\/\$\{activeBarberId\}\/revision/);

@@ -1,5 +1,6 @@
 import {
   getAccessToken,
+  DatabaseLeaseError,
   getAdminContext,
   jsonResponse,
   readDatabase,
@@ -211,7 +212,7 @@ const canReadAdminAppointments = (admin) =>
   admin.isOwner ||
   (admin.isAdmin && ["schedule", "clients", "analytics"].some((section) => admin.access?.[section]));
 
-const readClientBookingConfiguration = async (appointment, accessToken) => {
+const readClientBookingConfiguration = async (appointment, accessToken, { preservePrice = false } = {}) => {
   const member = await readTeamMember(appointment.barberId, accessToken);
   if (!member?.userId || member.active !== true) throw new Error("Wybrany barber jest nieaktywny.");
 
@@ -227,7 +228,7 @@ const readClientBookingConfiguration = async (appointment, accessToken) => {
     throw new Error("Wybrana usługa nie jest już dostępna.");
   }
   appointment.serviceName = cleanText(service.name, 120);
-  applyServicePrice(appointment, service);
+  if (!preservePrice) applyServicePrice(appointment, service);
   appointment.durationMinutes = Number(service.durationMinutes);
 
   const availability = await readDatabase(
@@ -1574,7 +1575,9 @@ const handler = async (request) => {
         next.rescheduledBy = action === "reschedule_client" ? "client" : "admin";
         const validationError = validateAppointmentTime(next);
         if (validationError) return { error: validationError };
-        if (action === "reschedule_client") await readClientBookingConfiguration(next, accessToken);
+        if (action === "reschedule_client") {
+          await readClientBookingConfiguration(next, accessToken, { preservePrice: true });
+        }
         if (hasConflict(appointments, next, appointmentId)) {
           return { error: "Ten termin został właśnie zajęty." };
         }
@@ -1724,6 +1727,9 @@ const handler = async (request) => {
       notificationEventByAction[action] ?? "",
     );
   } catch (error) {
+    if (error instanceof DatabaseLeaseError) {
+      return jsonResponse({ ok: false, error: error.message, code: error.code }, 409);
+    }
     const message = error instanceof Error ? error.message : "Nieznany błąd serwera.";
     const status = /nieaktywny|dostępn|godzina|minionego/i.test(message) ? 409 : 500;
     return jsonResponse({ ok: false, error: message }, status);

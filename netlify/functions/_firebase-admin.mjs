@@ -158,13 +158,15 @@ export const writeDatabase = async (path, value, accessToken) => {
   return (await response.json()) ?? null;
 };
 
-export const patchDatabase = async (path, value, accessToken) => {
+export const patchDatabase = async (path, value, accessToken, authVariableOverride) => {
   const response = await databaseRequest(path, {
     accessToken,
+    ...(authVariableOverride ? { query: { auth_variable_override: authVariableOverride } } : {}),
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(value),
   });
+  if (authVariableOverride && [401, 403].includes(response.status)) throw new DatabaseLeaseError();
   if (!response.ok) throw new Error(`Database patch failed: ${response.status}`);
   return (await response.json()) ?? null;
 };
@@ -187,7 +189,15 @@ export const writeDatabaseIfUnchanged = async (path, value, etag, accessToken) =
 const lockPath = (scope) =>
   `systemLocks/${String(scope).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80)}`;
 
+export class DatabaseLeaseError extends Error {
+  constructor() {
+    super("Zapis trwał zbyt długo lub terminarz jest właśnie zmieniany. Odśwież widok i spróbuj ponownie.");
+    this.code = "write_lease_expired";
+  }
+}
+
 export const withDatabaseLock = async (scope, accessToken, task) => {
+  if (scope !== "appointments") throw new Error("Unsupported guarded database scope.");
   const path = lockPath(scope);
   const owner = crypto.randomUUID();
   const deadline = Date.now() + 8000;
@@ -208,10 +218,27 @@ export const withDatabaseLock = async (scope, accessToken, task) => {
     );
   }
 
-  if (!acquired) throw new Error("Operacja jest chwilowo zajęta. Spróbuj ponownie.");
+  if (!acquired) throw new DatabaseLeaseError();
 
   try {
-    return await task();
+    return await task({
+      commit: async (updates) => {
+        const { etag, value } = await readDatabaseWithEtag(path, accessToken);
+        const now = Date.now();
+        if (value?.owner !== owner || Number(value.expiresAt) <= now) throw new DatabaseLeaseError();
+        const renewed = await writeDatabaseIfUnchanged(
+          path, { ...value, expiresAt: now + 15000 }, etag || "null_etag", accessToken,
+        );
+        if (!renewed) throw new DatabaseLeaseError();
+        // The server credential is deliberately downscoped: Firebase rules check the
+        // owner AND expiry atomically with the whole patch, even if the HTTP request
+        // arrives after takeover. Never fall back to an unrestricted admin write.
+        await patchDatabase("", updates, accessToken, {
+          uid: "bnb-schedule-writer",
+          token: { bnbScheduleWriter: true, lockOwner: owner },
+        });
+      },
+    });
   } finally {
     try {
       const { etag, value } = await readDatabaseWithEtag(path, accessToken);

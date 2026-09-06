@@ -1,5 +1,4 @@
 import {
-  patchDatabase,
   readDatabase,
   withDatabaseLock,
 } from "./_firebase-admin.mjs";
@@ -112,7 +111,7 @@ export const mutateScopedDatabase = async (
   mutation,
   { actorUid = "", sections = defaultSections, lockScope = "appointments" } = {},
 ) =>
-  withDatabaseLock(lockScope, accessToken, async () => {
+  withDatabaseLock(lockScope, accessToken, async (lease) => {
     const values = await Promise.all(sections.map((path) => readDatabase(path, accessToken)));
     const database = Object.fromEntries(
       sections.map((path, index) => [path, values[index] ?? {}]),
@@ -126,6 +125,6 @@ export const mutateScopedDatabase = async (
     await addRealtimeSyncMarkers(database, before, result, actorUid, accessToken);
     const updates = {};
     collectPatch(before, database, "", updates);
-    if (Object.keys(updates).length > 0) await patchDatabase("", updates, accessToken);
+    if (Object.keys(updates).length > 0) await lease.commit(updates);
     return { ...result, database };
   });

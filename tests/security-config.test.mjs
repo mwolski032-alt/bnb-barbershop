@@ -20,9 +20,15 @@ test("Firebase rules deny root access and keep client records admin-only", async
   assert.equal(rules.rules.notificationTokens.$uid[".read"], "auth != null && auth.uid === $uid");
   assert.equal(rules.rules.notificationTokens.$uid[".write"], "auth != null && auth.uid === $uid");
   assert.equal(rules.rules.notificationOutbox[".read"], false);
-  assert.equal(rules.rules.notificationOutbox[".write"], false);
+  for (const section of ["appointments", "clients", "waitlistEntries", "appointmentSync", "appointmentOperations", "notificationOutbox"]) {
+    const guard = rules.rules[section][".write"];
+    assert.match(guard, /auth\.uid === 'bnb-schedule-writer'/);
+    assert.match(guard, /auth\.token\.bnbScheduleWriter === true/);
+    assert.match(guard, /auth\.token\.lockOwner === root\.child\('systemLocks\/appointments\/owner'\)\.val\(\)/);
+    assert.match(guard, /root\.child\('systemLocks\/appointments\/expiresAt'\)\.val\(\) > now/);
+  }
   assert.deepEqual(rules.rules.notificationOutbox[".indexOn"], ["nextAttemptAt"]);
-  assert.equal(rules.rules.appointmentOperations, undefined);
+  assert.equal(rules.rules.appointmentOperations[".read"], false);
   assert.equal(rules.rules.inAppNotifications, undefined);
 });
 
