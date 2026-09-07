@@ -130,7 +130,7 @@ test("shows immediate progress and keeps notification delivery off the critical 
   assert.match(appointmentClient, /notification-dispatch[\s\S]*keepalive: true/);
   assert.match(
     appointmentApi,
-    /const snapshot = await getAppointmentData\([\s\S]*?result\.database,[\s\S]*?snapshotBarberId/,
+    /const snapshot = ok && result\.minimalResponse \? \{ refreshRequired: true \} : await getAppointmentData\([\s\S]*?result\.database,[\s\S]*?snapshotBarberId/,
   );
   assert.doesNotMatch(appointmentApi, /await processNotificationJob/);
   assert.match(backgroundDispatch, /background: true/);

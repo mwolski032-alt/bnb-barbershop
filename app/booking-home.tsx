@@ -1900,7 +1900,7 @@ export function BookingHome() {
         expectedVersion: options.expectedVersion,
       })
         .then((result) => {
-          if (!applyAppointmentSnapshot(result, snapshotContext)) {
+          if (result.refreshRequired || !applyAppointmentSnapshot(result, snapshotContext)) {
             void refreshClientAppointmentData(true).catch(() => undefined);
           }
           retryOperationIdsRef.current.delete(options.key);

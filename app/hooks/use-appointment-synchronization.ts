@@ -21,7 +21,7 @@ export function useAppointmentSynchronization<T>(uid: string, barberId: string,
     return receive(result);
   }, [receive]);
 
-  const refreshClientAppointmentData = useCallback((invalidate = false): Promise<AppointmentApiResult<T>> => {
+  const refreshClientAppointmentData = useCallback((invalidate: boolean | (() => boolean) = false): Promise<AppointmentApiResult<T>> => {
     const token = captureSnapshotContext();
     const key = JSON.stringify(token);
     return queue.current.run(key, async () => {
@@ -39,7 +39,7 @@ export function useAppointmentSynchronization<T>(uid: string, barberId: string,
 
   useEffect(() => {
     if (!uid) return;
-    const refresh = (invalidate = false) => { void refreshClientAppointmentData(invalidate).catch(() => undefined); };
+    const refresh = (invalidate: boolean | (() => boolean) = false) => { void refreshClientAppointmentData(invalidate).catch(() => undefined); };
     refresh();
     const visible = () => { if (document.visibilityState === "visible") refresh(true); };
     document.addEventListener("visibilitychange", visible);
@@ -48,7 +48,10 @@ export function useAppointmentSynchronization<T>(uid: string, barberId: string,
       ...(barberId ? [{ source: "barber", path: `appointmentSync/barbers/${barberId}/revision` }] : []),
     ];
     const unsubscribers = sources.map(({ source, path }) => onValue(ref(realtimeDb, path), snapshot => {
-      if (gate.current.needsRefresh(source, snapshot.val())) refresh(true);
+      const token = gate.current.capture();
+      const revision = snapshot.val();
+      const stillNeeded = () => gate.current.isCurrent(token) && gate.current.needsRefresh(source, revision);
+      if (stillNeeded()) refresh(stillNeeded);
     }, () => undefined));
     if (typeof BroadcastChannel !== "undefined") {
       const nextChannel = new BroadcastChannel("bnb-appointment-sync");

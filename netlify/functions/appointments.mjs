@@ -426,7 +426,7 @@ const requireCurrentVersion = (operation, appointment) =>
 
 const mutateAppointmentOperation = async (accessToken, operation, action, user, mutation, requestIdentity = "") => {
   const readPlan = await createAppointmentReadPlan(accessToken, operation, action, user);
-  return mutateDatabaseRoot(accessToken, async (database) => {
+  const result = await mutateDatabaseRoot(accessToken, async (database) => {
     database.appointmentOperations ??= {};
     const existingOperation = database.appointmentOperations[operation.operationId];
     if (existingOperation) {
@@ -477,6 +477,7 @@ const mutateAppointmentOperation = async (accessToken, operation, action, user, 
       idempotent: false,
     };
   }, user.uid, readPlan);
+  return { ...result, minimalResponse: operation.input?.responseMode === "minimal" };
 };
 
 const mergeRecords = (...collections) => Object.assign({}, ...collections.filter(Boolean));
@@ -748,7 +749,9 @@ const synchronizedOperationResponse = async (
     result.notificationPayload?.barberId ||
     admin.barberId ||
     "";
-  const snapshot = await getAppointmentData(
+  // A committed write must not depend on a second, potentially slow/failing read.
+  // Older installed PWAs retain their complete snapshot response until updated.
+  const snapshot = ok && result.minimalResponse ? { refreshRequired: true } : await getAppointmentData(
     user,
     admin,
     accessToken,
@@ -1138,12 +1141,18 @@ const removeWaitlistEntry = async (body, admin, user, accessToken, operation, as
   return synchronizedOperationResponse(result, user, admin, accessToken, !result.error);
 };
 
-const handler = async (request) => {
+const handler = async (request, timings = {}) => {
   try {
+    let phaseStarted = performance.now();
     const user = await verifyRequestUser(request);
+    timings.auth = performance.now() - phaseStarted;
     if (!user) return jsonResponse({ ok: false, error: "Brak ważnej sesji." }, 401);
+    phaseStarted = performance.now();
     const accessToken = await getAccessToken();
+    timings.credentials = performance.now() - phaseStarted;
+    phaseStarted = performance.now();
     const admin = await getAdminContext(user, accessToken);
+    timings.permissions = performance.now() - phaseStarted;
 
     if (request.method === "GET") {
       const params = new URL(request.url).searchParams;
@@ -1549,4 +1558,12 @@ const handler = async (request) => {
   }
 };
 
-export default handler;
+export default async function timedHandler(request) {
+  const started = performance.now();
+  const timings = {};
+  const response = await handler(request, timings);
+  timings.total = performance.now() - started;
+  response.headers.set("Server-Timing", Object.entries(timings)
+    .map(([name, duration]) => `${name};dur=${duration.toFixed(1)}`).join(", "));
+  return response;
+}

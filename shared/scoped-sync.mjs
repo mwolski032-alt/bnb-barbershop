@@ -31,16 +31,22 @@ export const createSnapshotGate = () => {
 export const createScopedRefreshQueue = () => {
   const pending = new Map();
   return {
+    /** @param {boolean | (() => boolean)} invalidate */
     run(key, load, invalidate = false) {
       const existing = pending.get(key);
       if (existing) {
-        if (invalidate) existing.dirty = true;
+        if (typeof invalidate === "function") existing.conditions.add(invalidate);
+        else if (invalidate) existing.dirty = true;
         return existing.promise;
       }
-      const entry = { dirty: false, promise: null };
+      const entry = { dirty: false, conditions: new Set(), promise: null };
       entry.promise = Promise.resolve().then(async () => {
         let result;
-        do { entry.dirty = false; result = await load(); } while (entry.dirty);
+        do {
+          entry.dirty = false;
+          entry.conditions.clear();
+          result = await load();
+        } while (entry.dirty || [...entry.conditions].some(stillNeeded => stillNeeded()));
         return result;
       }).finally(() => { if (pending.get(key) === entry) pending.delete(key); });
       pending.set(key, entry);

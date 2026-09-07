@@ -234,13 +234,17 @@ export const withDatabaseLock = async (scope, accessToken, task) => {
   try {
     return await task({
       commit: async (updates, operationId = "") => {
+        // Fast operations already have ample lease time. The final PATCH still
+        // checks owner/expiry atomically in Firebase; only slow work needs renewal.
         const { etag, value } = await readDatabaseWithEtag(path, accessToken);
         const now = Date.now();
         if (value?.owner !== owner || Number(value.expiresAt) <= now) throw new DatabaseLeaseError();
-        const renewed = await writeDatabaseIfUnchanged(
-          path, { ...value, expiresAt: now + 15000 }, etag || "null_etag", accessToken,
-        );
-        if (!renewed) throw new DatabaseLeaseError();
+        if (Number(value.expiresAt) - now < 5000) {
+          const renewed = await writeDatabaseIfUnchanged(
+            path, { ...value, expiresAt: now + 15000 }, etag || "null_etag", accessToken,
+          );
+          if (!renewed) throw new DatabaseLeaseError();
+        }
         // The server credential is deliberately downscoped: Firebase rules check the
         // owner AND expiry atomically with the whole patch, even if the HTTP request
         // arrives after takeover. Never fall back to an unrestricted admin write.

@@ -121,3 +121,22 @@ wewnątrz otwartej, leniwie ładowanej zakładki. Główny ekran nadal koordynuj
 Testy obejmują wyścigi odczytów/zapisów, cache PWA, ograniczenie zapytań przy dużej
 bazie testowej, ceny 0 zł, rabaty i agregaty analityki. Testy automatyczne nie zastępują
 sprawdzenia na fizycznych telefonach Android/iOS.
+
+## Szybsze potwierdzanie akcji
+
+Nowy klient wysyła `responseMode: "minimal"`. Udana mutacja zwraca wynik zapisu i zadania
+powiadomień bez ponownego pobierania całego zestawu danych ekranu. `refreshRequired`
+uruchamia odświeżenie w tle; jego błąd nie zamienia już zatwierdzonego zapisu w błąd akcji.
+Starsze PWA nadal dostają pełną odpowiedź. Błędy mutacji zachowują dotychczasową obsługę.
+W teście odwołania pominięto 8 odczytów danych przed potwierdzeniem; nie oznacza to
+stałego czasu odpowiedzi na urządzeniu ani pominięcia późniejszej synchronizacji.
+
+Niezależne odczyty w obrębie blokady są równoległe. Przed zapisem nadal sprawdzany jest
+jej właściciel i termin ważności; odnowienie jest potrzebne tylko przy mniej niż 5 s
+pozostałego czasu. Reguły sprawdzają całą operację atomowo również w momencie zapisu.
+Pierwsze sygnały realtime nie wywołują dodatkowego odczytu, jeśli pobrany właśnie
+terminarz już obejmuje ich rewizję. Nowszy sygnał nadal wymusza aktualizację.
+
+Odpowiedzi API mają nagłówek `Server-Timing` z czasami auth, credentials, permissions
+i total, bez tokenów lub danych klientów. Pozwala on oddzielić czas serwera od sieci
+i renderowania podczas kolejnych pomiarów na telefonie.

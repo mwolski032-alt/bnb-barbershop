@@ -5,6 +5,33 @@ import { createSnapshotGate, createScopedRefreshQueue } from "../shared/scoped-s
 const sync = (barberId, userRevision, barberRevision, uid = "client") => ({ uid, barberId, userRevision, barberRevision });
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 
+test("initial realtime signals already covered by the snapshot do not cause a second read", async () => {
+  const gate = createSnapshotGate(), queue = createScopedRefreshQueue(), reached = deferred(), resume = deferred();
+  const token = gate.activate("client", "mateusz");
+  let reads = 0;
+  const load = async () => { reads++; reached.resolve(); await resume.promise; gate.accept(sync("mateusz", 4, 8), token); return 1; };
+  const first = queue.run("scope", load);
+  await reached.promise;
+  queue.run("scope", load, () => gate.needsRefresh("user", 4));
+  queue.run("scope", load, () => gate.needsRefresh("barber", 8));
+  resume.resolve();
+  await first;
+  assert.equal(reads, 1);
+});
+
+test("a newer signal during loading still causes a trailing read", async () => {
+  const gate = createSnapshotGate(), queue = createScopedRefreshQueue(), reached = deferred(), resume = deferred();
+  const token = gate.activate("client", "mateusz");
+  let reads = 0;
+  const load = async () => { reads++; reached.resolve(); await resume.promise; gate.accept(sync("mateusz", 4, reads === 1 ? 8 : 9), token); return reads; };
+  const first = queue.run("scope", load);
+  await reached.promise;
+  queue.run("scope", load, () => gate.needsRefresh("barber", 9));
+  resume.resolve();
+  await first;
+  assert.equal(reads, 2);
+});
+
 test("switching barber accepts lower unrelated revision and rejects the old response", () => {
   const gate = createSnapshotGate();
   const first = gate.activate("client", "mateusz");

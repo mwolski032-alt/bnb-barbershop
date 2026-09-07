@@ -33,6 +33,7 @@ export type ClientMergePreview = {
 
 export type AppointmentApiResult<T> = {
   ok: boolean;
+  refreshRequired?: boolean;
   error?: string;
   code?: "stale_version" | "operation_conflict" | "write_lease_expired";
   operationId?: string;
@@ -123,6 +124,7 @@ export const mutateAppointment = async <T>(
       operationId: options.operationId,
       expectedVersion: options.expectedVersion,
       ...payload,
+      responseMode: "minimal",
     }),
   });
   const result = await readResult<T>(response);

@@ -22,8 +22,12 @@ export async function createAppointmentReadPlan(accessToken, operation, action, 
         return queries.get(key);
       };
       const by = (section, field, value) => value ? read(section, { orderBy: field, equalTo: value }) : Promise.resolve({});
-      const [team, existingOperation] = await Promise.all([
+      const waitlistId = safe(body.waitlistId || body.waitlistEntry?.id);
+      // All reads remain inside the lease; independent prerequisites share one round trip.
+      const [team, existingOperation, record, entry] = await Promise.all([
         read("team"), read(`appointmentOperations/${operation.operationId}`),
+        appointmentId ? read(`appointments/${appointmentId}`) : null,
+        waitlistId ? read(`waitlistEntries/${waitlistId}`) : null,
       ]);
       const base = { team, appointmentOperations: existingOperation ? { [operation.operationId]: existingOperation } : {}, notificationOutbox: {} };
       if (existingOperation) return { ...base, appointments: {}, clients: {}, waitlistEntries: {} };
@@ -36,9 +40,6 @@ export async function createAppointmentReadPlan(accessToken, operation, action, 
         return { ...base, appointments: appointments ?? {}, clients: clients ?? {}, waitlistEntries: waitlistEntries ?? {},
           appointmentOperations: merge(operations, base.appointmentOperations), notificationOutbox: outbox ?? {} };
       }
-      const record = appointmentId ? await read(`appointments/${appointmentId}`) : null;
-      const waitlistId = safe(body.waitlistId || body.waitlistEntry?.id);
-      const entry = waitlistId ? await read(`waitlistEntries/${waitlistId}`) : null;
       const targetBarber = safe(record?.barberId || body.appointment?.barberId || entry?.barberId || body.waitlistEntry?.barberId);
       if (isolated && targetBarber !== barberId) throw new Error("Wizyta zmieniła terminarz. Odśwież widok.");
       const clientId = safe(record?.clientId || body.appointment?.clientId || user.uid);
