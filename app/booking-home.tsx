@@ -21,7 +21,6 @@ import {
   signInWithRedirect,
   signOut,
   type Auth,
-  type User,
 } from "firebase/auth";
 import { onValue, ref, serverTimestamp, set, update } from "firebase/database";
 import {
@@ -54,6 +53,9 @@ import {
   X,
 } from "lucide-react";
 
+import { dateFromKey, getAppointmentEndDateTime, normalizeAppointmentStatus, isPotentialNoShow, isClosedAppointmentStatus, getAppointmentPriceValue, getServicePriceValue, getAdminClientId, getPhoneDigits, timeToMinutes, getAppointmentSortValue, canSettleAppointment, getAvailabilityForDate, timeSlots, minutesToTime, dayKey } from "./lib/booking-selectors";
+import type { Availability, Step, BarberAdminSection, AdminSection, StandaloneAdminSection, AdminWorkspaceTab, WorkWorkspaceTab, Service, Appointment, DayCell, FormState, ServiceDraft, AdminEditDraft, AppointmentStatus, AppointmentColor, BookingSummary, AdminAppointment, AvailabilityWindow, WorkSettings, AuthUser, SessionContext, SmsTemplate, ClientFilter, ClientWorkspaceTab, AnalyticsPeriod, AdminClientProfile, ClientRecord, ClientDraft, ManualBookingDraft, ClientDialogState, SmsComposerState, WorkFeedback, ActionFeedback, ClientSaveMode, WaitlistTimePreference, WaitlistEntry, WaitlistDraft, PendingWaitlistSelection, PendingAdminWaitlistSelection, BarberProfile, TeamMemberDraft, BarberDetails, InstallPlatform, InstallGuideIcon } from "./lib/booking-types";
+
 import { firebaseApp, realtimeDb } from "./lib/firebase";
 import BookingHero from "./components/booking-hero";
 import ProfileAvatar from "./components/profile-avatar";
@@ -61,7 +63,6 @@ import ClientScreen from "./components/screens/client-screen";
 import {
   AppointmentApiError,
   createAppointmentOperationId,
-  fetchClientAppointmentData,
   mutateAppointment,
   type AppointmentApiResult,
   type AppointmentMutationAction,
@@ -77,9 +78,11 @@ import {
 import {
   isServiceCatalogReady,
   resolveActiveBarberId,
-  shouldApplyAppointmentSnapshot,
 } from "../shared/appointment-sync.mjs";
-import { selectNearestAppointments } from "../shared/appointment-label.mjs";
+import { useAppointmentSynchronization } from "./hooks/use-appointment-synchronization";
+import { useClientDirectory } from "./hooks/use-client-directory";
+import { useBarberCatalog } from "./hooks/use-barber-catalog";
+import { useAdminCalendar } from "./hooks/use-admin-calendar";
 import {
   getGoogleSignInErrorMessage,
   shouldFallbackToRedirect,
@@ -127,293 +130,6 @@ const signInWithGoogleRedirect = async (firebaseAuth: Auth, provider: GoogleAuth
     clearPendingGoogleRedirect();
     throw error;
   }
-};
-
-type Availability = "high" | "medium" | "low" | "none";
-type Step = "booking" | "confirm" | "success" | "admin";
-type BarberAdminSection =
-  | "schedule"
-  | "clients"
-  | "analytics"
-  | "work"
-  | "services"
-  | "profile";
-type AdminSection = Exclude<BarberAdminSection, "clients" | "services"> | "team";
-type StandaloneAdminSection = Exclude<
-  BarberAdminSection,
-  "schedule" | "clients" | "services"
->;
-type AdminWorkspaceTab = "upcoming" | "schedule" | "clients";
-type WorkWorkspaceTab = "days" | "services";
-
-type Service = {
-  id: string;
-  barberId: string;
-  name: string;
-  price: string;
-  durationMinutes: number;
-  order?: number;
-};
-
-type Appointment = {
-  id: string;
-  barberId: string;
-  dateKey: string;
-  startTime: string;
-  durationMinutes: number;
-  version?: number;
-  lastOperationId?: string;
-  createdAt?: number;
-  updatedAt?: number;
-};
-
-type DayCell = {
-  date: Date;
-  day: number;
-  monthOffset: -1 | 0 | 1;
-  availability: Availability;
-  freeSlots: number;
-  totalSlots: number;
-};
-
-type FormState = {
-  fullName: string;
-  phone: string;
-};
-
-type ServiceDraft = {
-  name: string;
-  price: string;
-  durationMinutes: string;
-};
-
-type AdminEditDraft = {
-  dateKey: string;
-  startTime: string;
-  price: string;
-};
-
-type AppointmentStatus = "confirmed" | "rescheduled" | "cancelled" | "completed" | "no_show";
-type AppointmentColor = "blue" | "mint" | "pink" | "violet" | "amber" | "coral" | "sky" | "lime";
-
-type BookingSummary = {
-  barberId: string;
-  barberName: string;
-  barberPhotoUrl: string;
-  serviceName: string;
-  servicePrice: string;
-  durationMinutes: number;
-  date: Date;
-  time: string;
-  fullName: string;
-  phone: string;
-};
-
-type AdminAppointment = Appointment & {
-  clientId?: string;
-  serviceId?: string;
-  clientName: string;
-  clientEmail?: string;
-  clientPhotoUrl?: string;
-  phone?: string;
-  userId?: string;
-  serviceName: string;
-  price: string;
-  priceAmount?: number;
-  originalPriceAmount?: number;
-  priceAdjustedAt?: number;
-  priceAdjustedBy?: "admin";
-  color: AppointmentColor;
-  status?: AppointmentStatus;
-  rescheduledAt?: number;
-  rescheduledBy?: "client" | "admin";
-  confirmedAt?: number;
-  confirmedBy?: "client" | "admin";
-  noShowAt?: number;
-  noShowBy?: "admin";
-  settlement?: {
-    barberId: string;
-    settledAt: number;
-    amount: number;
-  };
-};
-
-type AvailabilityWindow = {
-  id: string;
-  barberId: string;
-  dateKey: string;
-  startTime: string;
-  endTime: string;
-};
-
-type WorkSettings = {
-  availability: Record<string, AvailabilityWindow>;
-};
-
-type AuthUser = Pick<User, "uid" | "displayName" | "email" | "photoURL">;
-
-type SessionContext = {
-  role: "owner" | "barber" | "client";
-  assignedRole?: "barber";
-  active: boolean;
-  isAdmin: boolean;
-  isOwner: boolean;
-  barberId: string;
-  access: Record<BarberAdminSection, boolean>;
-  roleError?: "conflicting_barber_assignment";
-};
-
-type SmsTemplate = "confirmation" | "reschedule" | "reminder" | "custom";
-type ClientFilter = "all" | "upcoming" | "rescheduled" | "missing-phone";
-type ClientWorkspaceTab = "appointments" | "directory";
-type AnalyticsPeriod = "week" | "month" | "quarter" | "year";
-
-type AdminClientProfile = {
-  id: string;
-  userId?: string;
-  name: string;
-  email: string;
-  phone: string;
-  photoUrl: string;
-  appointments: AdminAppointment[];
-  nextAppointment: AdminAppointment | null;
-  lastAppointment: AdminAppointment | null;
-  rescheduledCount: number;
-  hiddenFromDirectory: boolean;
-};
-
-type ClientRecord = {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  photoUrl: string;
-  userId?: string;
-  barberIds?: Record<string, boolean>;
-  hiddenFor?: Record<string, boolean>;
-  createdAt?: number;
-  updatedAt?: number;
-};
-
-type ClientDraft = {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-};
-
-type ManualBookingDraft = {
-  serviceId: string;
-  dateKey: string;
-  startTime: string;
-};
-
-type ClientDialogState =
-  | { mode: "create"; waitlistEntryId?: string }
-  | { mode: "book"; clientId: string; waitlistEntryId?: string };
-
-type SmsComposerState = {
-  clientId: string;
-  appointmentId: string;
-  template: SmsTemplate;
-  message: string;
-};
-
-type WorkFeedback = {
-  kind: "success" | "error";
-  message: string;
-};
-
-type ActionFeedback = {
-  key: string;
-  kind: "pending" | "success" | "error";
-  message: string;
-};
-
-type ClientSaveMode = "record" | "booking";
-type WaitlistTimePreference = "any" | "morning" | "afternoon" | "evening";
-
-type WaitlistOffer = {
-  dateKey: string;
-  startTime: string;
-  barberId: string;
-  serviceId: string;
-  serviceName: string;
-  price: string;
-  durationMinutes: number;
-  offeredAt: number;
-  expiresAt: number;
-};
-
-type WaitlistEntry = {
-  id: string;
-  userId: string;
-  clientName: string;
-  clientEmail: string;
-  phone: string;
-  barberId: string;
-  serviceId: string;
-  serviceName: string;
-  durationMinutes: number;
-  dateFrom: string;
-  dateTo: string;
-  timePreference: WaitlistTimePreference;
-  status: "waiting" | "offered";
-  offer?: WaitlistOffer | null;
-  version: number;
-  createdAt: number;
-  updatedAt: number;
-  lastOperationId?: string;
-};
-
-type WaitlistDraft = {
-  dateFrom: string;
-  dateTo: string;
-  timePreference: WaitlistTimePreference;
-  clientName: string;
-  phone: string;
-};
-
-type PendingWaitlistSelection = {
-  waitlistId: string;
-  barberId: string;
-  serviceId: string;
-  dateKey: string;
-  startTime: string;
-};
-
-type PendingAdminWaitlistSelection = {
-  waitlistId: string;
-  barberId: string;
-};
-
-type BarberProfile = {
-  id: string;
-  name: string;
-  label: string;
-  accent: "blue" | "mint";
-  userId: string;
-  email: string;
-  active: boolean;
-  access: Record<BarberAdminSection, boolean>;
-  createdAt?: number;
-  updatedAt?: number;
-};
-
-type TeamMemberDraft = {
-  name: string;
-  email: string;
-};
-
-type BarberDetails = {
-  displayName: string;
-  phone: string;
-  email: string;
-  instagram: string;
-  bio: string;
-  photoUrl: string;
-  updatedAt?: number;
 };
 
 const appointmentActionFeedback: Record<
@@ -490,8 +206,6 @@ const unavailableService: Service = {
   order: 0,
 };
 
-const workdayStartMinutes = 8 * 60;
-const workdayEndMinutes = 16 * 60;
 const monthFormatter = new Intl.DateTimeFormat("pl-PL", { month: "long", year: "numeric" });
 const selectedDayFormatter = new Intl.DateTimeFormat("pl-PL", {
   weekday: "long",
@@ -506,12 +220,7 @@ const adminClientDateFormatter = new Intl.DateTimeFormat("pl-PL", {
   day: "2-digit",
   month: "2-digit",
 });
-const analyticsDateFormatter = new Intl.DateTimeFormat("pl-PL", {
-  day: "numeric",
-  month: "short",
-});
-const analyticsMonthFormatter = new Intl.DateTimeFormat("pl-PL", { month: "short" });
-const analyticsWeekdayFormatter = new Intl.DateTimeFormat("pl-PL", { weekday: "short" });
+
 const appointmentStatusLabels: Record<AppointmentStatus, string> = {
   confirmed: "Potwierdzona",
   rescheduled: "Przesunięta",
@@ -575,17 +284,6 @@ const appointmentColorPalette: AppointmentColor[] = [
   "lime",
 ];
 
-const normalizeAppointmentStatus = (status?: string): AppointmentStatus =>
-  status === "rescheduled" || status === "cancelled" || status === "completed" || status === "no_show"
-    ? status
-    : "confirmed";
-
-const isClosedAppointmentStatus = (status?: string) =>
-  ["cancelled", "completed", "no_show"].includes(normalizeAppointmentStatus(status));
-
-const isVisibleInClientDatabase = (status?: string) =>
-  !["cancelled", "no_show"].includes(normalizeAppointmentStatus(status));
-
 const normalizeAppointmentColor = (color?: string): AppointmentColor =>
   appointmentColorPalette.includes(color as AppointmentColor)
     ? (color as AppointmentColor)
@@ -605,24 +303,6 @@ const getNextAppointmentColor = (
   return freeColor ?? appointmentColorPalette[dayColors.length % appointmentColorPalette.length];
 };
 
-const dayKey = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
-    date.getDate(),
-  ).padStart(2, "0")}`;
-
-const dateFromKey = (key: string) => {
-  const [year, month, day] = key.split("-").map(Number);
-  return new Date(year, month - 1, day);
-};
-
-const timeToMinutes = (time: string) => {
-  const [hour, minute] = time.split(":").map(Number);
-  return hour * 60 + minute;
-};
-
-const minutesToTime = (minutes: number) =>
-  `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
-
 const addMinutesToTime = (time: string, minutes: number) =>
   minutesToTime(timeToMinutes(time) + minutes);
 
@@ -634,34 +314,11 @@ const formatDuration = (minutes: number) => {
     .join(" ");
 };
 
-const getPhoneDigits = (value: string) => {
-  const digits = value.replace(/\D/g, "");
-  return digits.startsWith("48") && digits.length >= 11 ? digits.slice(2, 11) : digits.slice(0, 9);
-};
-
 const shiftDateKey = (key: string, days: number) => {
   const date = dateFromKey(key);
   date.setDate(date.getDate() + days);
   return dayKey(date);
 };
-
-const getServicePriceValue = (value: string) => {
-  const normalized = value
-    .trim()
-    .replace(/\s/g, "")
-    .replace(/[^\d,.-]/g, "");
-  if (!normalized) return Number.NaN;
-  return Number(
-    normalized.includes(",")
-      ? normalized.replace(/\./g, "").replace(",", ".")
-      : normalized,
-  );
-};
-
-const getAppointmentPriceValue = (appointment: Pick<AdminAppointment, "price" | "priceAmount">) =>
-  Number.isFinite(Number(appointment.priceAmount))
-    ? Number(appointment.priceAmount)
-    : getServicePriceValue(appointment.price);
 
 const formatAppointmentPrice = (amount: number) =>
   `${amount.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1").replace(".", ",")} zł`;
@@ -696,43 +353,6 @@ const isValidAppointmentPriceInput = (value: string) => {
     amount <= 10_000 &&
     Math.abs(amount - roundedAmount) <= 0.000001
   );
-};
-
-const getAppointmentRevenue = (appointment: AdminAppointment) =>
-  Number.isFinite(Number(appointment.settlement?.amount))
-    ? Number(appointment.settlement?.amount)
-    : getAppointmentPriceValue(appointment);
-
-const getAnalyticsRange = (period: AnalyticsPeriod, now: Date) => {
-  let start: Date;
-  let end: Date;
-  let previousStart: Date;
-  let previousEnd: Date;
-
-  if (period === "week") {
-    const mondayOffset = (now.getDay() + 6) % 7;
-    start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - mondayOffset);
-    end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6, 23, 59, 59, 999);
-    previousStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() - 7);
-    previousEnd = new Date(start.getTime() - 1);
-  } else if (period === "month") {
-    start = new Date(now.getFullYear(), now.getMonth(), 1);
-    end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-    previousStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    previousEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
-  } else if (period === "quarter") {
-    start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-    end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-    previousStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-    previousEnd = new Date(now.getFullYear(), now.getMonth() - 2, 0, 23, 59, 59, 999);
-  } else {
-    start = new Date(now.getFullYear(), 0, 1);
-    end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
-    previousStart = new Date(now.getFullYear() - 1, 0, 1);
-    previousEnd = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
-  }
-
-  return { start, end, previousStart, previousEnd };
 };
 
 const formatPhoneNumber = (value: string) => {
@@ -823,34 +443,6 @@ const smsTemplateLabels: Record<SmsTemplate, string> = {
   custom: "Własna",
 };
 
-const getAppointmentDateTime = (appointment: Pick<AdminAppointment, "dateKey" | "startTime">) => {
-  const date = dateFromKey(appointment.dateKey);
-  const [hour, minute] = appointment.startTime.split(":").map(Number);
-  date.setHours(hour, minute, 0, 0);
-  return date;
-};
-
-const getAppointmentEndDateTime = (
-  appointment: Pick<AdminAppointment, "dateKey" | "startTime" | "durationMinutes">,
-) => {
-  const date = getAppointmentDateTime(appointment);
-  date.setMinutes(date.getMinutes() + appointment.durationMinutes);
-  return date;
-};
-
-const canSettleAppointment = (appointment: AdminAppointment, now: Date) => {
-  if (isClosedAppointmentStatus(appointment.status)) {
-    return false;
-  }
-  const settlementAvailableAt = getAppointmentDateTime(appointment);
-  settlementAvailableAt.setMinutes(settlementAvailableAt.getMinutes() + 1);
-  return now.getTime() >= settlementAvailableAt.getTime();
-};
-
-const isPotentialNoShow = (appointment: AdminAppointment, now: Date) =>
-  !isClosedAppointmentStatus(appointment.status) &&
-  now.getTime() > getAppointmentEndDateTime(appointment).getTime();
-
 const smsTemplates: SmsTemplate[] = ["confirmation", "reschedule", "reminder", "custom"];
 
 const buildClientSmsMessage = (template: SmsTemplate, appointment: AdminAppointment) => {
@@ -874,13 +466,6 @@ const buildClientSmsMessage = (template: SmsTemplate, appointment: AdminAppointm
   return "";
 };
 
-const getAdminClientId = (appointment: AdminAppointment) =>
-  appointment.clientId?.trim() ||
-  appointment.userId?.trim() ||
-  appointment.clientEmail?.trim().toLowerCase() ||
-  getPhoneDigits(appointment.phone ?? "") ||
-  appointment.clientName.trim().toLowerCase();
-
 const splitClientName = (fullName: string) => {
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
   return {
@@ -888,9 +473,6 @@ const splitClientName = (fullName: string) => {
     lastName: parts.slice(1).join(" "),
   };
 };
-
-const getClientFullName = (client: Pick<ClientRecord, "firstName" | "lastName">) =>
-  [client.firstName, client.lastName].filter(Boolean).join(" ").trim() || "Klient";
 
 const isValidEmail = (email: string) =>
   !email.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -902,9 +484,6 @@ const createEntityId = (prefix: "client" | "appointment") =>
 
 const getTimestamp = () => Date.now();
 
-const getAppointmentSortValue = (appointment: AdminAppointment) =>
-  `${appointment.dateKey}T${appointment.startTime}`;
-
 const buildSmsHref = (phoneDigits: string, message: string) => {
   const cleanMessage = message.trim();
   const bodySeparator =
@@ -913,24 +492,8 @@ const buildSmsHref = (phoneDigits: string, message: string) => {
   return cleanMessage ? `sms:${phoneDigits}${bodySeparator}body=${encodeURIComponent(cleanMessage)}` : `sms:${phoneDigits}`;
 };
 
-const buildTimeSlots = (startHour = 6, endHour = 22) => {
-  const slots: string[] = [];
-
-  for (let hour = startHour; hour <= endHour; hour += 1) {
-    for (let minute = 0; minute < 60; minute += 15) {
-      if (hour === endHour && minute > 0) continue;
-      slots.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
-    }
-  }
-
-  return slots;
-};
-
-const timeSlots = buildTimeSlots();
 const workTimeOptions = timeSlots;
-const defaultWorkSettings: WorkSettings = {
-  availability: {},
-};
+
 
 const rangesOverlap = (
   startA: number,
@@ -938,41 +501,6 @@ const rangesOverlap = (
   startB: number,
   durationB: number,
 ) => startA < startB + durationB && startA + durationA > startB;
-
-const normalizeWorkSettings = (
-  value: Partial<WorkSettings> | null,
-  barberId: string,
-): WorkSettings => ({
-  availability: Object.fromEntries(
-    Object.entries(value?.availability ?? {}).map(([key, windowItem]) => [
-      key,
-      {
-        ...windowItem,
-        id: key,
-        barberId,
-        dateKey: key,
-      },
-    ]),
-  ),
-});
-
-const normalizeServices = (
-  value: Record<string, Partial<Service>> | null,
-  barberId: string,
-): Service[] => {
-  const loadedServices = Object.entries(value ?? {})
-    .map(([id, service], index) => ({
-      id,
-      barberId,
-      name: service.name?.trim() || "Usługa",
-      price: service.price?.trim() || "0 zł",
-      durationMinutes: Number(service.durationMinutes) || 30,
-      order: Number(service.order ?? index),
-    }))
-    .sort((first, second) => (first.order ?? 0) - (second.order ?? 0));
-
-  return loadedServices;
-};
 
 const servicesToRecord = (items: Service[], barberId: string) =>
   Object.fromEntries(
@@ -1077,9 +605,6 @@ const formatServicePrice = (value: string) => {
   if (!Number.isFinite(numericValue)) return value.trim();
   return `${numericValue % 1 === 0 ? numericValue.toFixed(0) : numericValue.toFixed(2)} zł`;
 };
-
-const getAvailabilityForDate = (dateKeyValue: string, settings: WorkSettings) =>
-  settings.availability[dateKeyValue] ?? null;
 
 const getDateKeysInRange = (startKey: string, endKey: string) => {
   const startDate = dateFromKey(startKey <= endKey ? startKey : endKey);
@@ -1204,16 +729,6 @@ const pushDeviceStatusLabel: Record<PushDeviceStatus, string> = {
   unsupported: "Powiadomienia niedostępne na tym urządzeniu",
   error: "Nie udało się sprawdzić powiadomień",
 };
-
-type InstallPlatform = "ios" | "android";
-type InstallGuideIcon =
-  | "safari"
-  | "share"
-  | "add"
-  | "done"
-  | "chrome"
-  | "menu"
-  | "download";
 
 const installGuideSteps: Record<
   InstallPlatform,
@@ -1519,12 +1034,9 @@ export function BookingHome() {
   });
   const [teamFeedback, setTeamFeedback] = useState<WorkFeedback | null>(null);
   const [isTeamSaving, setIsTeamSaving] = useState(false);
-  const [barberServices, setBarberServices] = useState<Service[]>([]);
-  const [loadedServicesBarberId, setLoadedServicesBarberId] = useState("");
-  const [areBarberServicesLoading, setAreBarberServicesLoading] = useState(false);
-  const [barberServicesError, setBarberServicesError] = useState("");
   const [selectedServiceId, setSelectedServiceId] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
+  const [loadedAppointmentScope, setLoadedAppointmentScope] = useState("");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [allAdminAppointments, setAllAdminAppointments] = useState<AdminAppointment[]>([]);
   const [ownClientAppointments, setOwnClientAppointments] = useState<AdminAppointment[]>([]);
@@ -1545,7 +1057,6 @@ export function BookingHome() {
     useState<PendingWaitlistSelection | null>(null);
   const [pendingAdminWaitlistSelection, setPendingAdminWaitlistSelection] =
     useState<PendingAdminWaitlistSelection | null>(null);
-  const [barberWorkSettings, setBarberWorkSettings] = useState<WorkSettings>(defaultWorkSettings);
   const [form, setForm] = useState<FormState>({ fullName: "", phone: "" });
   const [serviceDraft, setServiceDraft] = useState<ServiceDraft>({
     name: "",
@@ -1609,13 +1120,8 @@ export function BookingHome() {
   const bookingBarberRef = useRef<HTMLDivElement | null>(null);
   const bookingCalendarRef = useRef<HTMLDivElement | null>(null);
   const bookingTimeRef = useRef<HTMLDivElement | null>(null);
-  const latestSyncRevisionRef = useRef(-1);
-  const appointmentSyncChannelRef = useRef<BroadcastChannel | null>(null);
   const pendingAppointmentOperationsRef = useRef(
     new Map<string, Promise<AppointmentApiResult<AdminAppointment>>>(),
-  );
-  const pendingAppointmentRefreshRef = useRef<Promise<AppointmentApiResult<AdminAppointment>> | null>(
-    null,
   );
   const retryOperationIdsRef = useRef(new Map<string, string>());
   const calendarGestureRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
@@ -1709,6 +1215,9 @@ export function BookingHome() {
     clientBarberOptions.find((barber) => barber.id === activeBarberId) ??
     selectedBarber ??
     teamMembers[0];
+  const { barberServices, setBarberServices, loadedServicesBarberId, areBarberServicesLoading, barberServicesError,
+    barberWorkSettings, setBarberWorkSettings, loadedWorkBarberId } = useBarberCatalog(activeUser?.uid ?? "", activeBarberId);
+  const calendarDataReady = loadedAppointmentScope === `${activeUser?.uid ?? ""}:${activeBarberId}` && loadedWorkBarberId === activeBarberId;
   const serviceCatalogReady = isServiceCatalogReady({
     activeBarberId,
     loadedBarberId: loadedServicesBarberId,
@@ -1812,354 +1321,12 @@ export function BookingHome() {
     days.find((day) => day.monthOffset === 0) ??
     days[0];
   const selectedDayKey = dayKey(selectedDay.date);
-  const adminAppointmentDays = useMemo(
-    () =>
-      Array.from(new Set(adminAppointments.map((appointment) => appointment.dateKey))).sort(
-        (first, second) => first.localeCompare(second),
-      ),
-    [adminAppointments],
-  );
-  const adminDayAppointments = useMemo(
-    () =>
-      adminAppointments
-        .filter((appointment) => appointment.dateKey === adminSelectedKey)
-        .sort((first, second) => timeToMinutes(first.startTime) - timeToMinutes(second.startTime)),
-    [adminAppointments, adminSelectedKey],
-  );
-  const upcomingAdminAppointments = useMemo(
-    () =>
-      adminAppointments
-        .filter(
-          (appointment) =>
-            !isClosedAppointmentStatus(appointment.status) &&
-            getAppointmentEndDateTime(appointment).getTime() > currentDate.getTime(),
-        )
-        .sort((first, second) =>
-          getAppointmentSortValue(first).localeCompare(getAppointmentSortValue(second)),
-        ),
-    [adminAppointments, currentDate],
-  );
-  const nearestAdminAppointments = selectNearestAppointments(upcomingAdminAppointments, 4) as AdminAppointment[];
-  const adminDayAvailability = getAvailabilityForDate(adminSelectedKey, workSettings);
-  const adminScheduleStartMinutes = adminDayAvailability
-    ? Math.floor(timeToMinutes(adminDayAvailability.startTime) / 60) * 60
-    : workdayStartMinutes;
-  const adminScheduleEndMinutes = adminDayAvailability
-    ? Math.ceil(timeToMinutes(adminDayAvailability.endTime) / 60) * 60
-    : workdayEndMinutes;
-  const adminScheduleSlots = timeSlots.filter((time) => {
-    const minutes = timeToMinutes(time);
-    return minutes >= adminScheduleStartMinutes && minutes < adminScheduleEndMinutes;
-  });
-  const adminScheduleHours = Array.from(
-    { length: Math.max(1, (adminScheduleEndMinutes - adminScheduleStartMinutes) / 60) },
-    (_, index) => minutesToTime(adminScheduleStartMinutes + index * 60),
-  );
-  const adminClientAppointments = useMemo(
-    () =>
-      barberAllAppointments
-        .filter((appointment) => isVisibleInClientDatabase(appointment.status))
-        .sort((first, second) => {
-          if (first.dateKey !== second.dateKey) return first.dateKey.localeCompare(second.dateKey);
-          return timeToMinutes(first.startTime) - timeToMinutes(second.startTime);
-        }),
-    [barberAllAppointments],
-  );
-  const adminScheduleDays = useMemo(() => {
-    const todayKey = dayKey(today);
-    const keys = new Set<string>([adminSelectedKey]);
-
-    for (let offset = 0; offset < 14; offset += 1) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + offset);
-      keys.add(dayKey(date));
-    }
-
-    adminAppointmentDays.forEach((key) => {
-      if (key >= todayKey) keys.add(key);
-    });
-    Object.keys(workSettings.availability).forEach((key) => {
-      if (key >= todayKey) keys.add(key);
-    });
-
-    return Array.from(keys).sort((first, second) => first.localeCompare(second));
-  }, [adminAppointmentDays, adminSelectedKey, today, workSettings.availability]);
-  const adminClientProfiles = useMemo<AdminClientProfile[]>(() => {
-    const appointmentGroups = new Map<string, AdminAppointment[]>();
-
-    adminClientAppointments.forEach((appointment) => {
-      const clientId = getAdminClientId(appointment);
-      appointmentGroups.set(clientId, [...(appointmentGroups.get(clientId) ?? []), appointment]);
-    });
-
-    const recordsById = new Map(
-      clientRecords
-        .filter(
-          (client) =>
-            client.barberIds?.[activeBarberId] ||
-            appointmentGroups.has(client.id),
-        )
-        .map((client) => [client.id, client]),
-    );
-    const clientIds = new Set([...recordsById.keys(), ...appointmentGroups.keys()]);
-
-    return Array.from(clientIds)
-      .map((id) => {
-        const clientRecord = recordsById.get(id);
-        const clientAppointments = appointmentGroups.get(id) ?? [];
-        const sortedAppointments = [...clientAppointments].sort((first, second) =>
-          getAppointmentSortValue(first).localeCompare(getAppointmentSortValue(second)),
-        );
-        const newestContact = [...sortedAppointments]
-          .reverse()
-          .find((appointment) => appointment.phone || appointment.clientEmail) ?? sortedAppointments[0];
-        const nextAppointment =
-          sortedAppointments.find(
-            (appointment) =>
-              !isClosedAppointmentStatus(appointment.status) &&
-              getAppointmentEndDateTime(appointment).getTime() > currentDate.getTime(),
-          ) ?? null;
-        const lastAppointment =
-          [...sortedAppointments]
-            .reverse()
-            .find(
-              (appointment) =>
-                normalizeAppointmentStatus(appointment.status) === "completed" ||
-                getAppointmentEndDateTime(appointment).getTime() <= currentDate.getTime(),
-            ) ?? null;
-
-        return {
-          id,
-          userId: clientRecord?.userId,
-          name: clientRecord ? getClientFullName(clientRecord) : newestContact?.clientName ?? "Klient",
-          email: clientRecord?.email || newestContact?.clientEmail || "",
-          phone: clientRecord?.phone || newestContact?.phone || "",
-          photoUrl: clientRecord?.photoUrl || newestContact?.clientPhotoUrl || "",
-          appointments: sortedAppointments,
-          nextAppointment,
-          lastAppointment,
-          rescheduledCount: sortedAppointments.filter(
-            (appointment) => normalizeAppointmentStatus(appointment.status) === "rescheduled",
-          ).length,
-          hiddenFromDirectory: Boolean(clientRecord?.hiddenFor?.[activeBarberId]),
-        };
-      })
-      .sort((first, second) => {
-        if (first.nextAppointment && second.nextAppointment) {
-          return getAppointmentSortValue(first.nextAppointment).localeCompare(
-            getAppointmentSortValue(second.nextAppointment),
-          );
-        }
-        if (first.nextAppointment) return -1;
-        if (second.nextAppointment) return 1;
-        return first.name.localeCompare(second.name, "pl");
-      });
-  }, [activeBarberId, adminClientAppointments, clientRecords, currentDate]);
-  const activeAdminClientProfiles = useMemo(
-    () =>
-      adminClientProfiles.filter(
-        (client) =>
-          Boolean(client.nextAppointment) ||
-          client.appointments.some((appointment) => canSettleAppointment(appointment, currentDate)),
-      ),
-    [adminClientProfiles, currentDate],
-  );
-  const directoryAdminClientProfiles = useMemo(
-    () => adminClientProfiles.filter((client) => !client.hiddenFromDirectory),
-    [adminClientProfiles],
-  );
-  const clientWorkspaceProfiles =
-    clientWorkspaceTab === "appointments"
-      ? activeAdminClientProfiles
-      : directoryAdminClientProfiles;
-  const filteredAdminClients = useMemo(() => {
-    const query = clientSearch.trim().toLocaleLowerCase("pl");
-
-    return clientWorkspaceProfiles.filter((client) => {
-      const phoneDigits = getPhoneDigits(client.phone);
-      const matchesQuery =
-        !query ||
-        [client.name, client.email, client.phone, phoneDigits]
-          .join(" ")
-          .toLocaleLowerCase("pl")
-          .includes(query) ||
-        client.appointments.some((appointment) =>
-          appointment.serviceName.toLocaleLowerCase("pl").includes(query),
-        );
-
-      if (!matchesQuery) return false;
-      if (clientFilter === "upcoming") return Boolean(client.nextAppointment);
-      if (clientFilter === "rescheduled") return client.rescheduledCount > 0;
-      if (clientFilter === "missing-phone") return phoneDigits.length !== 9;
-      return true;
-    });
-  }, [clientFilter, clientSearch, clientWorkspaceProfiles]);
-  const calendarBookingClients = useMemo(() => {
-    const query = calendarClientSearch.trim().toLocaleLowerCase("pl");
-
-    return directoryAdminClientProfiles.filter((client) =>
-      !query
-        ? true
-        : [client.name, client.email, client.phone, getPhoneDigits(client.phone)]
-            .join(" ")
-            .toLocaleLowerCase("pl")
-            .includes(query),
-    );
-  }, [calendarClientSearch, directoryAdminClientProfiles]);
-  const analytics = useMemo(() => {
-    const range = getAnalyticsRange(analyticsPeriod, currentDate);
-    const isWithin = (appointment: AdminAppointment, start: Date, end: Date) => {
-      const appointmentTime = getAppointmentDateTime(appointment).getTime();
-      return appointmentTime >= start.getTime() && appointmentTime <= end.getTime();
-    };
-    const completedAppointments = adminAppointments.filter(
-      (appointment) =>
-        normalizeAppointmentStatus(appointment.status) === "completed" &&
-        isWithin(appointment, range.start, range.end),
-    );
-    const previousCompletedAppointments = adminAppointments.filter(
-      (appointment) =>
-        normalizeAppointmentStatus(appointment.status) === "completed" &&
-        isWithin(appointment, range.previousStart, range.previousEnd),
-    );
-    const potentialNoShows = adminAppointments.filter(
-      (appointment) =>
-        isPotentialNoShow(appointment, currentDate) &&
-        isWithin(appointment, range.start, range.end),
-    );
-    const upcomingAppointments = adminAppointments.filter(
-      (appointment) =>
-        !isClosedAppointmentStatus(appointment.status) &&
-        getAppointmentDateTime(appointment).getTime() > currentDate.getTime() &&
-        isWithin(appointment, range.start, range.end),
-    );
-    const revenue = completedAppointments.reduce(
-      (sum, appointment) => sum + getAppointmentRevenue(appointment),
-      0,
-    );
-    const previousRevenue = previousCompletedAppointments.reduce(
-      (sum, appointment) => sum + getAppointmentRevenue(appointment),
-      0,
-    );
-    const clientIds = new Set(completedAppointments.map(getAdminClientId));
-    const previousClientIds = new Set(
-      adminAppointments
-        .filter(
-          (appointment) =>
-            normalizeAppointmentStatus(appointment.status) === "completed" &&
-            getAppointmentDateTime(appointment).getTime() < range.start.getTime(),
-        )
-        .map(getAdminClientId),
-    );
-    const returningClients = Array.from(clientIds).filter((id) => previousClientIds.has(id)).length;
-    const newClients = Math.max(0, clientIds.size - returningClients);
-    const availableMinutes = Object.values(workSettings.availability).reduce((sum, windowItem) => {
-      const date = dateFromKey(windowItem.dateKey).getTime();
-      if (date < range.start.getTime() || date > range.end.getTime()) return sum;
-      return sum + Math.max(0, timeToMinutes(windowItem.endTime) - timeToMinutes(windowItem.startTime));
-    }, 0);
-    const occupiedAppointments = adminAppointments.filter(
-      (appointment) =>
-        isWithin(appointment, range.start, range.end) &&
-        (normalizeAppointmentStatus(appointment.status) === "completed" ||
-          getAppointmentEndDateTime(appointment).getTime() > currentDate.getTime()),
-    );
-    const occupiedMinutes = occupiedAppointments.reduce(
-      (sum, appointment) => sum + appointment.durationMinutes,
-      0,
-    );
-    const serviceMap = new Map<string, { name: string; visits: number; revenue: number }>();
-
-    completedAppointments.forEach((appointment) => {
-      const current = serviceMap.get(appointment.serviceName) ?? {
-        name: appointment.serviceName,
-        visits: 0,
-        revenue: 0,
-      };
-      current.visits += 1;
-      current.revenue += getAppointmentRevenue(appointment);
-      serviceMap.set(appointment.serviceName, current);
-    });
-
-    const servicesSummary = Array.from(serviceMap.values()).sort(
-      (first, second) => second.revenue - first.revenue || second.visits - first.visits,
-    );
-    const bucketDefinitions: Array<{ label: string; start: Date; end: Date }> = [];
-
-    if (analyticsPeriod === "week") {
-      for (let offset = 0; offset < 7; offset += 1) {
-        const start = new Date(range.start.getFullYear(), range.start.getMonth(), range.start.getDate() + offset);
-        const end = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 23, 59, 59, 999);
-        bucketDefinitions.push({
-          label: analyticsWeekdayFormatter.format(start).replace(".", ""),
-          start,
-          end,
-        });
-      }
-    } else if (analyticsPeriod === "month") {
-      const lastDay = range.end.getDate();
-      for (let day = 1; day <= lastDay; day += 7) {
-        const bucketEndDay = Math.min(day + 6, lastDay);
-        bucketDefinitions.push({
-          label: `${day}-${bucketEndDay}`,
-          start: new Date(range.start.getFullYear(), range.start.getMonth(), day),
-          end: new Date(range.start.getFullYear(), range.start.getMonth(), bucketEndDay, 23, 59, 59, 999),
-        });
-      }
-    } else {
-      const cursor = new Date(range.start.getFullYear(), range.start.getMonth(), 1);
-      while (cursor.getTime() <= range.end.getTime()) {
-        const start = new Date(cursor);
-        const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
-        bucketDefinitions.push({
-          label: analyticsMonthFormatter.format(start).replace(".", ""),
-          start,
-          end,
-        });
-        cursor.setMonth(cursor.getMonth() + 1);
-      }
-    }
-
-    const trend = bucketDefinitions.map((bucket) => ({
-      label: bucket.label,
-      revenue: completedAppointments
-        .filter((appointment) => isWithin(appointment, bucket.start, bucket.end))
-        .reduce((sum, appointment) => sum + getAppointmentRevenue(appointment), 0),
-    }));
-
-    return {
-      periodLabel: `${analyticsDateFormatter.format(range.start)} - ${analyticsDateFormatter.format(range.end)}`,
-      revenue,
-      revenueChange:
-        previousRevenue > 0
-          ? Math.round(((revenue - previousRevenue) / previousRevenue) * 100)
-          : revenue > 0
-            ? 100
-            : 0,
-      visits: completedAppointments.length,
-      visitsChange: completedAppointments.length - previousCompletedAppointments.length,
-      clients: clientIds.size,
-      occupancy: availableMinutes > 0 ? Math.min(100, Math.round((occupiedMinutes / availableMinutes) * 100)) : 0,
-      averageTicket: completedAppointments.length > 0 ? revenue / completedAppointments.length : 0,
-      returningClients,
-      newClients,
-      potentialNoShows: potentialNoShows.length,
-      potentialNoShowValue: potentialNoShows.reduce(
-        (sum, appointment) => sum + getAppointmentPriceValue(appointment),
-        0,
-      ),
-      plannedRevenue: upcomingAppointments.reduce(
-        (sum, appointment) => sum + getAppointmentPriceValue(appointment),
-        0,
-      ),
-      servicesSummary,
-      maxServiceRevenue: Math.max(1, ...servicesSummary.map((service) => service.revenue)),
-      trend,
-      maxTrendRevenue: Math.max(1, ...trend.map((bucket) => bucket.revenue)),
-    };
-  }, [adminAppointments, analyticsPeriod, currentDate, workSettings.availability]);
+  const { adminClientAppointments, adminDayAppointments, upcomingAdminAppointments, nearestAdminAppointments, adminDayAvailability, adminScheduleStartMinutes, adminScheduleEndMinutes, adminScheduleSlots, adminScheduleHours, adminScheduleDays } =
+    useAdminCalendar({ adminAppointments, barberAllAppointments, adminSelectedKey, workSettings, currentDate, today });
+  const { adminClientProfiles, activeAdminClientProfiles, directoryAdminClientProfiles, filteredAdminClients, calendarBookingClients } =
+    useClientDirectory({ activeBarberId, adminClientAppointments, clientRecords, currentDate, clientWorkspaceTab, clientSearch, clientFilter, calendarClientSearch });
   const availableTimes = useMemo(
-    () =>
+    () => !calendarDataReady ? [] :
       getAvailableTimes(
         selectedDayKey,
         selectedService.durationMinutes,
@@ -2167,9 +1334,10 @@ export function BookingHome() {
         workSettings,
         currentDate,
       ),
-    [currentDate, schedulingAppointments, selectedDayKey, selectedService, workSettings],
+    [calendarDataReady, currentDate, schedulingAppointments, selectedDayKey, selectedService, workSettings],
   );
   const nearestFreeSlot = useMemo(() => {
+    if (!calendarDataReady) return null;
     const searchDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
     for (let offset = 0; offset < 180; offset += 1) {
@@ -2194,7 +1362,7 @@ export function BookingHome() {
     }
 
     return null;
-  }, [currentDate, schedulingAppointments, selectedService, today, workSettings]);
+  }, [calendarDataReady, currentDate, schedulingAppointments, selectedService, today, workSettings]);
   const clientAppointments = useMemo(
     () =>
       activeUser
@@ -2331,7 +1499,7 @@ export function BookingHome() {
     hasSelectedBarber && selectedServiceId && hasSelectedDay && selectedTime,
   );
   const canConfirm =
-    Boolean(activeUser) && form.fullName.trim().length >= 3 && getPhoneDigits(form.phone).length === 9;
+    Boolean(activeUser) && calendarDataReady && form.fullName.trim().length >= 3 && getPhoneDigits(form.phone).length === 9;
   const canJoinWaitlist = Boolean(
     activeUser &&
       selectedBarber &&
@@ -2430,13 +1598,8 @@ export function BookingHome() {
       ? ((currentTimeLineMinutes - adminScheduleStartMinutes) / 15) * 2.8
       : 0;
 
-  const applyAppointmentSnapshot = useCallback(
+  const receiveAppointmentSnapshot = useCallback(
     (result: AppointmentApiResult<AdminAppointment>) => {
-      const incomingRevision = Math.max(0, Number(result.syncRevision) || 0);
-      if (!shouldApplyAppointmentSnapshot(latestSyncRevisionRef.current, incomingRevision)) {
-        return false;
-      }
-      latestSyncRevisionRef.current = incomingRevision;
       const normalizeLoadedAppointments = (items: AdminAppointment[] = []) =>
         items
         .map((appointment) => ({
@@ -2459,6 +1622,7 @@ export function BookingHome() {
       setAllAdminAppointments(loadedAdminAppointments);
       setOwnClientAppointments(loadedClientAppointments);
       setAppointments(result.occupancy ?? []);
+      setLoadedAppointmentScope(`${result.sync?.uid ?? ""}:${result.sync?.barberId ?? ""}`);
       setClientRecords((result.adminClients ?? []) as ClientRecord[]);
       setClientWaitlistEntries((result.clientWaitlist ?? []) as WaitlistEntry[]);
       setAllAdminWaitlistEntries((result.adminWaitlist ?? []) as WaitlistEntry[]);
@@ -2479,20 +1643,13 @@ export function BookingHome() {
     [],
   );
 
-  const refreshClientAppointmentData = useCallback(async () => {
-    if (pendingAppointmentRefreshRef.current) return pendingAppointmentRefreshRef.current;
-
-    const refresh = fetchClientAppointmentData<AdminAppointment>(activeBarberId)
-      .then((result) => {
-        applyAppointmentSnapshot(result);
-        return result;
-      })
-      .finally(() => {
-        pendingAppointmentRefreshRef.current = null;
-      });
-    pendingAppointmentRefreshRef.current = refresh;
-    return refresh;
-  }, [activeBarberId, applyAppointmentSnapshot]);
+  const onAppointmentSyncError = useCallback(() => {
+    setSessionReady(true);
+    setDataError("Nie udało się odświeżyć terminarza. Sprawdź połączenie i spróbuj ponownie.");
+  }, []);
+  const { captureSnapshotContext, applyAppointmentSnapshot, refreshClientAppointmentData, broadcastChange } =
+    useAppointmentSynchronization<AdminAppointment>(activeUser?.uid ?? "", activeBarberId,
+      receiveAppointmentSnapshot, onAppointmentSyncError);
 
   const retryClientAppointmentData = useCallback(async () => {
     if (isRetryingData) return;
@@ -2737,16 +1894,17 @@ export function BookingHome() {
       setPendingActionKeys((keys) => new Set(keys).add(options.key));
       setActionFeedback({ key: options.key, kind: "pending", message: feedback.pending });
 
+      const snapshotContext = captureSnapshotContext();
       const operation = mutateAppointment<AdminAppointment>(action, payload, {
         operationId,
         expectedVersion: options.expectedVersion,
       })
         .then((result) => {
-          applyAppointmentSnapshot(result);
+          if (!applyAppointmentSnapshot(result, snapshotContext)) {
+            void refreshClientAppointmentData(true).catch(() => undefined);
+          }
           retryOperationIdsRef.current.delete(options.key);
-          appointmentSyncChannelRef.current?.postMessage({
-            revision: Number(result.syncRevision) || 0,
-          });
+          broadcastChange();
           setActionFeedback((current) =>
             current?.key === options.key
               ? { key: options.key, kind: "success", message: feedback.success }
@@ -2755,9 +1913,9 @@ export function BookingHome() {
           return result;
         })
         .catch((error: unknown) => {
-          rollbackOptimisticChange();
+          if (captureSnapshotContext().generation === snapshotContext.generation) rollbackOptimisticChange();
           if (error instanceof AppointmentApiError) {
-            if (error.result) applyAppointmentSnapshot(error.result);
+            if (error.result) applyAppointmentSnapshot(error.result, snapshotContext);
             if (error.status < 500) retryOperationIdsRef.current.delete(options.key);
           }
           setActionFeedback((current) =>
@@ -2783,7 +1941,7 @@ export function BookingHome() {
       pendingAppointmentOperationsRef.current.set(options.key, operation);
       return operation;
     },
-    [applyAppointmentSnapshot, applyOptimisticAppointmentOperation],
+    [applyAppointmentSnapshot, applyOptimisticAppointmentOperation, captureSnapshotContext, refreshClientAppointmentData, broadcastChange],
   );
 
   const isActionPending = (key: string) => pendingActionKeys.has(key);
@@ -3125,78 +2283,10 @@ export function BookingHome() {
       setAllAdminWaitlistEntries([]);
       setWaitlistDialogOpen(false);
       setPendingWaitlistSelection(null);
-      latestSyncRevisionRef.current = -1;
       return undefined;
     }
 
-    let stopped = false;
-    let requestInProgress = false;
-    const loadClientAppointments = async () => {
-      if (requestInProgress || stopped) return;
-      requestInProgress = true;
-      try {
-        await refreshClientAppointmentData();
-      } catch (error) {
-        if (!stopped) {
-          console.error("Appointment data refresh failed", error);
-          setSessionReady(true);
-          setDataError("Nie udało się odświeżyć terminarza. Sprawdź połączenie i spróbuj ponownie.");
-        }
-      } finally {
-        requestInProgress = false;
-      }
-    };
-
-    void loadClientAppointments();
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === "visible") {
-        void loadClientAppointments();
-      }
-    };
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    return () => {
-      stopped = true;
-      document.removeEventListener("visibilitychange", refreshWhenVisible);
-    };
-  }, [activeUser, refreshClientAppointmentData]);
-
-  useEffect(() => {
-    if (!activeUser) return undefined;
-
-    const syncPaths = [
-      `appointmentSync/users/${activeUser.uid}/revision`,
-      ...(activeBarberId ? [`appointmentSync/barbers/${activeBarberId}/revision`] : []),
-    ];
-    const unsubscribers = syncPaths.map((path) =>
-      onValue(
-        ref(realtimeDb, path),
-        (snapshot) => {
-          const revision = Math.max(0, Number(snapshot.val()) || 0);
-          if (revision > latestSyncRevisionRef.current) void refreshClientAppointmentData();
-        },
-        () => {
-          // Visibility changes and push messages remain lightweight fallbacks.
-        },
-      ),
-    );
-    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
-  }, [activeBarberId, activeUser, refreshClientAppointmentData]);
-
-  useEffect(() => {
-    if (!activeUser || typeof BroadcastChannel === "undefined") return undefined;
-
-    const channel = new BroadcastChannel("bnb-appointment-sync");
-    appointmentSyncChannelRef.current = channel;
-    channel.onmessage = (event: MessageEvent<{ revision?: number }>) => {
-      const revision = Number(event.data?.revision) || 0;
-      if (revision > latestSyncRevisionRef.current) void refreshClientAppointmentData();
-    };
-
-    return () => {
-      appointmentSyncChannelRef.current = null;
-      channel.close();
-    };
-  }, [activeUser, refreshClientAppointmentData]);
+  }, [activeUser]);
 
   useEffect(() => {
     if (!activeUser) {
@@ -3387,51 +2477,6 @@ export function BookingHome() {
     services,
     sessionReady,
   ]);
-
-  useEffect(() => {
-    if (!activeUser || !activeBarberId) {
-      setBarberWorkSettings(defaultWorkSettings);
-      return undefined;
-    }
-
-    const barberWorkSettingsRef = ref(realtimeDb, `barbers/${activeBarberId}/workSettings`);
-    return onValue(barberWorkSettingsRef, (snapshot) => {
-      const value = snapshot.val() as Partial<WorkSettings> | null;
-      setBarberWorkSettings(normalizeWorkSettings(value, activeBarberId));
-    });
-  }, [activeBarberId, activeUser]);
-
-  useEffect(() => {
-    if (!activeUser || !activeBarberId) {
-      setBarberServices([]);
-      setLoadedServicesBarberId("");
-      setAreBarberServicesLoading(false);
-      setBarberServicesError("");
-      return undefined;
-    }
-
-    setBarberServices([]);
-    setLoadedServicesBarberId("");
-    setAreBarberServicesLoading(true);
-    setBarberServicesError("");
-    const barberServicesRef = ref(realtimeDb, `barbers/${activeBarberId}/services`);
-    return onValue(
-      barberServicesRef,
-      (snapshot) => {
-        const value = snapshot.val() as Record<string, Partial<Service>> | null;
-        setBarberServices(normalizeServices(value, activeBarberId));
-        setLoadedServicesBarberId(activeBarberId);
-        setAreBarberServicesLoading(false);
-        setBarberServicesError("");
-      },
-      () => {
-        setBarberServices([]);
-        setLoadedServicesBarberId(activeBarberId);
-        setAreBarberServicesLoading(false);
-        setBarberServicesError("Nie udało się pobrać usług. Spróbuj ponownie.");
-      },
-    );
-  }, [activeBarberId, activeUser]);
 
   useEffect(() => {
     if (selectedTime && !availableTimes.includes(selectedTime)) {
@@ -5774,7 +4819,9 @@ export function BookingHome() {
             {adminSection === "analytics" ? (
               <Suspense fallback={<div className="admin-panel-loading" aria-label="Ładowanie analityki" />}>
                 <AdminAnalyticsScreen
-                  analytics={analytics}
+                  appointments={adminAppointments}
+                  currentDate={currentDate}
+                  workSettings={workSettings}
                   period={analyticsPeriod}
                   onPeriodChange={setAnalyticsPeriod}
                 />

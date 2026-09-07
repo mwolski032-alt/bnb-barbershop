@@ -48,7 +48,7 @@ test("duplicate operationId creates one appointment, revision and notification j
   assert.equal(fixture.database.appointmentSync.users[clientAUid].revision > 1, true);
   assert.equal(fixture.database.appointmentSync.users[mateuszUid].revision > 1, true);
   assert.equal(fixture.database.appointmentSync.users[ownerUid].revision > 1, true);
-  assert.equal(fixture.database.appointmentSync.users[kacperUid], undefined);
+  assert.equal(fixture.database.appointmentSync.users[kacperUid].revision, 1);
   assert.deepEqual(Object.keys(fixture.database.appointmentOperations), [operationId]);
   assert.deepEqual(Object.keys(fixture.database.notificationOutbox), [operationId]);
 });

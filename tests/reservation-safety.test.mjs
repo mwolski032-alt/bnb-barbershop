@@ -109,7 +109,7 @@ test("a request that expires while calculating cannot renew or submit its stale 
   fixture.reset();
   let commits = 0;
   fixture.onRequest(({ method, path }) => {
-    if (method === "GET" && path.startsWith("appointmentSync/users/")) {
+    if (method === "GET" && path === "team") {
       fixture.database.systemLocks.appointments.expiresAt = Date.now() - 1;
     }
     if (method === "PATCH") commits++;

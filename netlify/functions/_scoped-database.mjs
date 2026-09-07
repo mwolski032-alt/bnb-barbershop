@@ -61,7 +61,7 @@ const collectRecipients = (before, after, actorUid, additionalUserIds = []) => {
   return { userIds: [...userIds], barberIds: [...barberIds] };
 };
 
-const addRealtimeSyncMarkers = async (database, before, result, actorUid, accessToken) => {
+const addRealtimeSyncMarkers = (database, before, result, actorUid) => {
   const { userIds, barberIds } = collectRecipients(
     before,
     database,
@@ -70,37 +70,23 @@ const addRealtimeSyncMarkers = async (database, before, result, actorUid, access
   );
   if (userIds.length === 0 && barberIds.length === 0) return;
 
-  const [currentUserMarkers, currentBarberMarkers] = await Promise.all([
-    Promise.all(
-      userIds.map((uid) =>
-        readDatabase(`appointmentSync/users/${encodeURIComponent(uid)}`, accessToken),
-      ),
-    ),
-    Promise.all(
-      barberIds.map((barberId) =>
-        readDatabase(`appointmentSync/barbers/${encodeURIComponent(barberId)}`, accessToken),
-      ),
-    ),
-  ]);
   database.appointmentSync ??= {};
   database.appointmentSync.users ??= {};
   database.appointmentSync.barbers ??= {};
   const now = Date.now();
-  userIds.forEach((uid, index) => {
-    const currentRevision = Number(currentUserMarkers[index]?.revision) || 0;
+  userIds.forEach((uid) => {
     database.appointmentSync.users[uid] = {
-      revision: Math.max(now, currentRevision + 1),
+      revision: { ".sv": { increment: 1 } },
       updatedAt: now,
     };
   });
-  barberIds.forEach((barberId, index) => {
-    const currentRevision = Number(currentBarberMarkers[index]?.revision) || 0;
+  barberIds.forEach((barberId) => {
     database.appointmentSync.barbers[barberId] = {
-      revision: Math.max(now, currentRevision + 1),
+      revision: { ".sv": { increment: 1 } },
       updatedAt: now,
     };
   });
-  result.syncRevision = Number(database.appointmentSync.users[actorUid]?.revision) || now;
+  result.syncRevision = 0;
   if (result.operationId && database.appointmentOperations?.[result.operationId]) {
     database.appointmentOperations[result.operationId].syncRevision = result.syncRevision;
   }
@@ -109,22 +95,21 @@ const addRealtimeSyncMarkers = async (database, before, result, actorUid, access
 export const mutateScopedDatabase = async (
   accessToken,
   mutation,
-  { actorUid = "", sections = defaultSections, lockScope = "appointments" } = {},
+  { actorUid = "", sections = defaultSections, lockScope = "appointments", load } = {},
 ) =>
   withDatabaseLock(lockScope, accessToken, async (lease) => {
-    const values = await Promise.all(sections.map((path) => readDatabase(path, accessToken)));
-    const database = Object.fromEntries(
-      sections.map((path, index) => [path, values[index] ?? {}]),
+    const database = load ? await load() : Object.fromEntries(
+      await Promise.all(sections.map(async path => [path, (await readDatabase(path, accessToken)) ?? {}])),
     );
     // Keep sync updates as leaf patches so legacy markers are not overwritten.
     database.appointmentSync = { users: {}, barbers: {} };
     const before = structuredClone(database);
     const result = await mutation(database);
-    if (result.error || result.idempotent) return result;
+    if (result.error || result.idempotent) return { ...result, database: { ...database, partial: true } };
 
-    await addRealtimeSyncMarkers(database, before, result, actorUid, accessToken);
+    addRealtimeSyncMarkers(database, before, result, actorUid);
     const updates = {};
     collectPatch(before, database, "", updates);
-    if (Object.keys(updates).length > 0) await lease.commit(updates);
-    return { ...result, database };
+    if (Object.keys(updates).length > 0) await lease.commit(updates, result.operationId);
+    return { ...result, database: { ...database, partial: true } };
   });

@@ -66,8 +66,8 @@ zapisu wizyty z przeglądarki z pominięciem zatwierdzenia.
 
 ## Rezerwacje i ceny: ochrona opóźnionych zapisów
 
-Zapisy wizyt, klientów, listy rezerwowej, operacji i sygnałów realtime korzystają z jednej
-krótkiej blokady. Każdy końcowy zapis wykonuje atomowy PATCH z ograniczonymi uprawnieniami
+Zapisy wizyt, klientów, listy rezerwowej, operacji i sygnałów realtime korzystają z krótkich
+blokad opisanych poniżej. Każdy końcowy zapis wykonuje atomowy PATCH z ograniczonymi uprawnieniami
 serwera (`auth_variable_override`). Reguły Firebase sprawdzają właściciela blokady i jej
 ważność **w chwili zatwierdzania całego zapisu**. Stary proces nie zapisze zmian po
 wygaśnięciu blokady lub przejęciu jej przez inny proces, nawet gdy żądanie HTTP już wysłano.
@@ -80,8 +80,7 @@ Reguły dają temu wewnętrznemu zapisowi dostęp tylko do sześciu kolekcji zwi
 z rezerwacjami, nie do kont zespołu, tokenów urządzeń ani samych blokad.
 Przy wdrażaniu **najpierw opublikuj reguły Firebase, potem funkcje Netlify**.
 Nie cofaj reguł do wersji bez obsługi ograniczonego zapisu przy działającej nowej aplikacji.
-Wdrożenie nie migruje istniejących danych. Odczyty kolekcji i wspólna blokada pozostają
-do osobnej optymalizacji; zapis nie pobiera ani nie nadpisuje całego korzenia bazy.
+Wdrożenie nie migruje istniejących danych; zapis nie pobiera ani nie nadpisuje całego korzenia bazy.
 
 Przesuwanie wizyty przez klienta lub barbera zachowuje jej uzgodnioną cenę (w tym 0 zł),
 pierwotną cenę i informację o rabacie. Zmiana cennika nie zmienia ceny istniejącej wizyty.
@@ -90,3 +89,35 @@ Nowe rezerwacje nadal otrzymują cenę z serwera, a nie z danych przesłanych pr
 Testy opóźnień i wyścigów: `node --test tests/reservation-safety.test.mjs`.
 Testy faktycznych reguł i transportu REST w lokalnym emulatorze: `npm run test:rules`
 (Java 21 lub nowsza; projekt demonstracyjny, bez danych produkcyjnych).
+
+## Synchronizacja, PWA i ograniczenie kosztu odczytów
+
+Odpowiedź terminarza zawiera osobne rewizje użytkownika i barbera oraz identyfikatory
+zakresu. Zmiana barbera lub konta unieważnia wcześniejsze odpowiedzi, także przy
+przełączeniu A → B → A. Odświeżenia tego samego zakresu są łączone, a zmiana otrzymana
+w trakcie pobierania powoduje dodatkowy odczyt. Katalog i dostępność muszą pochodzić
+od bieżącego barbera przed udostępnieniem godzin rezerwacji.
+
+Odczyt terminarza nie zapisuje danych ani nie próbuje łączyć kont. Powtarzające się
+zapytania w jednym żądaniu są współdzielone. Typowe operacje pobierają terminarz danego
+barbera i potrzebną historię klienta zamiast wszystkich wizyt, operacji i powiadomień.
+Scalanie i usuwanie klientów nadal wymagają szerszego wglądu dla zachowania historii.
+
+Edycja, przesunięcie, potwierdzenie i rozliczenie wizyty używają blokady barbera.
+Tworzenie, anulowanie oraz operacje zmieniające wspólne kartoteki zachowują blokadę
+globalną. Każde jej przejęcie zwiększa trwały `epoch`, co unieważnia wcześniejsze
+obliczenia wykonywane pod blokadą barbera. Reguły sprawdzają również unikalność operacji.
+Sygnały realtime korzystają z atomowego przyrostu, więc równoległe zapisy nie gubią zmian.
+Przy współistnieniu starszego wdrożenia brak epoki bezpiecznie wymusza blokadę globalną.
+
+Cache PWA v7 zapisuje tylko zweryfikowany dokument aplikacji z oznaczeniem
+`data-bnb-app-shell`. Nie przechwytuje tras logowania, callbacków ani API i nie zapisuje
+przekierowań logowania zamiast aplikacji. Usuwane są wyłącznie stare cache BNB.
+
+Logika synchronizacji, katalogu barbera, kartoteki i kalendarza znajduje się w osobnych
+hookach. Selektory i typy są wydzielone do `app/lib`. Analityka jest obliczana dopiero
+wewnątrz otwartej, leniwie ładowanej zakładki. Główny ekran nadal koordynuje interfejs.
+
+Testy obejmują wyścigi odczytów/zapisów, cache PWA, ograniczenie zapytań przy dużej
+bazie testowej, ceny 0 zł, rabaty i agregaty analityki. Testy automatyczne nie zastępują
+sprawdzenia na fizycznych telefonach Android/iOS.

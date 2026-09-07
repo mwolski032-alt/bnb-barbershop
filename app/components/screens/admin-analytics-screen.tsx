@@ -1,31 +1,15 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { useMemo, type CSSProperties } from "react";
+import { buildAnalytics } from "../../lib/analytics";
+import type { AdminAppointment, WorkSettings } from "../../lib/booking-types";
 
 export type AnalyticsPeriod = "week" | "month" | "quarter" | "year";
 
-type AnalyticsSummary = {
-  periodLabel: string;
-  revenue: number;
-  revenueChange: number;
-  visits: number;
-  visitsChange: number;
-  clients: number;
-  occupancy: number;
-  averageTicket: number;
-  returningClients: number;
-  newClients: number;
-  potentialNoShows: number;
-  potentialNoShowValue: number;
-  plannedRevenue: number;
-  servicesSummary: Array<{ name: string; visits: number; revenue: number }>;
-  maxServiceRevenue: number;
-  trend: Array<{ label: string; revenue: number }>;
-  maxTrendRevenue: number;
-};
-
 type AdminAnalyticsScreenProps = {
-  analytics: AnalyticsSummary;
+  appointments: AdminAppointment[];
+  currentDate: Date;
+  workSettings: WorkSettings;
   period: AnalyticsPeriod;
   onPeriodChange: (period: AnalyticsPeriod) => void;
 };
@@ -46,10 +30,14 @@ const currencyFormatter = new Intl.NumberFormat("pl-PL", {
 const formatCurrency = (value: number) => currencyFormatter.format(Math.round(value));
 
 export default function AdminAnalyticsScreen({
-  analytics,
+  appointments,
+  currentDate,
+  workSettings,
   period,
   onPeriodChange,
 }: AdminAnalyticsScreenProps) {
+  const analytics = useMemo(() => buildAnalytics(appointments, period, currentDate, workSettings),
+    [appointments, period, currentDate, workSettings]);
   return (
     <div className="admin-tab-panel active">
       <div className="admin-section-header analytics-section-header">

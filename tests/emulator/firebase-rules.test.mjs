@@ -250,13 +250,13 @@ test("Firebase rules: barber configuration enforces canonical barber relations",
 });
 
 // Exercise the actual REST transport used by the server, not just mocked claims.
-const guardedRestPatch = async (owner, updates, { override = true, admin = true } = {}) => {
+const guardedRestPatch = async (owner, updates, { override = true, admin = true, claims = {} } = {}) => {
   const emulatorHost = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
   assert.ok(emulatorHost, "These tests must never contact production");
   const url = new URL(`http://${emulatorHost}/.json`);
   url.searchParams.set("ns", projectId);
   if (override) url.searchParams.set("auth_variable_override", JSON.stringify({
-    uid: "bnb-schedule-writer", token: { bnbScheduleWriter: true, lockOwner: owner },
+    uid: "bnb-schedule-writer", token: { bnbScheduleWriter: true, lockOwner: owner, ...claims },
   }));
   return fetch(url, { method: "PATCH", headers: {
     "Content-Type": "application/json", ...(admin ? { Authorization: "Bearer owner" } : {}),
@@ -264,6 +264,40 @@ const guardedRestPatch = async (owner, updates, { override = true, admin = true 
 };
 const setLease = (owner, expiresAt) => environment.withSecurityRulesDisabled(context =>
   set(ref(context.database(), "systemLocks/appointments"), { owner, expiresAt }));
+
+test("Firebase rules: isolated barber commits are fenced by global epoch and operation identity", async () => {
+  const seed = (global, expiresAt = Date.now() + 60000) => environment.withSecurityRulesDisabled(async context => {
+    await set(ref(context.database(), "systemLocks/appointments"), global);
+    await set(ref(context.database(), "systemLocks/barber_mateusz"), { owner: "isolated", expiresAt });
+  });
+  const claims = { lockScope: "barber_mateusz", globalEpoch: 7, operationId: "isolated-op" };
+  await seed({ epoch: 7 });
+  const success = await guardedRestPatch("isolated", {
+    "appointments/isolated-test": { id: "isolated-test", status: "confirmed" },
+    "appointmentOperations/isolated-op": { id: "isolated-op" },
+    "appointmentSync/users/isolated/revision": { ".sv": { increment: 1 } },
+  }, { claims });
+  assert.equal(success.status, 200, await success.text());
+  const denied = async (token = claims) => {
+    const result = await guardedRestPatch("isolated", {
+      "appointments/isolated-test/status": "cancelled",
+      "notificationOutbox/isolated-rejected": { id: "isolated-rejected" },
+    }, { claims: token });
+    assert.equal(result.status, 401, await result.text());
+  };
+  await denied(); // Duplicate operation cannot commit a second time.
+  const fresh = { ...claims, operationId: "fresh-isolated-op" };
+  await seed({ epoch: 8 });
+  await denied(fresh); // A global mutation finished but still invalidates stale work.
+  await seed({ epoch: 7, owner: "global-active", expiresAt: Date.now() + 60000 });
+  await denied(fresh);
+  await seed({ epoch: 7 }, Date.now() - 1);
+  await denied(fresh);
+  await environment.withSecurityRulesDisabled(async context => {
+    assert.equal((await get(ref(context.database(), "appointments/isolated-test/status"))).val(), "confirmed");
+    assert.equal((await get(ref(context.database(), "notificationOutbox/isolated-rejected"))).exists(), false);
+  });
+});
 
 test("Firebase rules: scoped REST commit succeeds only with the live server lease", async () => {
   await setLease("live-lease", Date.now() + 60000);

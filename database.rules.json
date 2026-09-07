@@ -39,7 +39,7 @@
       }
     },
     "appointments": {
-      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now",
+      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && ((auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now) || (auth.token.lockScope.matches(/^barber_[a-zA-Z0-9_-]+$/) && auth.token.lockOwner === root.child('systemLocks').child(auth.token.lockScope).child('owner').val() && root.child('systemLocks').child(auth.token.lockScope).child('expiresAt').val() > now && auth.token.globalEpoch > 0 && auth.token.globalEpoch === root.child('systemLocks/appointments/epoch').val() && (!root.child('systemLocks/appointments/owner').exists() || root.child('systemLocks/appointments/expiresAt').val() <= now) && !root.child('appointmentOperations').child(auth.token.operationId).exists()))",
       ".read": "auth != null && root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true",
       ".indexOn": ["userId", "barberId", "clientId", "clientEmail"],
       "$appointmentId": {
@@ -47,17 +47,17 @@
       }
     },
     "clients": {
-      ".indexOn": ["email", "barberIds/mateusz", "barberIds/kacper"],
+      ".indexOn": ["email", "userId", "barberIds/mateusz", "barberIds/kacper"],
       ".read": false,
-      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now"
+      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && ((auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now) || (auth.token.lockScope.matches(/^barber_[a-zA-Z0-9_-]+$/) && auth.token.lockOwner === root.child('systemLocks').child(auth.token.lockScope).child('owner').val() && root.child('systemLocks').child(auth.token.lockScope).child('expiresAt').val() > now && auth.token.globalEpoch > 0 && auth.token.globalEpoch === root.child('systemLocks/appointments/epoch').val() && (!root.child('systemLocks/appointments/owner').exists() || root.child('systemLocks/appointments/expiresAt').val() <= now) && !root.child('appointmentOperations').child(auth.token.operationId).exists()))"
     },
     "waitlistEntries": {
       ".indexOn": ["userId", "barberId", "clientEmail"],
       ".read": false,
-      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now"
+      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && ((auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now) || (auth.token.lockScope.matches(/^barber_[a-zA-Z0-9_-]+$/) && auth.token.lockOwner === root.child('systemLocks').child(auth.token.lockScope).child('owner').val() && root.child('systemLocks').child(auth.token.lockScope).child('expiresAt').val() > now && auth.token.globalEpoch > 0 && auth.token.globalEpoch === root.child('systemLocks/appointments/epoch').val() && (!root.child('systemLocks/appointments/owner').exists() || root.child('systemLocks/appointments/expiresAt').val() <= now) && !root.child('appointmentOperations').child(auth.token.operationId).exists()))"
     },
     "appointmentSync": {
-      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now",
+      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && ((auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now) || (auth.token.lockScope.matches(/^barber_[a-zA-Z0-9_-]+$/) && auth.token.lockOwner === root.child('systemLocks').child(auth.token.lockScope).child('owner').val() && root.child('systemLocks').child(auth.token.lockScope).child('expiresAt').val() > now && auth.token.globalEpoch > 0 && auth.token.globalEpoch === root.child('systemLocks/appointments/epoch').val() && (!root.child('systemLocks/appointments/owner').exists() || root.child('systemLocks/appointments/expiresAt').val() <= now) && !root.child('appointmentOperations').child(auth.token.operationId).exists()))",
       "revision": {
         ".read": "auth != null",
         ".write": false
@@ -84,11 +84,11 @@
     "notificationOutbox": {
       ".indexOn": ["nextAttemptAt"],
       ".read": false,
-      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now"
+      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && ((auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now) || (auth.token.lockScope.matches(/^barber_[a-zA-Z0-9_-]+$/) && auth.token.lockOwner === root.child('systemLocks').child(auth.token.lockScope).child('owner').val() && root.child('systemLocks').child(auth.token.lockScope).child('expiresAt').val() > now && auth.token.globalEpoch > 0 && auth.token.globalEpoch === root.child('systemLocks/appointments/epoch').val() && (!root.child('systemLocks/appointments/owner').exists() || root.child('systemLocks/appointments/expiresAt').val() <= now) && !root.child('appointmentOperations').child(auth.token.operationId).exists()))"
     },
     "appointmentOperations": {
       ".read": false,
-      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now"
+      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && ((auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now) || (auth.token.lockScope.matches(/^barber_[a-zA-Z0-9_-]+$/) && auth.token.lockOwner === root.child('systemLocks').child(auth.token.lockScope).child('owner').val() && root.child('systemLocks').child(auth.token.lockScope).child('expiresAt').val() > now && auth.token.globalEpoch > 0 && auth.token.globalEpoch === root.child('systemLocks/appointments/epoch').val() && (!root.child('systemLocks/appointments/owner').exists() || root.child('systemLocks/appointments/expiresAt').val() <= now) && !root.child('appointmentOperations').child(auth.token.operationId).exists()))"
     }
   }
 }

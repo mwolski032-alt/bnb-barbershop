@@ -28,7 +28,7 @@ test("keeps BNB metadata and production assets wired", async () => {
     readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/notifications.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../netlify.toml", import.meta.url), "utf8"),
   ]);
 
@@ -41,7 +41,7 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(manifest, /\/icons\/icon-192\.png\?v=3/);
   assert.match(manifest, /\/icons\/icon-512\.png\?v=3/);
   assert.match(manifest, /maskable-512\.png\?v=3/);
-  assert.match(serviceWorker, /bnb-barbershop-v6/);
+  assert.match(serviceWorker, /bnb-barbershop-v7/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(bookingHome, /updateViaCache:\s*"none"/);
   assert.match(bookingHome, /registration\.update\(\)/);
@@ -58,7 +58,7 @@ test("ships a static lightweight startup with an offline app shell", async () =>
       readFile(new URL("../next.config.ts", import.meta.url), "utf8"),
       readFile(new URL("../netlify.toml", import.meta.url), "utf8"),
       readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
-      readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+      readBookingModules(),
       readFile(new URL("../app/components/booking-hero.tsx", import.meta.url), "utf8"),
       readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
       stat(new URL("../public/brand/bnb-hero-960.avif", import.meta.url)),
@@ -86,7 +86,7 @@ test("ships a static lightweight startup with an offline app shell", async () =>
 
 test("loads barber workspaces on demand and isolates hero scrolling", async () => {
   const [bookingHome, bookingHero, calendarScreen, clientsScreen, analyticsScreen, settingsScreen] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/components/booking-hero.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/screens/admin-calendar-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/screens/admin-clients-screen.tsx", import.meta.url), "utf8"),
@@ -115,7 +115,7 @@ test("loads barber workspaces on demand and isolates hero scrolling", async () =
 test("shows immediate progress and keeps notification delivery off the critical path", async () => {
   const [bookingHome, styles, appointmentClient, appointmentApi, backgroundDispatch] =
     await Promise.all([
-      readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+      readBookingModules(),
       readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
       readFile(new URL("../app/lib/appointments.ts", import.meta.url), "utf8"),
       readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
@@ -138,23 +138,23 @@ test("shows immediate progress and keeps notification delivery off the critical 
 
 test("uses scoped Firebase reads, atomic path patches and per-user realtime signals", async () => {
   const [bookingHome, appointmentApi, scopedDatabase] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/_scoped-database.mjs", import.meta.url), "utf8"),
   ]);
 
   assert.doesNotMatch(appointmentApi, /readDatabase\("",/);
-  assert.match(appointmentApi, /readDatabaseQuery\("appointments", \{ orderBy: "userId"/);
-  assert.match(scopedDatabase, /lease\.commit\(updates\)/);
+  assert.match(appointmentApi, /queryBy\("appointments", "userId"/);
+  assert.match(scopedDatabase, /lease\.commit\(updates, result\.operationId\)/);
   assert.doesNotMatch(scopedDatabase, /writeDatabaseIfUnchanged\("",/);
-  assert.match(bookingHome, /appointmentSync\/users\/\$\{activeUser\.uid\}\/revision/);
-  assert.match(bookingHome, /appointmentSync\/barbers\/\$\{activeBarberId\}\/revision/);
+  assert.match(bookingHome, /appointmentSync\/users\/\$\{uid\}\/revision/);
+  assert.match(bookingHome, /appointmentSync\/barbers\/\$\{barberId\}\/revision/);
   assert.doesNotMatch(bookingHome, /setTimeout\([\s\S]{0,160}30000/);
 });
 
 test("keeps the premium client booking flow and safety controls", async () => {
   const [bookingHome, styles, layout, bookingHero] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/booking-hero.tsx", import.meta.url), "utf8"),
@@ -186,7 +186,7 @@ test("keeps the premium client booking flow and safety controls", async () => {
 });
 
 test("offers an explicit retry when appointment data cannot refresh", async () => {
-  const bookingHome = await readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8");
+  const bookingHome = await readBookingModules();
 
   assert.match(bookingHome, /const retryClientAppointmentData = useCallback/);
   assert.match(bookingHome, /Appointment data refresh failed/);
@@ -196,7 +196,7 @@ test("offers an explicit retry when appointment data cannot refresh", async () =
 
 test("keeps the client-focused sign-in experience concise", async () => {
   const [bookingHome, styles, firebaseSource, netlifyConfig, firebaseConfig] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/firebase.ts", import.meta.url), "utf8"),
     readFile(new URL("../netlify.toml", import.meta.url), "utf8"),
@@ -235,7 +235,7 @@ test("keeps the client-focused sign-in experience concise", async () => {
 
 test("keeps the mobile booking gestures and bottom-sheet interactions", async () => {
   const [bookingHome, styles] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
@@ -253,7 +253,7 @@ test("keeps the mobile booking gestures and bottom-sheet interactions", async ()
 
 test("keeps the professional admin client directory and SMS workflow", async () => {
   const [bookingHome, clientsScreen, styles] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/components/screens/admin-clients-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
@@ -272,7 +272,7 @@ test("keeps the professional admin client directory and SMS workflow", async () 
 
 test("keeps the client and admin waitlist workflow visible and actionable", async () => {
   const [bookingHome, calendarScreen, styles, appointmentsApi, notificationService, worker] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/components/screens/admin-calendar-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
@@ -300,7 +300,7 @@ test("keeps the client and admin waitlist workflow visible and actionable", asyn
 
 test("keeps the persistent client base and manual admin booking workflow", async () => {
   const [bookingHome, styles] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
@@ -329,7 +329,7 @@ test("keeps the persistent client base and manual admin booking workflow", async
 
 test("keeps the owner-only multi-barber workspace", async () => {
   const [bookingHome, styles, appointmentApi] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
   ]);
@@ -349,7 +349,7 @@ test("keeps the owner-only multi-barber workspace", async () => {
 
 test("keeps the scoped barber profile and centered client action", async () => {
   const [bookingHome, styles] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
@@ -367,7 +367,7 @@ test("keeps the scoped barber profile and centered client action", async () => {
 
 test("keeps the mastered admin schedule and availability editor", async () => {
   const [bookingHome, calendarScreen, settingsScreen, styles] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/components/screens/admin-calendar-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/screens/admin-settings-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
@@ -386,7 +386,7 @@ test("keeps the mastered admin schedule and availability editor", async () => {
 
 test("merges schedule and clients into a permission-aware nearest appointments workspace", async () => {
   const [bookingHome, calendarScreen, styles] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/components/screens/admin-calendar-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
@@ -420,7 +420,7 @@ test("merges schedule and clients into a permission-aware nearest appointments w
 
 test("moves the complete client directory into the shared appointments workspace", async () => {
   const [bookingHome, clientsScreen, styles, appointmentApi] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/components/screens/admin-clients-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
@@ -457,7 +457,7 @@ test("moves the complete client directory into the shared appointments workspace
 
 test("moves the complete appointment workflow into the calendar", async () => {
   const [bookingHome, styles, appointmentApi, dataModel] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
     readFile(new URL("../shared/data-model.mjs", import.meta.url), "utf8"),
@@ -486,7 +486,7 @@ test("moves the complete appointment workflow into the calendar", async () => {
 
 test("keeps settlement-driven admin analytics", async () => {
   const [bookingHome, analyticsScreen, styles, appointmentApi] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/components/screens/admin-analytics-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
@@ -512,7 +512,7 @@ test("keeps settlement-driven admin analytics", async () => {
 
 test("merges days and services into one permission-aware work workspace", async () => {
   const [bookingHome, settingsScreen, styles] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/components/screens/admin-settings-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
@@ -533,7 +533,7 @@ test("merges days and services into one permission-aware work workspace", async 
 
 test("keeps the fixed owner-managed team and role-aware admin avatars", async () => {
   const [bookingHome, settingsScreen, styles] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/components/screens/admin-settings-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
@@ -565,7 +565,7 @@ test("keeps the fixed owner-managed team and role-aware admin avatars", async ()
 
 test("keeps barber ownership and excludes the owner from appointment notifications", async () => {
   const [bookingHome, notifications, notificationService, appointmentApi, dispatch, adminHelper] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/lib/notifications.ts", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/_notification-service.mjs", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
@@ -599,7 +599,7 @@ test("keeps barber ownership and excludes the owner from appointment notificatio
 
 test("opens system push links and lets the client confirm a changed time", async () => {
   const [bookingHome, styles, notificationService, appointmentApi, serviceWorker] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/_notification-service.mjs", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
@@ -622,7 +622,7 @@ test("opens system push links and lets the client confirm a changed time", async
 
 test("shows a per-device push toggle and keeps silent token renewal", async () => {
   const [bookingHome, notifications, styles] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/lib/notifications.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
@@ -658,7 +658,7 @@ test("shows a per-device push toggle and keeps silent token renewal", async () =
 
 test("keeps barber calendars scoped and client directory counters current", async () => {
   const [bookingHome, clientsScreen, appointmentClient, appointmentApi, adminHelper] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/components/screens/admin-clients-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/appointments.ts", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
@@ -680,7 +680,7 @@ test("keeps barber calendars scoped and client directory counters current", asyn
 
 test("separates active visits from the client directory", async () => {
   const [bookingHome, clientsScreen, styles] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/components/screens/admin-clients-screen.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
@@ -705,7 +705,7 @@ test("separates active visits from the client directory", async () => {
 
 test("keeps the client barber selection and resilient profile photos", async () => {
   const [bookingHome, profileAvatar, styles, appointmentApi] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/components/profile-avatar.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../netlify/functions/appointments.mjs", import.meta.url), "utf8"),
@@ -731,12 +731,12 @@ test("keeps the client barber selection and resilient profile photos", async () 
 
 test("keeps manual booking services bound to the selected barber", async () => {
   const [bookingHome, styles] = await Promise.all([
-    readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readBookingModules(),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
   assert.match(bookingHome, /isServiceCatalogReady\(\{/);
-  assert.match(bookingHome, /setLoadedServicesBarberId\(activeBarberId\)/);
+  assert.match(bookingHome, /setLoadedServicesBarberId\(barberId\)/);
   assert.match(bookingHome, /disabled=\{!serviceCatalogReady \|\| services\.length === 0\}/);
   assert.match(bookingHome, /Ładowanie usług\.\.\./);
   assert.match(bookingHome, /Brak aktywnych usług/);
@@ -746,8 +746,14 @@ test("keeps manual booking services bound to the selected barber", async () => {
   );
   assert.doesNotMatch(
     bookingHome,
-    /const openOwnerBarberPanel[\s\S]*?\) => \{\s*setBarberServices\(\[\]\)/,
+    /const openOwnerBarberPanel[^;]*?\) => \{\s*setBarberServices\(\[\]\)/,
   );
   assert.match(styles, /\.manual-booking-status\.loading/);
   assert.match(styles, /\.manual-booking-status\.unavailable/);
 });
+
+// Architectural assertions follow the modules extracted from the former monolith.
+async function readBookingModules() {
+  const paths = ["booking-home.tsx", "lib/booking-types.ts", "lib/booking-selectors.ts", "lib/analytics.ts", "hooks/use-client-directory.ts", "hooks/use-admin-calendar.ts", "hooks/use-barber-catalog.ts", "hooks/use-appointment-synchronization.ts"];
+  return (await Promise.all(paths.map(path => readFile(new URL(`../app/${path}`, import.meta.url), "utf8")))).join("\n");
+}

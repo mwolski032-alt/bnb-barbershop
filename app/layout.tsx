@@ -35,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pl">
+    <html lang="pl" data-bnb-app-shell="true">
       <body className="antialiased">{children}</body>
     </html>
   );

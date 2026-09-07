@@ -1,4 +1,4 @@
-const CACHE_NAME = "bnb-barbershop-v6";
+const CACHE_NAME = "bnb-barbershop-v7";
 const APP_SHELL_URL = "/";
 const APP_SHELL = [
   APP_SHELL_URL,
@@ -7,6 +7,12 @@ const APP_SHELL = [
   "/icons/icon-192.png?v=3",
 ];
 const STATIC_ASSET_TYPES = new Set(["font", "image", "manifest", "script", "style"]);
+const isAppShell = async (response) => response.ok && !response.redirected &&
+  new URL(response.url || self.location.origin).pathname === "/" &&
+  (response.headers.get("content-type") || "").includes("text/html") &&
+  (await response.clone().text()).includes('data-bnb-app-shell="true"');
+const isExcludedPath = (path) => path.startsWith("/__/") || path.startsWith("/.netlify/") ||
+  path.startsWith("/api/") || path.startsWith("/signin") || path.startsWith("/callback") || path.startsWith("/auth/");
 let firebaseMessagingReady = false;
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyATrBnGXzcxUR8r6Y-AeAeXDVPeKAjrymU",
@@ -54,7 +60,13 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then((cache) => Promise.allSettled(APP_SHELL.map(async (path) => {
+        const response = await fetch(path, { cache: "reload" });
+        if (path === APP_SHELL_URL ? await isAppShell(response) : response.ok && !response.redirected &&
+          !(response.headers.get("content-type") || "").includes("text/html")) {
+          await cache.put(path, response);
+        }
+      })))
       .then(() => self.skipWaiting()),
   );
 });
@@ -64,7 +76,7 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))),
+        Promise.all(keys.filter((key) => key.startsWith("bnb-barbershop-") && key !== CACHE_NAME).map((key) => caches.delete(key))),
       )
       .then(() => self.clients.claim()),
   );
@@ -74,22 +86,23 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  if (request.method !== "GET" || url.origin !== self.location.origin) {
+  if (request.method !== "GET" || url.origin !== self.location.origin || isExcludedPath(url.pathname)) {
     return;
   }
 
   if (request.mode === "navigate") {
+    if (url.pathname !== APP_SHELL_URL) return;
     event.respondWith(
       caches.open(CACHE_NAME).then(async (cache) => {
         try {
           const networkResponse = await fetch(request);
-          if (networkResponse.ok) {
-            await cache.put(APP_SHELL_URL, networkResponse.clone());
+          if (await isAppShell(networkResponse)) {
+            await cache.put(APP_SHELL_URL, networkResponse.clone()).catch(() => undefined);
           }
           return networkResponse;
         } catch (error) {
           const cachedShell = await cache.match(APP_SHELL_URL);
-          if (cachedShell) return cachedShell;
+          if (cachedShell && await isAppShell(cachedShell)) return cachedShell;
           throw error;
         }
       }),
@@ -107,8 +120,9 @@ self.addEventListener("fetch", (event) => {
       if (cachedResponse) return cachedResponse;
 
       const networkResponse = await fetch(request);
-      if (networkResponse.ok) {
-        cache.put(request, networkResponse.clone());
+      if (networkResponse.ok && !networkResponse.redirected &&
+          !(networkResponse.headers.get("content-type") || "").includes("text/html")) {
+        await cache.put(request, networkResponse.clone()).catch(() => undefined);
       }
 
       return networkResponse;

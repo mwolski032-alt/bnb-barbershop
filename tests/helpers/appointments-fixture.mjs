@@ -74,7 +74,7 @@ const appointment = ({ id, barberId, userId, clientId, dateKey, startTime, statu
 });
 
 export const createInitialDatabase = () => ({
-  appointmentSync: { revision: 1 },
+  appointmentSync: { revision: 1, users: Object.fromEntries([ownerUid, mateuszUid, kacperUid, clientAUid, clientBUid].map(uid => [uid, { revision: 1 }])) },
   team: {
     owner: { userId: ownerUid, active: true },
     barbers: {
@@ -156,7 +156,14 @@ const writePath = (database, path, value) => {
   for (const key of keys.slice(0, -1)) target = target[key] ??= {};
   const finalKey = keys.at(-1);
   if (value === null) delete target[finalKey];
-  else target[finalKey] = value;
+  else target[finalKey] = resolveServerValues(value, target[finalKey]);
+};
+
+const resolveServerValues = (value, previous) => {
+  if (value?.[".sv"]?.increment !== undefined) return (Number(previous) || 0) + value[".sv"].increment;
+  if (Array.isArray(value)) return value.map((child, index) => resolveServerValues(child, previous?.[index]));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, resolveServerValues(child, previous?.[key])]));
+  return value;
 };
 
 const applyQuery = (value, searchParams) => {
@@ -254,8 +261,13 @@ export const installAppointmentsFixture = () => {
       const auth = JSON.parse(parsed.searchParams.get("auth_variable_override") ?? "null");
       if (auth) {
         const lease = database.systemLocks?.appointments;
+        const isolatedLease = database.systemLocks?.[auth.token?.lockScope];
+        const isIsolatedValid = isolatedLease?.owner === auth.token?.lockOwner && isolatedLease?.expiresAt > Date.now() &&
+          Number(auth.token?.globalEpoch) > 0 && auth.token.globalEpoch === lease?.epoch &&
+          (!lease?.owner || lease.expiresAt <= Date.now()) && !database.appointmentOperations?.[auth.token?.operationId];
+        const isGlobalValid = auth.token?.lockOwner === lease?.owner && lease?.expiresAt > Date.now();
         if (auth.uid !== "bnb-schedule-writer" || auth.token?.bnbScheduleWriter !== true ||
-            auth.token.lockOwner !== lease?.owner || !(lease.expiresAt > Date.now())) {
+            (!isGlobalValid && !isIsolatedValid)) {
           return new Response("Permission denied", { status: 401 });
         }
       }

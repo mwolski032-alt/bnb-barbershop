@@ -38,6 +38,7 @@ export type AppointmentApiResult<T> = {
   operationId?: string;
   idempotent?: boolean;
   syncRevision?: number;
+  sync?: { uid: string; barberId: string; userRevision: number; barberRevision: number };
   appointment?: T;
   currentAppointment?: T;
   client?: unknown;

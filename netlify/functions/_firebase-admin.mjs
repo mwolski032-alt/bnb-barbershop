@@ -197,7 +197,17 @@ export class DatabaseLeaseError extends Error {
 }
 
 export const withDatabaseLock = async (scope, accessToken, task) => {
-  if (scope !== "appointments") throw new Error("Unsupported guarded database scope.");
+  const isolated = scope.startsWith("barber_");
+  if (scope !== "appointments" && !isolated) throw new Error("Unsupported guarded database scope.");
+  let globalEpoch = 0;
+  if (isolated) {
+    const global = await readDatabase("systemLocks/appointments", accessToken);
+    // Old deployments do not preserve epochs. Fall back safely until initialized.
+    if (!(Number(global?.epoch) > 0) || (global.owner && Number(global.expiresAt) > Date.now())) {
+      return withDatabaseLock("appointments", accessToken, task);
+    }
+    globalEpoch = Number(global.epoch);
+  }
   const path = lockPath(scope);
   const owner = crypto.randomUUID();
   const deadline = Date.now() + 8000;
@@ -212,7 +222,8 @@ export const withDatabaseLock = async (scope, accessToken, task) => {
     }
     acquired = await writeDatabaseIfUnchanged(
       path,
-      { owner, acquiredAt: now, expiresAt: now + 15000 },
+      { owner, acquiredAt: now, expiresAt: now + 15000,
+        ...(!isolated ? { epoch: (Number(value?.epoch) || 0) + 1 } : {}) },
       etag || "null_etag",
       accessToken,
     );
@@ -222,7 +233,7 @@ export const withDatabaseLock = async (scope, accessToken, task) => {
 
   try {
     return await task({
-      commit: async (updates) => {
+      commit: async (updates, operationId = "") => {
         const { etag, value } = await readDatabaseWithEtag(path, accessToken);
         const now = Date.now();
         if (value?.owner !== owner || Number(value.expiresAt) <= now) throw new DatabaseLeaseError();
@@ -235,7 +246,8 @@ export const withDatabaseLock = async (scope, accessToken, task) => {
         // arrives after takeover. Never fall back to an unrestricted admin write.
         await patchDatabase("", updates, accessToken, {
           uid: "bnb-schedule-writer",
-          token: { bnbScheduleWriter: true, lockOwner: owner },
+          token: { bnbScheduleWriter: true, lockOwner: owner,
+            ...(isolated ? { lockScope: path.split("/").at(-1), globalEpoch, operationId } : {}) },
         });
       },
     });
@@ -243,7 +255,7 @@ export const withDatabaseLock = async (scope, accessToken, task) => {
     try {
       const { etag, value } = await readDatabaseWithEtag(path, accessToken);
       if (value?.owner === owner) {
-        await writeDatabaseIfUnchanged(path, null, etag || "null_etag", accessToken);
+        await writeDatabaseIfUnchanged(path, isolated ? null : { epoch: Number(value.epoch) || 0 }, etag || "null_etag", accessToken);
       }
     } catch {
       // The short lease releases itself if cleanup is interrupted.
