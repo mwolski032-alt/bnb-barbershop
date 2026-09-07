@@ -53,6 +53,7 @@ const profile = { displayName: "Mateusz", phone: "", email: "", instagram: "bnb.
 const access = Object.fromEntries(["schedule","clients","analytics","work","services","profile"].map(key=>[key,true]));
 const member = { id:"mateusz", name:"Mateusz", label:"Barber", accent:"blue", userId:"visual-only", email:"", active:true, access };
 const screens = {
+  nav: () => h("nav",{className:"admin-bottom-nav",style:{"--admin-nav-items":5,"--admin-nav-index":0}},h("span",{className:"admin-nav-pill"}),...["Terminy","Analiza","Praca","Profil","Zespół"].map((label,i)=>h("button",{key:label,className:i===0?"active":""},h("span",{className:"admin-nav-icon"},"◉"),h("span",null,label)))),
   // Client monolith specimens reuse its actual classes without authentication or handlers.
   booking: () => h("section", {className:"booking-view"},
     h("div",{className:"topbar"},h("div",{className:"topbar-title"},h("img",{className:"topbar-logo-mark",src:"/brand/bnb-mark.png",alt:""}),h("div",null,h("p",{className:"eyebrow"},"BNB Barbershop"),h("h1",null,"Twój panel")))),

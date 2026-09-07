@@ -35,13 +35,13 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(page, /BNB Barbershop \| Rezerwacja wizyty/);
   assert.match(page, /<BookingHome \/>/);
   assert.match(layout, /applicationName:\s*"BNB Barbershop"/);
-  assert.match(layout, /manifest:\s*"\/manifest\.webmanifest\?v=4"/);
+  assert.match(layout, /manifest:\s*"\/manifest\.webmanifest\?v=5"/);
   assert.match(layout, /\/icons\/apple-touch-icon\.png\?v=3/);
   assert.match(manifest, /"name":\s*"BNB Barbershop"/);
   assert.match(manifest, /\/icons\/icon-192\.png\?v=3/);
   assert.match(manifest, /\/icons\/icon-512\.png\?v=3/);
   assert.match(manifest, /maskable-512\.png\?v=3/);
-  assert.match(serviceWorker, /bnb-barbershop-v9/);
+  assert.match(serviceWorker, /bnb-barbershop-v10/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(bookingHome, /updateViaCache:\s*"none"/);
   assert.match(bookingHome, /registration\.update\(\)/);

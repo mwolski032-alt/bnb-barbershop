@@ -23,11 +23,11 @@ test("paper palette and global serif typography have a single source of truth", 
   }
 });
 
-test("PWA and browser startup use the same paper theme", () => {
+test("PWA launches on paper and gives the system bar a contrasting brand color", () => {
   const manifest = JSON.parse(read("public/manifest.webmanifest"));
   assert.equal(manifest.background_color, `#${palette.background}`);
-  assert.equal(manifest.theme_color, `#${palette.background}`);
-  assert.match(read("app/layout.tsx"), /themeColor: "#F6EBD7"/);
+  assert.equal(manifest.theme_color, `#${palette.primary}`);
+  assert.match(read("app/layout.tsx"), /themeColor: "#014241"/);
   assert.match(read("app/layout.tsx"), /colorScheme: "light"/);
   assert.match(read("app/layout.tsx"), /import "\.\/paper-components.css"/);
 });
@@ -40,6 +40,10 @@ test("booking and admin refinements keep important details visible", () => {
   assert.match(components, /button\.active small\s*\{[^}]*color:\s*var\(--color-text\)/s);
   assert.match(components, /\.profile-avatar\.selected-barber-avatar\s*\{[^}]*aspect-ratio:\s*1 \/ 1/s);
   assert.match(components, /\.nearest-slot-button:active:not\(:disabled\)/);
+  assert.match(components, /\.admin-bottom-nav button\s*\{\s*border-radius:\s*999px/);
+  assert.match(components, /\.analytics-period-control button\s*\{\s*border-radius:\s*999px/);
+  assert.match(components, /\.availability-month-toggle\s*\{\s*border:\s*0/);
+  assert.match(components, /Composite search fields own the only visible focus ring/);
 });
 
 function luminance(hex) {

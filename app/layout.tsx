@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: "BNB Barbershop | Rezerwacje",
   description: "Niezależna aplikacja do umawiania usług barberskich.",
   applicationName: "BNB Barbershop",
-  manifest: "/manifest.webmanifest?v=4",
+  manifest: "/manifest.webmanifest?v=5",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#F6EBD7",
+  themeColor: "#014241",
   colorScheme: "light",
 };
 

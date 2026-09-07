@@ -1,8 +1,8 @@
-const CACHE_NAME = "bnb-barbershop-v9";
+const CACHE_NAME = "bnb-barbershop-v10";
 const APP_SHELL_URL = "/";
 const APP_SHELL = [
   APP_SHELL_URL,
-  "/manifest.webmanifest?v=4",
+  "/manifest.webmanifest?v=5",
   "/brand/bnb-logo.png",
   "/icons/icon-192.png?v=3",
 ];
