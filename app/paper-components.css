@@ -117,13 +117,91 @@ input:focus, select:focus, textarea:focus { border-color: var(--color-primary); 
 .auth-card { box-shadow: var(--shadow-card); border-radius: var(--radius-card); }
 .auth-card::before { background: var(--color-border-strong); }
 .auth-logo { border-radius: var(--radius-control); box-shadow: none; background: transparent; }
-.auth-logo img, .topbar-logo-mark, .success-logo-mark { filter: brightness(0); opacity: .88; }
+.auth-logo img, .success-logo-mark { filter: brightness(0); opacity: .88; }
+.topbar-logo-mark {
+  background: var(--color-brand-black);
+  border-color: var(--color-brand-black);
+  border-radius: var(--radius-control);
+  filter: none;
+  opacity: 1;
+}
 .auth-brand { color: var(--color-primary); }
 .auth-benefits span::before { background: var(--color-secondary); box-shadow: none; }
 .auth-card h1, h1, h2 { font-weight: 700; line-height: 1.12; letter-spacing: -.025em; }
 .auth-copy { color: var(--color-text-secondary); }
 .home-hero { background: var(--color-background); }
-.home-hero img { opacity: .86; }
+.home-hero::after { display: none; }
+.home-hero img { background: var(--color-brand-black); object-fit: contain; opacity: 1; }
+
+/* Requested contrast corrections for booking and client counters. */
+.service-card b { color: var(--color-on-primary); }
+:is(.admin-workspace-tabs, .client-workspace-tabs) button.active small {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.profile-avatar.selected-barber-avatar {
+  width: 2.8rem;
+  height: 2.8rem;
+  min-width: 2.8rem;
+  min-height: 2.8rem;
+  flex: 0 0 2.8rem;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+}
+.success-loader.done .loader-check {
+  border-bottom-color: var(--color-primary);
+  border-left-color: var(--color-primary);
+}
+:is(.calendar-save-button, .client-appointment-modal .modal-calendar-button) {
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+.calendar-save-button span,
+.calendar-save-button span::after {
+  border-color: var(--color-primary);
+}
+.calendar-save-button span::before { background: var(--color-primary); }
+
+/* Work and service controls are outlined before selection and filled afterwards. */
+:is(.work-week-strip button, .work-preset-grid button, .quick-availability-list button,
+  .availability-month-toggle, .availability-window-row button:not(.remove):not(.confirm-remove),
+  .work-editor-cancel, .work-toggle, .work-copy-actions button, .vacation-list button,
+  .service-cancel-button, .service-management-actions button:not(.danger)) {
+  border: 1px solid var(--color-primary);
+}
+:is(.work-preset-grid button.active, .quick-availability-list button.existing,
+  .work-toggle.active, .vacation-list button.active) {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
+}
+:is(.work-preset-grid button.active, .quick-availability-list button.existing,
+  .work-toggle.active, .vacation-list button.active) :is(span, strong, small) {
+  color: inherit;
+}
+:is(.service-form-grid input, .work-time-controls.pro input, .work-time-controls.pro select) {
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-secondary);
+  border-radius: var(--radius-control);
+}
+:is(.service-form-grid input, .work-time-controls.pro input, .work-time-controls.pro select):hover {
+  border-color: var(--color-primary);
+}
+:is(.service-form-grid input, .work-time-controls.pro input, .work-time-controls.pro select):focus {
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+}
+.nearest-slot-button {
+  touch-action: manipulation;
+  transition: transform 120ms ease, background-color 160ms ease, border-color 160ms ease;
+}
+.nearest-slot-button:hover:not(:disabled) { background: var(--color-primary-soft); }
+.nearest-slot-button:active:not(:disabled) {
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary-active);
+  transform: scale(.985);
+}
 
 /* Restrained, distinguishable calendar categories; record IDs and classes are unchanged. */
 .admin-appointment { background: var(--color-surface); color: var(--color-text); box-shadow: none; }

@@ -32,6 +32,16 @@ test("PWA and browser startup use the same paper theme", () => {
   assert.match(read("app/layout.tsx"), /import "\.\/paper-components.css"/);
 });
 
+test("booking and admin refinements keep important details visible", () => {
+  const components = read("app/paper-components.css");
+  assert.match(components, /\.topbar-logo-mark\s*\{[^}]*background:\s*var\(--color-brand-black\)/s);
+  assert.match(components, /\.home-hero::after\s*\{\s*display:\s*none/);
+  assert.match(components, /\.service-card b\s*\{\s*color:\s*var\(--color-on-primary\)/);
+  assert.match(components, /button\.active small\s*\{[^}]*color:\s*var\(--color-text\)/s);
+  assert.match(components, /\.profile-avatar\.selected-barber-avatar\s*\{[^}]*aspect-ratio:\s*1 \/ 1/s);
+  assert.match(components, /\.nearest-slot-button:active:not\(:disabled\)/);
+});
+
 function luminance(hex) {
   const values = hex.match(/../g).map(part => parseInt(part, 16) / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
   return values[0] * .2126 + values[1] * .7152 + values[2] * .0722;

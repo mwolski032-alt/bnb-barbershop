@@ -55,14 +55,17 @@ const member = { id:"mateusz", name:"Mateusz", label:"Barber", accent:"blue", us
 const screens = {
   // Client monolith specimens reuse its actual classes without authentication or handlers.
   booking: () => h("section", {className:"booking-view"},
+    h("div",{className:"topbar"},h("div",{className:"topbar-title"},h("img",{className:"topbar-logo-mark",src:"/brand/bnb-mark.png",alt:""}),h("div",null,h("p",{className:"eyebrow"},"BNB Barbershop"),h("h1",null,"Twój panel")))),
+    h("div",{className:"home-hero"},h("img",{src:"/brand/bnb-hero-960.webp",alt:""})),
     h("h2",null,"Umów wizytę"),
     h("ol",{className:"booking-progress"},...["Barber","Usługa","Dzień","Godzina"].map((label,i)=>h("li",{key:label,className:i===2?"active":"complete"},h("button",null,h("span",null,i+1),label)))),
     h("div",{className:"client-barber-list"},h("button",{className:"client-barber-card selected"},h("strong",null,"Mateusz"),h("i",null,"✓")),h("button",{className:"client-barber-card"},h("strong",null,"Drugi barber"))),
-    h("div",{className:"service-list"},h("button",{className:"service-card selected"},h("strong",null,"Strzyżenie"),h("span",null,"80 zł · 60 min"))),
+    h("div",{className:"service-list"},h("button",{className:"service-card selected"},h("span",null,h("strong",null,"Strzyżenie"),h("small",null,"60 min")),h("b",null,"80 zł"))),
     h("div",{className:"calendar-grid"},...["high","medium selected today","low","none"].map((state,i)=>h("button",{key:state,className:`day-tile ${state}`,disabled:i===3},h("span",{className:"day-number"},i+7),h("span",{className:"availability-bar"},h("span",{style:{width:"60%"}}))))),
     h("div",{className:"time-list"},h("button",null,"10:00"),h("button",{className:"selected"},"11:00"),h("button",{disabled:true},"12:00")),
     h("button",{className:"confirm-button"},"Potwierdź rezerwację")),
   modal: () => h("div",{className:"client-modal-backdrop cancellation-backdrop"},h("section",{className:"client-appointment-modal client-bottom-sheet cancellation-sheet",role:"alertdialog","aria-modal":true,"aria-label":"Odwołać wizytę?"},h("button",{className:"modal-close-button","aria-label":"Zamknij"},"×"),h("div",{className:"modal-title"},h("p",{className:"eyebrow"},"Potwierdzenie"),h("h2",null,"Odwołać wizytę?")),h("p",{className:"cancellation-copy"},"Strzyżenie, poniedziałek 7 września o 11:00. Tej operacji nie można cofnąć."),h("div",{className:"modal-actions cancellation-actions"},h("button",null,"Wróć"),h("button",{className:"danger"},"Odwołaj wizytę")))),
+  success: () => h("section",{className:"success-view"},h("div",{className:"success-topbar"},h("span",null,"BNB Barbershop"),h("button",{className:"calendar-save-button","aria-label":"Dodaj do kalendarza"},h("span",null))),h("div",{className:"success-loader done"},h("span",{className:"loader-ring"}),h("span",{className:"loader-check"})),h("div",{className:"success-summary"},h("h1",null,"Wizyta potwierdzona"))),
   profile: () => h(Settings, { mode:"profile", barberName:"Mateusz", barber:member, draft:profile, feedback:null, isSaving:false, isPhotoProcessing:false, isSaveActionPending:false, onPhotoChange:noop,onChange:noop,onSave:noop }),
   work: () => h(Settings, { mode:"work", workspaceTab:"days", ...settingsBase, ...noopProps }),
   services: () => h(Settings, { mode:"work", workspaceTab:"services", ...settingsBase, ...noopProps }),
@@ -74,7 +77,7 @@ const screens = {
 };
 const assets=path.join(root,"dist/client/assets");
 const css=fs.readdirSync(assets).filter(file=>file.endsWith(".css")).map(file=>fs.readFileSync(path.join(assets,file),"utf8")).join("\n");
-const documents = Object.fromEntries(Object.entries(screens).map(([key,render]) => [key, `<!doctype html><html lang="pl"><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>BNB — ${key} — test wizualny</title><style>${css}</style></head><body><nav aria-label="Podglądy testowe">${Object.keys(screens).map(k=>`<a href="/${k}">${k}</a>`).join(" · ")}</nav><main class="app-shell admin-page"><section class="admin-view"><div class="admin-topbar"><button class="back-button">Wróć</button><h1>Panel barbera</h1><span>BNB</span></div><div class="selected-barber-context"><span>Twój panel · Mateusz</span></div><div class="admin-content-frame">${renderToStaticMarkup(render())}</div></section></main></body></html>`]));
+const documents = Object.fromEntries(Object.entries(screens).map(([key,render]) => [key, `<!doctype html><html lang="pl"><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>BNB — ${key} — test wizualny</title><style>${css}</style></head><body><nav aria-label="Podglądy testowe">${Object.keys(screens).map(k=>`<a href="/${k}">${k}</a>`).join(" · ")}</nav><main class="app-shell admin-page"><section class="admin-view"><div class="admin-topbar"><button class="back-button">Wróć</button><h1>Panel barbera</h1><span>BNB</span></div><div class="selected-barber-context"><span class="profile-avatar selected-barber-avatar"><span class="profile-avatar-fallback">M</span></span><span><small>Twój panel</small><strong>Mateusz</strong></span></div><div class="admin-content-frame">${renderToStaticMarkup(render())}</div></section></main></body></html>`]));
 http.createServer((request,response)=>{
   const key=new URL(request.url,"http://localhost").pathname.slice(1)||"profile";
   response.writeHead(documents[key]?200:404,{"Content-Type":"text/html; charset=utf-8"});
