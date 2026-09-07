@@ -1,0 +1,168 @@
+/* Shared component states. Geometry and screen layout remain in globals.css. */
+html, body { background: var(--color-background); color: var(--color-text); }
+body, button, input, select, textarea, option, optgroup, output {
+  font-family: var(--font-app);
+}
+input::placeholder, textarea::placeholder { font-family: inherit; color: var(--color-text-muted); opacity: 1; }
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+button, input, select, textarea { accent-color: var(--color-primary); }
+a { color: var(--color-primary); text-underline-offset: .18em; }
+a:hover { color: var(--color-primary-hover); }
+:is(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px var(--color-focus);
+}
+input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border);
+  border-radius: var(--radius-control);
+  color-scheme: light;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--color-primary); }
+
+/* Primary actions across booking, client management and every admin screen. */
+:is(.google-login-button, .primary-action, .confirm-button, .bottom-action,
+  .bottom-action.ready, .install-guide-primary, .barber-profile-submit button,
+  .team-member-dialog-actions button.primary, .client-creator-footer button.primary,
+  .service-editor-summary button, .availability-summary-panel button,
+  .waitlist-form-actions button:not(.secondary), .waitlist-callout-actions button:not(.secondary),
+  .modal-actions button:not(.danger), .client-merge-panel button,
+  .book-client-button, .client-profile-contact-actions button.book) {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
+  border-radius: var(--radius-control);
+  box-shadow: none;
+}
+:is(.google-login-button, .primary-action, .confirm-button, .bottom-action,
+  .install-guide-primary, .barber-profile-submit button,
+  .team-member-dialog-actions button.primary, .client-creator-footer button.primary,
+  .service-editor-summary button, .availability-summary-panel button,
+  .waitlist-form-actions button:not(.secondary), .waitlist-callout-actions button:not(.secondary),
+  .modal-actions button:not(.danger), .client-merge-panel button,
+  .book-client-button, .client-profile-contact-actions button.book):hover:not(:disabled) {
+  background: var(--color-primary-hover); color: var(--color-on-primary);
+}
+:is(.google-login-button, .primary-action, .confirm-button, .bottom-action,
+  .install-guide-primary, .barber-profile-submit button,
+  .team-member-dialog-actions button.primary, .client-creator-footer button.primary,
+  .service-editor-summary button, .availability-summary-panel button,
+  .waitlist-form-actions button:not(.secondary), .waitlist-callout-actions button:not(.secondary),
+  .modal-actions button:not(.danger), .client-merge-panel button,
+  .book-client-button, .client-profile-contact-actions button.book):active:not(:disabled) {
+  background: var(--color-primary-active);
+}
+:is(.install-guide-secondary, .waitlist-form-actions button.secondary,
+  .waitlist-callout-actions button.secondary, .service-cancel-button,
+  .profile-photo-button, .barber-photo-actions button, .add-client-button,
+  .calendar-new-client-button, .client-creator-footer button:not(.primary)) {
+  background: var(--color-surface);
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+  border-radius: var(--radius-control);
+  box-shadow: none;
+}
+:is(.modal-close-button, .back-button, .avatar-button, .session-pill button,
+  .month-controls button, .appointment-actions button) { box-shadow: none; }
+
+/* Filled selections. The barber/service cards use the outlined variant below. */
+:is(.day-tile.selected, .time-list button.selected, .admin-days button.active,
+  .schedule-date-controls > button.today.active, .booking-progress li.active button,
+  .admin-workspace-tabs button.active, .client-workspace-tabs button.active,
+  .client-filters button.active, .client-save-mode button.active,
+  .waitlist-time-picker button.active, .sms-template-picker button.active,
+  .work-week-strip button.active, .work-preset-grid button.active,
+  .work-toggle.active, .vacation-list button.active, .analytics-period-control button.active,
+  .admin-bottom-nav button.active) {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: var(--color-primary);
+  box-shadow: none;
+}
+:is(.day-tile.selected, .work-week-strip button.active, .work-preset-grid button.active,
+  .booking-progress li.active button, .admin-bottom-nav button.active) :is(span, strong, small, b, i) {
+  color: inherit;
+}
+.day-tile.selected.today .day-number { color: var(--color-on-primary); }
+.booking-progress li.active button span { background: var(--color-on-primary); color: var(--color-primary); }
+.service-card { border-radius: var(--radius-card); border-color: var(--color-border); background: var(--color-surface); }
+.day-tile:is(.high, .medium, .low) .availability-bar span { background: var(--color-primary); }
+.day-tile.selected .availability-bar span { background: var(--color-on-primary); }
+.day-tile.selected .today-dot { background: var(--color-secondary); }
+.admin-bottom-nav button.active .admin-nav-icon { background: transparent; color: inherit; }
+.admin-nav-pill { background: var(--color-secondary); box-shadow: none; }
+:is(.service-card.selected, .client-barber-card.selected, .client-barber-card.mint.selected,
+  .team-member-card.active) {
+  background: var(--color-surface);
+  border-color: var(--color-primary);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+:is(.client-barber-card.selected, .client-barber-card.mint.selected) > i {
+  background: var(--color-primary); color: var(--color-on-primary);
+}
+.team-active-switch input:checked + span { background: var(--color-primary); }
+.team-active-switch input:checked + span::after { background: var(--color-surface); }
+
+/* Paper surfaces also apply to sticky mobile controls and modal footers. */
+.app-shell, .admin-view, .booking-view { background: var(--color-background); }
+:is(.topbar, .admin-topbar, .admin-bottom-nav, .bottom-bar, .client-bottom-sheet .modal-actions,
+  .auth-card, .install-guide-dialog, .client-appointment-modal, .client-bottom-sheet,
+  .team-member-dialog, .client-profile-dialog, .analytics-panel, .analytics-kpi) {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+.auth-card { box-shadow: var(--shadow-card); border-radius: var(--radius-card); }
+.auth-card::before { background: var(--color-border-strong); }
+.auth-logo { border-radius: var(--radius-control); box-shadow: none; background: transparent; }
+.auth-logo img, .topbar-logo-mark, .success-logo-mark { filter: brightness(0); opacity: .88; }
+.auth-brand { color: var(--color-primary); }
+.auth-benefits span::before { background: var(--color-secondary); box-shadow: none; }
+.auth-card h1, h1, h2 { font-weight: 700; line-height: 1.12; letter-spacing: -.025em; }
+.auth-copy { color: var(--color-text-secondary); }
+.home-hero { background: var(--color-background); }
+.home-hero img { opacity: .86; }
+
+/* Restrained, distinguishable calendar categories; record IDs and classes are unchanged. */
+.admin-appointment { background: var(--color-surface); color: var(--color-text); box-shadow: none; }
+.admin-appointment.blue { border-left-color: var(--color-primary); background: var(--color-surface); }
+.admin-appointment.mint { border-left-color: var(--color-category-mint); background: var(--color-surface); }
+.admin-appointment.pink { border-left-color: var(--color-secondary); background: var(--color-surface); }
+.admin-appointment.violet { border-left-color: var(--color-category-violet); background: var(--color-surface); }
+.admin-appointment.amber { border-left-color: var(--color-warning); background: var(--color-surface); }
+.admin-appointment.coral { border-left-color: var(--color-category-coral); background: var(--color-surface); }
+.admin-appointment.sky { border-left-color: var(--color-category-sky); background: var(--color-surface); }
+.admin-appointment.lime { border-left-color: var(--color-category-lime); background: var(--color-surface); }
+.current-time-line { border-color: var(--color-secondary); }
+.current-time-line::before { background: var(--color-secondary); box-shadow: none; }
+.current-time-line span { background: var(--color-primary); color: var(--color-on-primary); box-shadow: none; }
+.analytics-bar-track span, .analytics-service-meter span { background: var(--color-primary); box-shadow: none; }
+.analytics-kpi::before, .analytics-kpi.clients::before { background: var(--color-primary); }
+.analytics-kpi.occupancy::before { background: var(--color-secondary); }
+
+/* Errors keep their meaning rather than inheriting the brand green. */
+:is(.modal-actions button.danger, .remove-client-button, .service-management-actions button.danger,
+  .nearest-appointment-actions button.cancel, .availability-window-row button.remove,
+  .availability-window-row button.confirm-remove, .mobile-agenda-actions button.decline,
+  .mobile-agenda-actions button.no-show, .appointment-actions button.no-show) {
+  color: var(--color-error); background: var(--color-error-soft); border-color: var(--color-error);
+}
+.action-feedback-toast.error .action-feedback-icon { color: var(--color-error); }
+.action-feedback-toast { box-shadow: var(--shadow-dialog); }
+/* Disabled styles deliberately outrank screen-specific selected/CTA rules. */
+:is(button, input, select, textarea):disabled {
+  background: var(--color-disabled-bg) !important;
+  color: var(--color-disabled-text) !important;
+  border-color: var(--color-disabled-bg) !important;
+  box-shadow: none !important;
+  opacity: 1;
+}
+button:disabled > :is(span, strong, small, b, i) { color: inherit; }
+button[aria-busy="true"] { cursor: progress; }
+@media (max-width: 560px) {
+  input, select, textarea { font-size: 1rem !important; }
+  .auth-shell { padding: .75rem; }
+  .auth-card h1 { font-size: clamp(2.1rem, 9vw, 3rem); }
+}

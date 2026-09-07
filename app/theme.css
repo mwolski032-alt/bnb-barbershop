@@ -1,0 +1,44 @@
+/* B'n'B — paper, ink and traditional craft. The visual source of truth. */
+:root {
+  color-scheme: light;
+  --color-background: #F6EBD7;
+  --color-surface: #FBF4E7;
+  --color-surface-secondary: #F1E4CF;
+  --color-primary: #014241;
+  --color-primary-hover: #013634;
+  --color-primary-active: #012E2D;
+  --color-primary-soft: #D8E5DF;
+  --color-secondary: #AB0082;
+  --color-secondary-hover: #8F006D;
+  --color-secondary-soft: #F3D9EA;
+  --color-text: #14211E;
+  --color-text-secondary: #625F57;
+  --color-text-muted: #8A8479;
+  --color-border: #D8C8AD;
+  --color-border-strong: #BFAE91;
+  --color-disabled-bg: #DDD5C8;
+  --color-disabled-text: #958F85;
+  --color-success: #245C42;
+  --color-success-soft: #E2EBDD;
+  --color-warning: #80521C;
+  --color-warning-soft: #F3E6CC;
+  --color-error: #923C32;
+  --color-error-soft: #F4E0D9;
+  --color-category-mint: #35685A;
+  --color-category-violet: #725271;
+  --color-category-coral: #985642;
+  --color-category-sky: #476369;
+  --color-category-lime: #647144;
+  --color-overlay: rgb(20 33 30 / 38%);
+  --color-focus: rgb(1 66 65 / 24%);
+  --color-shadow: rgb(72 49 21 / 8%);
+  --color-on-primary: var(--color-surface);
+  --font-app: "Sitka Heading", Sitka, Georgia, serif;
+  --radius-control: 0.625rem;
+  --radius-card: 1rem;
+  --shadow-card: 0 4px 18px var(--color-shadow);
+  --shadow-dialog: 0 12px 40px var(--color-shadow);
+}
+
+/* Local Sitka webfont integration instructions: public/fonts/README.md.
+   No unavailable URL is requested; installed Sitka and the serif fallback work now. */
