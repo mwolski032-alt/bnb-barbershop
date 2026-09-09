@@ -32,9 +32,29 @@ test("Firebase rules deny root access and keep client records admin-only", async
   assert.equal(rules.rules.inAppNotifications, undefined);
 });
 
-test("Netlify production build contains a mandatory typecheck", async () => {
+test("Netlify production build is blocked by the complete quality gate", async () => {
   const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
-  assert.match(packageJson.scripts["build:netlify"], /npm run typecheck/);
+  assert.equal(packageJson.scripts["build:netlify"], "npm run verify");
+  assert.match(packageJson.scripts.verify, /npm run typecheck/);
+  assert.match(packageJson.scripts.verify, /npm run lint/);
+  assert.match(packageJson.scripts.verify, /npm run build/);
+  assert.match(packageJson.scripts.verify, /npm run test:unit/);
+});
+
+test("GitHub checks the application, Lighthouse and Firebase rules before changes are accepted", async () => {
+  const [workflow, lighthouseConfig] = await Promise.all([
+    readFile(new URL("../.github/workflows/quality-gate.yml", import.meta.url), "utf8"),
+    readFile(new URL("../.lighthouserc.cjs", import.meta.url), "utf8"),
+  ]);
+  assert.match(workflow, /pull_request:/);
+  assert.match(workflow, /branches:\s*\n\s*- main/);
+  assert.match(workflow, /run: npm run verify/);
+  assert.match(workflow, /run: npm run verify:lighthouse/);
+  assert.match(workflow, /java-version: "21"/);
+  assert.match(workflow, /run: npm run test:rules/);
+  assert.match(lighthouseConfig, /"categories:performance"/);
+  assert.match(lighthouseConfig, /"categories:accessibility"/);
+  assert.match(lighthouseConfig, /"cumulative-layout-shift"/);
 });
 
 test("Firebase service account requests every required REST scope", async () => {

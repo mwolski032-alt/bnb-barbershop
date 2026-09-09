@@ -53,11 +53,14 @@ import {
   X,
 } from "lucide-react";
 
-import { dateFromKey, getAppointmentEndDateTime, normalizeAppointmentStatus, isPotentialNoShow, isClosedAppointmentStatus, getAppointmentPriceValue, getServicePriceValue, getAdminClientId, getPhoneDigits, timeToMinutes, getAppointmentSortValue, canSettleAppointment, getAvailabilityForDate, timeSlots, minutesToTime, dayKey } from "./lib/booking-selectors";
+import { dateFromKey, getAppointmentDateTime, getAppointmentEndDateTime, normalizeAppointmentStatus, isPotentialNoShow, isClosedAppointmentStatus, getAppointmentPriceValue, getServicePriceValue, getAdminClientId, getPhoneDigits, timeToMinutes, getAppointmentSortValue, canSettleAppointment, getAvailabilityForDate, timeSlots, minutesToTime, dayKey } from "./lib/booking-selectors";
 import type { Availability, Step, BarberAdminSection, AdminSection, StandaloneAdminSection, AdminWorkspaceTab, WorkWorkspaceTab, Service, Appointment, DayCell, FormState, ServiceDraft, AdminEditDraft, AppointmentStatus, AppointmentColor, BookingSummary, AdminAppointment, AvailabilityWindow, WorkSettings, AuthUser, SessionContext, SmsTemplate, ClientFilter, ClientWorkspaceTab, AnalyticsPeriod, AdminClientProfile, ClientRecord, ClientDraft, ManualBookingDraft, ClientDialogState, SmsComposerState, WorkFeedback, ActionFeedback, ClientSaveMode, WaitlistTimePreference, WaitlistEntry, WaitlistDraft, PendingWaitlistSelection, PendingAdminWaitlistSelection, BarberProfile, TeamMemberDraft, BarberDetails, InstallPlatform, InstallGuideIcon } from "./lib/booking-types";
 
 import { firebaseApp, realtimeDb } from "./lib/firebase";
 import BookingHero from "./components/booking-hero";
+import SalonHome from "./components/salon-home";
+import BookingWizard from "./components/booking-wizard";
+import { instagramUrl } from "../shared/shopfront.mjs";
 import ProfileAvatar from "./components/profile-avatar";
 import ClientScreen from "./components/screens/client-screen";
 import {
@@ -95,8 +98,66 @@ const AdminClientsScreen = lazy(() => import("./components/screens/admin-clients
 const AdminAnalyticsScreen = lazy(() => import("./components/screens/admin-analytics-screen"));
 const AdminSettingsScreen = lazy(() => import("./components/screens/admin-settings-screen"));
 const ClientMergePanel = lazy(() => import("./components/client-merge-panel"));
+const SalonManager = lazy(() => import("./components/salon-manager"));
 
 const googleRedirectPendingKey = "bnb-google-redirect-pending";
+const viewMemoryVersion = 1;
+
+type OwnerPanelTab = "photos" | "barbers";
+type ViewMemory = {
+  version: typeof viewMemoryVersion;
+  surface: "salon" | "admin";
+  wizardOpen: boolean;
+  wizardStep: number;
+  adminSection: AdminSection;
+  adminWorkspaceTab: AdminWorkspaceTab;
+  ownerPanelTab: OwnerPanelTab;
+  workWorkspaceTab: WorkWorkspaceTab;
+  clientWorkspaceTab: ClientWorkspaceTab;
+  analyticsPeriod: AnalyticsPeriod;
+  clientFilter: ClientFilter;
+  selectedBarberId: string | null;
+  selectedServiceId: string;
+  visibleMonth: string;
+  selectedKey: string;
+  selectedTime: string;
+  form: FormState;
+  adminSelectedKey: string;
+  clientSearch: string;
+  calendarClientSearch: string;
+  expandedAvailabilityMonth: string | null;
+  scrollPositions: Record<string, number>;
+};
+
+const viewMemoryKey = (userId: string) => `bnb-view-memory-v${viewMemoryVersion}:${userId}`;
+const isDateKeyValue = (value: unknown): value is string =>
+  typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+const isMonthKeyValue = (value: unknown): value is string =>
+  typeof value === "string" && /^\d{4}-\d{2}$/.test(value);
+const isOneOf = <Value extends string>(value: unknown, allowed: readonly Value[]): value is Value =>
+  typeof value === "string" && allowed.includes(value as Value);
+const readViewMemory = (userId: string): Partial<ViewMemory> | null => {
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(viewMemoryKey(userId)) ?? "null") as
+      | Partial<ViewMemory>
+      | null;
+    return parsed?.version === viewMemoryVersion ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+const writeViewMemory = (userId: string, memory: ViewMemory) => {
+  try {
+    window.sessionStorage.setItem(viewMemoryKey(userId), JSON.stringify(memory));
+  } catch {
+    // The application still keeps its in-memory state when browser storage is unavailable.
+  }
+};
+const clearViewMemory = (userId: string) => {
+  try {
+    window.sessionStorage.removeItem(viewMemoryKey(userId));
+  } catch {}
+};
 
 const hasPendingGoogleRedirect = () => {
   try {
@@ -511,6 +572,7 @@ const servicesToRecord = (items: Service[], barberId: string) =>
   );
 
 const normalizeBarberDetails = (value: Partial<BarberDetails> | null): BarberDetails => ({
+  specialties: value?.specialties?.trim() ?? "",
   displayName: value?.displayName?.trim() ?? "",
   phone: value?.phone?.trim() ?? "",
   email: value?.email?.trim() ?? "",
@@ -1016,9 +1078,24 @@ export function BookingHome() {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [step, setStep] = useState<Step>("booking");
+  const [salonOpen, setSalonOpen] = useState(true);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [bookingWizardStep, setBookingWizardStep] = useState(0);
+  const [viewMemoryReadyUser, setViewMemoryReadyUser] = useState("");
+  // Only the navigation intent survives a Google redirect; no personal data is stored.
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("bnb-booking-intent") === "open") {
+        setWizardOpen(true);
+        setSalonOpen(false);
+        sessionStorage.removeItem("bnb-booking-intent");
+      }
+    } catch { /* Storage may be unavailable in private browsing. */ }
+  }, []);
   const [adminSection, setAdminSection] = useState<AdminSection>("schedule");
   const [adminWorkspaceTab, setAdminWorkspaceTab] =
     useState<AdminWorkspaceTab>("upcoming");
+  const [ownerPanelTab, setOwnerPanelTab] = useState<OwnerPanelTab>("photos");
   const [workWorkspaceTab, setWorkWorkspaceTab] = useState<WorkWorkspaceTab>("days");
   const [visibleMonth, setVisibleMonth] = useState(
     () => new Date(today.getFullYear(), today.getMonth(), 1),
@@ -1120,6 +1197,8 @@ export function BookingHome() {
   const bookingBarberRef = useRef<HTMLDivElement | null>(null);
   const bookingCalendarRef = useRef<HTMLDivElement | null>(null);
   const bookingTimeRef = useRef<HTMLDivElement | null>(null);
+  const salonScrollPositionRef = useRef(0);
+  const viewScrollPositionsRef = useRef<Record<string, number>>({ salon: 0 });
   const pendingAppointmentOperationsRef = useRef(
     new Map<string, Promise<AppointmentApiResult<AdminAppointment>>>(),
   );
@@ -1138,9 +1217,7 @@ export function BookingHome() {
     startTime: "10:00",
     price: "",
   });
-  const [expandedAvailabilityMonth, setExpandedAvailabilityMonth] = useState<
-    string | null | undefined
-  >(undefined);
+  const [expandedAvailabilityMonth, setExpandedAvailabilityMonth] = useState<string | null>(null);
 
   const activeUser = currentUser;
   const isOwner = sessionContext?.role === "owner" && sessionContext.active;
@@ -1216,7 +1293,7 @@ export function BookingHome() {
     selectedBarber ??
     teamMembers[0];
   const { barberServices, setBarberServices, loadedServicesBarberId, areBarberServicesLoading, barberServicesError,
-    barberWorkSettings, setBarberWorkSettings, loadedWorkBarberId } = useBarberCatalog(activeUser?.uid ?? "", activeBarberId);
+    barberWorkSettings, setBarberWorkSettings, loadedWorkBarberId, workSettingsError, retryCatalog } = useBarberCatalog(activeUser?.uid ?? "", activeBarberId);
   const calendarDataReady = loadedAppointmentScope === `${activeUser?.uid ?? ""}:${activeBarberId}` && loadedWorkBarberId === activeBarberId;
   const serviceCatalogReady = isServiceCatalogReady({
     activeBarberId,
@@ -1380,6 +1457,16 @@ export function BookingHome() {
         : [],
     [activeUser, currentDate, ownClientAppointments],
   );
+  const clientVisitsBadgeCount = useMemo(() => {
+    const soonThreshold = currentDate.getTime() + 24 * 60 * 60 * 1000;
+    return clientAppointments.filter((appointment) => {
+      const status = normalizeAppointmentStatus(appointment.status);
+      const needsConfirmation = status === "rescheduled" && appointment.rescheduledBy === "admin";
+      const startsAt = getAppointmentDateTime(appointment).getTime();
+      const startsSoon = startsAt >= currentDate.getTime() && startsAt <= soonThreshold;
+      return needsConfirmation || startsSoon;
+    }).length;
+  }, [clientAppointments, currentDate]);
   const nearestClientAppointment = clientAppointments[0] ?? null;
   const nearestClientAppointmentBarber = nearestClientAppointment
     ? clientBarberOptions.find((barber) => barber.id === nearestClientAppointment.barberId) ?? null
@@ -1569,22 +1656,75 @@ export function BookingHome() {
     return Array.from(groups.values());
   }, [availabilityWindows]);
   const nearestAvailability = availabilityWindows[0] ?? null;
-  const nextSaturdayOffset = (6 - today.getDay() + 7) % 7 || 7;
-  const quickAvailabilityOptions = [
-    { label: "Jutro", offset: 1, startTime: "17:00", endTime: "20:00" },
-    { label: "Za 2 dni", offset: 2, startTime: "10:00", endTime: "13:00" },
-    {
-      label: "Weekend",
-      offset: nextSaturdayOffset,
-      startTime: "09:00",
-      endTime: "14:00",
-    },
-  ].map((option) => {
-    const date = new Date(today);
-    date.setDate(today.getDate() + option.offset);
-    return { ...option, date, dateKey: dayKey(date) };
-  });
   const visibleStep = step === "admin" && !isAdmin ? "booking" : step;
+  const activeViewScrollKey =
+    visibleStep === "admin"
+      ? isOwner && !selectedBarber
+        ? `owner:${ownerPanelTab}`
+        : adminSection === "schedule"
+          ? `admin:schedule:${adminWorkspaceTab}`
+          : adminSection === "work"
+            ? `admin:work:${workWorkspaceTab}`
+            : `admin:${adminSection}`
+      : visibleStep === "booking" && !wizardOpen
+        ? "salon"
+        : "";
+  const persistViewMemory = useCallback(() => {
+    if (!activeUser || !sessionReady || viewMemoryReadyUser !== activeUser.uid) return;
+    const scrollPositions = { ...viewScrollPositionsRef.current };
+    if (activeViewScrollKey) scrollPositions[activeViewScrollKey] = window.scrollY;
+    viewScrollPositionsRef.current = scrollPositions;
+    writeViewMemory(activeUser.uid, {
+      version: viewMemoryVersion,
+      surface: visibleStep === "admin" ? "admin" : "salon",
+      wizardOpen: wizardOpen && !reschedulingAppointmentId,
+      wizardStep: bookingWizardStep,
+      adminSection,
+      adminWorkspaceTab,
+      ownerPanelTab,
+      workWorkspaceTab,
+      clientWorkspaceTab,
+      analyticsPeriod,
+      clientFilter,
+      selectedBarberId,
+      selectedServiceId,
+      visibleMonth: `${visibleMonth.getFullYear()}-${String(visibleMonth.getMonth() + 1).padStart(2, "0")}`,
+      selectedKey,
+      selectedTime,
+      form,
+      adminSelectedKey,
+      clientSearch,
+      calendarClientSearch,
+      expandedAvailabilityMonth,
+      scrollPositions,
+    });
+  }, [
+    activeUser,
+    activeViewScrollKey,
+    adminSection,
+    adminSelectedKey,
+    adminWorkspaceTab,
+    analyticsPeriod,
+    bookingWizardStep,
+    calendarClientSearch,
+    clientFilter,
+    clientSearch,
+    clientWorkspaceTab,
+    expandedAvailabilityMonth,
+    form,
+    ownerPanelTab,
+    reschedulingAppointmentId,
+    selectedBarberId,
+    selectedKey,
+    selectedServiceId,
+    selectedTime,
+    sessionReady,
+    viewMemoryReadyUser,
+    visibleMonth,
+    visibleStep,
+    wizardOpen,
+    workWorkspaceTab,
+  ]);
   const currentTimeLineMinutes =
     adminSelectedKey === dayKey(currentDate)
       ? currentDate.getHours() * 60 + currentDate.getMinutes()
@@ -2152,23 +2292,11 @@ export function BookingHome() {
   }, []);
 
   useEffect(() => {
-    if (availabilityMonthGroups.length === 0) {
-      if (expandedAvailabilityMonth !== undefined) {
-        setExpandedAvailabilityMonth(undefined);
-      }
-      return;
-    }
-
-    if (expandedAvailabilityMonth === undefined) {
-      setExpandedAvailabilityMonth(availabilityMonthGroups[0].key);
-      return;
-    }
-
     if (
       expandedAvailabilityMonth &&
       !availabilityMonthGroups.some((group) => group.key === expandedAvailabilityMonth)
     ) {
-      setExpandedAvailabilityMonth(availabilityMonthGroups[0].key);
+      setExpandedAvailabilityMonth(null);
     }
   }, [availabilityMonthGroups, expandedAvailabilityMonth]);
 
@@ -2206,6 +2334,147 @@ export function BookingHome() {
       window.localStorage.removeItem(`bnb-notifications-${activeUser.uid}`);
     }
   }, [activeUser]);
+
+  useEffect(() => {
+    if (!activeUser || !sessionReady) {
+      setViewMemoryReadyUser("");
+      return;
+    }
+    if (viewMemoryReadyUser === activeUser.uid) return;
+
+    const memory = readViewMemory(activeUser.uid);
+    if (memory) {
+      if (isOneOf(memory.adminSection, ["schedule", "analytics", "work", "profile", "team"])) {
+        setAdminSection(memory.adminSection);
+      }
+      if (isOneOf(memory.adminWorkspaceTab, ["upcoming", "schedule", "clients"])) {
+        setAdminWorkspaceTab(memory.adminWorkspaceTab);
+      }
+      if (isOneOf(memory.ownerPanelTab, ["photos", "barbers"])) {
+        setOwnerPanelTab(memory.ownerPanelTab);
+      }
+      if (isOneOf(memory.workWorkspaceTab, ["days", "services"])) {
+        setWorkWorkspaceTab(memory.workWorkspaceTab);
+      }
+      if (isOneOf(memory.clientWorkspaceTab, ["appointments", "directory"])) {
+        setClientWorkspaceTab(memory.clientWorkspaceTab);
+      }
+      if (isOneOf(memory.analyticsPeriod, ["week", "month", "quarter", "year"])) {
+        setAnalyticsPeriod(memory.analyticsPeriod);
+      }
+      if (isOneOf(memory.clientFilter, ["all", "upcoming", "rescheduled", "missing-phone"])) {
+        setClientFilter(memory.clientFilter);
+      }
+
+      const restoredBarberId =
+        typeof memory.selectedBarberId === "string" && memory.selectedBarberId.length <= 100
+          ? memory.selectedBarberId
+          : null;
+      const restoredServiceId =
+        typeof memory.selectedServiceId === "string" && memory.selectedServiceId.length <= 100
+          ? memory.selectedServiceId
+          : "";
+      const restoredDateKey =
+        isDateKeyValue(memory.selectedKey) && memory.selectedKey >= dayKey(today)
+          ? memory.selectedKey
+          : dayKey(today);
+      const restoredTime =
+        typeof memory.selectedTime === "string" && /^\d{2}:\d{2}$/.test(memory.selectedTime)
+          ? memory.selectedTime
+          : "";
+      const restoredName = typeof memory.form?.fullName === "string"
+        ? memory.form.fullName.slice(0, 120)
+        : "";
+      const restoredPhone = typeof memory.form?.phone === "string"
+        ? memory.form.phone.slice(0, 20)
+        : "";
+      const maximumRestorableStep = !restoredBarberId
+        ? 0
+        : !restoredServiceId
+          ? 1
+          : !restoredTime
+            ? 3
+            : restoredName.trim().length < 3 || getPhoneDigits(restoredPhone).length !== 9
+              ? 4
+              : 5;
+
+      setSelectedBarberId(restoredBarberId);
+      setSelectedServiceId(restoredServiceId);
+      setSelectedKey(restoredDateKey);
+      setSelectedTime(restoredTime);
+      setForm({ fullName: restoredName || activeUser.displayName || "", phone: restoredPhone });
+      setBookingWizardStep(
+        Math.min(
+          maximumRestorableStep,
+          Math.max(0, Math.min(5, Number(memory.wizardStep) || 0)),
+        ),
+      );
+
+      if (isMonthKeyValue(memory.visibleMonth)) {
+        const [year, month] = memory.visibleMonth.split("-").map(Number);
+        const restoredMonth = new Date(year, month - 1, 1);
+        const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        if (restoredMonth.getTime() >= currentMonth.getTime()) setVisibleMonth(restoredMonth);
+      }
+      if (isDateKeyValue(memory.adminSelectedKey)) setAdminSelectedKey(memory.adminSelectedKey);
+      if (typeof memory.clientSearch === "string") setClientSearch(memory.clientSearch.slice(0, 120));
+      if (typeof memory.calendarClientSearch === "string") {
+        setCalendarClientSearch(memory.calendarClientSearch.slice(0, 120));
+      }
+      setExpandedAvailabilityMonth(
+        isMonthKeyValue(memory.expandedAvailabilityMonth) ? memory.expandedAvailabilityMonth : null,
+      );
+      if (memory.scrollPositions && typeof memory.scrollPositions === "object") {
+        viewScrollPositionsRef.current = Object.fromEntries(
+          Object.entries(memory.scrollPositions).filter(
+            ([key, value]) => key.length <= 100 && Number.isFinite(value) && value >= 0 && value < 10_000_000,
+          ),
+        );
+        salonScrollPositionRef.current = viewScrollPositionsRef.current.salon ?? 0;
+      }
+
+      const url = new URL(window.location.href);
+      const hasNotificationTarget = ["appointment", "waitlist", "event"].some((key) =>
+        url.searchParams.has(key),
+      );
+      if (!hasNotificationTarget) {
+        if (memory.wizardOpen) {
+          setStep("booking");
+          setWizardOpen(true);
+          setSalonOpen(false);
+        } else if (memory.surface === "admin" && isAdmin) {
+          setWizardOpen(false);
+          setSalonOpen(false);
+          setStep("admin");
+        }
+      }
+    }
+    setViewMemoryReadyUser(activeUser.uid);
+  }, [activeUser, isAdmin, sessionReady, today, viewMemoryReadyUser]);
+
+  useEffect(() => {
+    if (!activeViewScrollKey || !activeUser || viewMemoryReadyUser !== activeUser.uid) return;
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo({
+        top: viewScrollPositionsRef.current[activeViewScrollKey] ?? 0,
+        behavior: "instant",
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      viewScrollPositionsRef.current[activeViewScrollKey] = window.scrollY;
+      if (activeViewScrollKey === "salon") salonScrollPositionRef.current = window.scrollY;
+    };
+  }, [activeUser, activeViewScrollKey, viewMemoryReadyUser]);
+
+  useEffect(() => {
+    persistViewMemory();
+  }, [persistViewMemory]);
+
+  useEffect(() => {
+    window.addEventListener("pagehide", persistViewMemory);
+    return () => window.removeEventListener("pagehide", persistViewMemory);
+  }, [persistViewMemory]);
 
   useEffect(() => {
     if (!activeUser || !sessionContext) {
@@ -2453,6 +2722,7 @@ export function BookingHome() {
 
     setSelectedTime(pendingWaitlistSelection.startTime);
     setForm({ fullName: entry.clientName, phone: entry.phone });
+    setBookingWizardStep(5);
     setPendingWaitlistSelection(null);
     clearWaitlistUrl();
     window.requestAnimationFrame(() => {
@@ -2479,12 +2749,13 @@ export function BookingHome() {
   ]);
 
   useEffect(() => {
-    if (selectedTime && !availableTimes.includes(selectedTime)) {
+    if (!isSaving && calendarDataReady && serviceCatalogReady && selectedTime && !availableTimes.includes(selectedTime)) {
       setSelectedTime("");
     }
-  }, [availableTimes, selectedTime]);
+  }, [availableTimes, selectedTime, calendarDataReady, serviceCatalogReady, isSaving]);
 
   useEffect(() => {
+    if (wizardOpen || isSaving || !calendarDataReady || !serviceCatalogReady) return;
     const currentSelection = days.find((day) => dayKey(day.date) === selectedKey);
     if (currentSelection?.freeSlots) return;
 
@@ -2492,9 +2763,10 @@ export function BookingHome() {
       days.find((day) => day.monthOffset === 0 && day.freeSlots > 0) ??
       days.find((day) => day.freeSlots > 0);
     if (firstAvailableDay) setSelectedKey(dayKey(firstAvailableDay.date));
-  }, [days, selectedKey]);
+  }, [days, selectedKey, calendarDataReady, serviceCatalogReady, wizardOpen, isSaving]);
 
   useEffect(() => {
+    if (!serviceCatalogReady) return;
     if (!services.some((service) => service.id === selectedServiceId)) {
       setSelectedServiceId(services[0]?.id ?? "");
       setSelectedTime("");
@@ -2506,7 +2778,7 @@ export function BookingHome() {
         serviceId: services[0]?.id ?? "",
       }));
     }
-  }, [manualBookingDraft.serviceId, selectedServiceId, services]);
+  }, [manualBookingDraft.serviceId, selectedServiceId, services, serviceCatalogReady]);
 
   useEffect(() => {
     if (!reschedulingAppointment || reschedulingAppointment.barberId !== activeBarberId) return;
@@ -2691,11 +2963,6 @@ export function BookingHome() {
     visibleStep,
     waitlistDialogOpen,
   ]);
-
-  useEffect(() => {
-    if (visibleStep !== "admin") return;
-    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" }));
-  }, [adminSection, adminWorkspaceTab, visibleStep]);
 
   const shiftMonth = (direction: -1 | 1) => {
     if (direction === -1 && !canShiftToPreviousMonth) return;
@@ -2916,49 +3183,6 @@ export function BookingHome() {
     }
   };
 
-  const quickAddAvailability = async (offset: number, startTime: string, endTime: string) => {
-    if (isWorkSaving) return;
-    const date = new Date(today);
-    date.setDate(today.getDate() + offset);
-    const key = dayKey(date);
-
-    try {
-      setIsWorkSaving(true);
-      setWorkFeedback(null);
-      const nextAvailability = {
-        ...workSettings.availability,
-        [key]: {
-          id: key,
-          barberId: activeBarberId,
-          dateKey: key,
-          startTime,
-          endTime,
-        },
-      };
-      setBarberWorkSettings((current) => ({ ...current, availability: nextAvailability }));
-      showActionFeedback("quick_availability", "pending", "Dodaję szybki termin…");
-      await set(
-        ref(realtimeDb, `barbers/${activeBarberId}/workSettings/availability`),
-        nextAvailability,
-      );
-      setExpandedAvailabilityMonth(key.slice(0, 7));
-      setWorkFeedback({
-        kind: "success",
-        message: `Dodano ${adminClientDateFormatter.format(date)}, ${startTime}-${endTime}.`,
-      });
-      showActionFeedback("quick_availability", "success", "Termin został dodany.");
-    } catch {
-      setBarberWorkSettings((current) => ({
-        ...current,
-        availability: workSettings.availability,
-      }));
-      setWorkFeedback({ kind: "error", message: "Nie udało się dodać szybkiego terminu." });
-      showActionFeedback("quick_availability", "error", "Nie udało się dodać terminu.");
-    } finally {
-      setIsWorkSaving(false);
-    }
-  };
-
   const shiftAdminSelectedDay = (offset: -1 | 1) => {
     const nextDate = dateFromKey(adminSelectedKey);
     nextDate.setDate(nextDate.getDate() + offset);
@@ -3101,6 +3325,10 @@ export function BookingHome() {
   };
 
   const saveBarberProfile = async () => {
+    if (profileDraft.instagram.trim() && !instagramUrl(profileDraft.instagram)) {
+      setProfileFeedback({ kind: "error", message: "Wpisz nazwę konta lub poprawny link do profilu na Instagramie." });
+      return;
+    }
     const previousProfile = barberProfiles[activeBarberId] ?? emptyBarberDetails;
     const profile = normalizeBarberDetails({
       ...profileDraft,
@@ -3110,7 +3338,7 @@ export function BookingHome() {
         "Barber",
       phone: formatPhoneNumber(getPhoneDigits(profileDraft.phone)),
       email: profileDraft.email.toLocaleLowerCase("pl"),
-      instagram: profileDraft.instagram.replace(/^@+/, ""),
+      instagram: instagramUrl(profileDraft.instagram).replace("https://www.instagram.com/", "").replace(/\/$/, ""),
       updatedAt: Date.now(),
     });
 
@@ -3297,6 +3525,8 @@ export function BookingHome() {
   };
 
   const handleGoogleSignIn = async () => {
+    try { if (wizardOpen) sessionStorage.setItem("bnb-booking-intent", "open"); }
+    catch { /* Booking can still continue after popup sign-in. */ }
     setAuthError("");
     setIsSigningIn(true);
 
@@ -3333,6 +3563,7 @@ export function BookingHome() {
       }
     } finally {
       setIsSigningIn(false);
+      try { sessionStorage.removeItem("bnb-booking-intent"); } catch { /* Optional storage. */ }
     }
   };
 
@@ -3340,6 +3571,10 @@ export function BookingHome() {
     setAuthError("");
     setIsSigningOut(true);
     try {
+      if (currentUser) {
+        setViewMemoryReadyUser("");
+        clearViewMemory(currentUser.uid);
+      }
       if (currentUser) {
         await signOut(getAuth(firebaseApp));
       }
@@ -3350,6 +3585,12 @@ export function BookingHome() {
       setClientAppointmentsListOpen(false);
       setPendingClientCancellationId(null);
       setReschedulingAppointmentId(null);
+      setWizardOpen(false);
+      setBookingWizardStep(0);
+      setForm({ fullName: "", phone: "" });
+      setClientSearch("");
+      setCalendarClientSearch("");
+      setSalonOpen(true);
     } catch {
       showActionFeedback("sign_out", "error", "Nie udało się wylogować. Spróbuj ponownie.");
     } finally {
@@ -3568,6 +3809,9 @@ export function BookingHome() {
       dateKey: entry.offer.dateKey,
       startTime: entry.offer.startTime,
     });
+    setBookingWizardStep(3);
+    setWizardOpen(true);
+    setSalonOpen(false);
     setStep("booking");
     setWaitlistFeedback({
       kind: "success",
@@ -3582,9 +3826,13 @@ export function BookingHome() {
     setVisibleMonth(new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), 1));
     setSelectedKey(appointment.dateKey);
     setSelectedTime(appointment.startTime);
+    setForm({ fullName: appointment.clientName, phone: appointment.phone ?? "" });
     setClientAppointmentId(null);
     setClientAppointmentsListOpen(false);
     setReschedulingAppointmentId(appointment.id);
+    setBookingWizardStep(2);
+    setWizardOpen(true);
+    setSalonOpen(false);
     setStep("booking");
     window.requestAnimationFrame(() => scrollToBookingSection(bookingCalendarRef.current));
   };
@@ -3598,6 +3846,9 @@ export function BookingHome() {
     if (reschedulingAppointmentId === appointmentId) {
       setReschedulingAppointmentId(null);
       setSelectedTime("");
+      setWizardOpen(false);
+      setBookingWizardStep(0);
+      setSalonOpen(true);
     }
 
     if (!appointment) return;
@@ -3646,25 +3897,34 @@ export function BookingHome() {
   const saveClientReschedule = async () => {
     if (!reschedulingAppointment || !selectedTime || isSaving) return;
 
+    const appointmentId = reschedulingAppointment.id;
     try {
       setIsSaving(true);
       setBookingError("");
-      await runAppointmentOperation(
+      const operation = runAppointmentOperation(
         "reschedule_client",
         {
-          appointmentId: reschedulingAppointment.id,
+          appointmentId,
           dateKey: selectedDayKey,
           startTime: selectedTime,
         },
         {
-          key: `reschedule_client:${reschedulingAppointment.id}`,
+          key: `reschedule_client:${appointmentId}`,
           expectedVersion: reschedulingAppointment.version ?? 1,
         },
       );
       setReschedulingAppointmentId(null);
+      setWizardOpen(false);
+      setSalonOpen(true);
+      await operation;
       setSelectedTime("");
+      setBookingWizardStep(0);
     } catch (error) {
       setBookingError(error instanceof Error ? error.message : "Nie udało się przesunąć wizyty.");
+      setReschedulingAppointmentId(appointmentId);
+      setBookingWizardStep(5);
+      setWizardOpen(true);
+      setSalonOpen(false);
     } finally {
       setIsSaving(false);
     }
@@ -3743,7 +4003,7 @@ export function BookingHome() {
       setIsSaving(true);
       setBookingError("");
       const name = splitClientName(form.fullName);
-      await runAppointmentOperation(
+      const operation = runAppointmentOperation(
         "create_client",
         {
           appointment: adminAppointment,
@@ -3755,10 +4015,18 @@ export function BookingHome() {
         },
         { key: "create_client:booking", expectedVersion: 0 },
       );
+      setWizardOpen(false);
+      setSalonOpen(true);
+      setStep("booking");
+      await operation;
       setForm({ fullName: "", phone: "" });
-      setStep("success");
+      setSelectedTime("");
+      setBookingWizardStep(0);
     } catch (error) {
       setBookingError(error instanceof Error ? error.message : "Nie udało się zapisać wizyty.");
+      setBookingWizardStep(5);
+      setWizardOpen(true);
+      setSalonOpen(false);
     } finally {
       setIsSaving(false);
     }
@@ -3823,6 +4091,7 @@ export function BookingHome() {
   const saveAdminAppointmentEdit = async () => {
     if (!selectedAdminEditAppointment || isSaving) return;
 
+    const appointmentId = selectedAdminEditAppointment.id;
     const priceAmount = parseAppointmentPriceInput(adminEditDraft.price);
     if (!isValidAppointmentPriceInput(adminEditDraft.price)) {
       setBookingError("Podaj cenę od 0 do 10 000 zł, maksymalnie z 2 miejscami po przecinku.");
@@ -3841,23 +4110,26 @@ export function BookingHome() {
 
     try {
       setIsSaving(true);
-      await runAppointmentOperation(
+      setBookingError("");
+      const operation = runAppointmentOperation(
         "update_admin",
         {
-          appointmentId: selectedAdminEditAppointment.id,
+          appointmentId,
           dateKey: adminEditDraft.dateKey,
           startTime: adminEditDraft.startTime,
           priceAmount,
         },
         {
-          key: `update_admin:${selectedAdminEditAppointment.id}`,
+          key: `update_admin:${appointmentId}`,
           expectedVersion: selectedAdminEditAppointment.version ?? 1,
         },
       );
       setAdminSelectedKey(adminEditDraft.dateKey);
       setAdminEditAppointmentId(null);
+      await operation;
     } catch (error) {
       setBookingError(error instanceof Error ? error.message : "Nie udało się zapisać zmian wizyty.");
+      setAdminEditAppointmentId(appointmentId);
     } finally {
       setIsSaving(false);
     }
@@ -4497,6 +4769,48 @@ export function BookingHome() {
       ) : null}
     </nav>
   );
+  const salonHomeView = <>
+    <SalonHome
+      busy={!authReady || isSigningIn || Boolean(activeUser && !sessionReady)}
+      signedIn={Boolean(activeUser)} admin={isAdmin} error={authError}
+      account={activeUser ? {
+        name: activeUser.displayName ?? activeUser.email ?? "Użytkownik",
+        photoUrl: activeUser.photoURL,
+      } : null}
+      notification={activeUser && !isOwner ? {
+        label: pushDeviceLabel,
+        enabled: pushDeviceEnabled,
+        status: pushDeviceStatus,
+        busy: isPushDeviceUpdating,
+      } : null}
+      notice={actionFeedback?.kind === "pending" ? {
+        kind: actionFeedback.kind,
+        message: actionFeedback.message,
+      } : pushDeviceFeedback ?? (actionFeedback ? {
+        kind: actionFeedback.kind,
+        message: actionFeedback.message,
+      } : null)}
+      signingOut={isSigningOut}
+      visitsBadge={clientVisitsBadgeCount}
+      onBook={() => {
+        salonScrollPositionRef.current = window.scrollY;
+        viewScrollPositionsRef.current.salon = window.scrollY;
+        setWizardOpen(true);
+        setSalonOpen(false);
+        setReschedulingAppointmentId(null);
+      }}
+      onPanel={() => { setSalonOpen(false); setStep("admin"); }}
+      onVisits={() => { setWizardOpen(false); setSalonOpen(false); setClientAppointmentsListOpen(true); }}
+      onNotifications={() => void handlePushDeviceToggle()}
+      onSignOut={() => void handleSignOut()}
+      onInstall={() => setInstallGuideOpen(true)}
+    />
+    {installGuideOpen && <InstallGuideDialog onClose={closeInstallGuide} />}
+  </>;
+  if (salonOpen && (!activeUser || !sessionReady) && !pendingNotificationAppointmentId && !pendingAdminWaitlistSelection && !pendingWaitlistSelection && !clientAppointmentId && !adminEditAppointmentId && step === "booking") {
+    return salonHomeView;
+  }
+
   if (!authReady || (activeUser && !sessionReady)) {
     return (
       <main className="auth-shell" aria-label="Ładowanie logowania">
@@ -4519,6 +4833,7 @@ export function BookingHome() {
     return (
       <>
         <main className="auth-shell" aria-label="Logowanie do aplikacji">
+          <button type="button" className="salon-return" onClick={() => setSalonOpen(true)}>‹ Strona salonu</button>
           <section className="auth-card">
             <div className="auth-brand">
               <span className="auth-logo" aria-hidden="true">
@@ -4590,7 +4905,7 @@ export function BookingHome() {
           visibleStep === "admin" ? "admin-page" : ""
         }`}
       >
-      {actionFeedback ? (
+      {actionFeedback && visibleStep !== "booking" ? (
         <div
           className={`action-feedback-toast ${actionFeedback.kind}`}
           role={actionFeedback.kind === "error" ? "alert" : "status"}
@@ -4608,6 +4923,12 @@ export function BookingHome() {
           <span>{actionFeedback.message}</span>
         </div>
       ) : null}
+      <div
+        className={`salon-persistent-view${visibleStep !== "booking" || wizardOpen ? " is-hidden" : ""}`}
+        aria-hidden={visibleStep !== "booking" || wizardOpen ? true : undefined}
+      >
+        {salonHomeView}
+      </div>
       {visibleStep === "admin" ? (
         <section className="admin-view" aria-label="Panel admina">
           <div className="admin-topbar">
@@ -4615,26 +4936,46 @@ export function BookingHome() {
               className="back-button"
               type="button"
               onClick={() => {
-                if (isOwner && selectedBarber) {
-                  setSelectedBarberId(null);
-                  setAdminSection("schedule");
-                  setAdminWorkspaceTab("upcoming");
-                } else {
-                  setStep("booking");
-                }
+                setStep("booking");
+                setSalonOpen(true);
               }}
             >
-              ‹ {isOwner && selectedBarber ? "Barberzy" : "Wróć"}
+              ‹ Wróć
             </button>
             <div>
               <p className="eyebrow">{isOwner ? "Właściciel" : "Barber"}</p>
-              <h1>{selectedBarber ? adminSectionLabels[adminSection] : "Wybierz barbera"}</h1>
+              <h1>{selectedBarber ? adminSectionLabels[adminSection] : "Panel właściciela"}</h1>
             </div>
             <span className="owner-topbar-spacer" />
           </div>
 
           {isOwner && !selectedBarber ? (
-            <div className="owner-barber-select" aria-label="Wybór barbera">
+            <div className="owner-admin-home">
+              <nav className="owner-panel-tabs" aria-label="Sekcje panelu właściciela">
+                <button
+                  className={ownerPanelTab === "photos" ? "active" : ""}
+                  type="button"
+                  aria-pressed={ownerPanelTab === "photos"}
+                  onClick={() => setOwnerPanelTab("photos")}
+                >
+                  Zdjęcia
+                </button>
+                <button
+                  className={ownerPanelTab === "barbers" ? "active" : ""}
+                  type="button"
+                  aria-pressed={ownerPanelTab === "barbers"}
+                  onClick={() => setOwnerPanelTab("barbers")}
+                >
+                  Barberzy
+                </button>
+              </nav>
+
+              {ownerPanelTab === "photos" ? (
+                <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie zarządzania stroną" />}>
+                  <SalonManager />
+                </Suspense>
+              ) : (
+                <div className="owner-barber-select" aria-label="Wybór barbera">
               <header className="owner-barber-heading">
                 <p className="eyebrow">Panel zespołu</p>
                 <h2>Czyj panel chcesz otworzyć?</h2>
@@ -4694,6 +5035,8 @@ export function BookingHome() {
                   </button>
                 ))}
               </div>
+                </div>
+              )}
             </div>
           ) : (
             <>
@@ -4718,7 +5061,7 @@ export function BookingHome() {
 
               <div className="admin-content-frame">
             {adminSection === "schedule" && adminWorkspaceTab === "upcoming" ? (
-              <Suspense fallback={<div className="admin-panel-loading" aria-label="Ładowanie terminarza" />}>
+              <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie terminarza" />}>
                 <AdminCalendarScreen
                   mode="upcoming"
                   workspaceTabs={renderAdminWorkspaceTabs()}
@@ -4750,7 +5093,7 @@ export function BookingHome() {
             ) : null}
 
             {adminSection === "schedule" && adminWorkspaceTab === "schedule" ? (
-              <Suspense fallback={<div className="admin-panel-loading" aria-label="Ładowanie kalendarza" />}>
+              <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie kalendarza" />}>
                 <AdminCalendarScreen
                   mode="calendar"
                   workspaceTabs={renderAdminWorkspaceTabs()}
@@ -4783,7 +5126,7 @@ export function BookingHome() {
             ) : null}
 
             {adminSection === "schedule" && adminWorkspaceTab === "clients" ? (
-              <Suspense fallback={<div className="admin-panel-loading" aria-label="Ładowanie klientów" />}>
+              <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie klientów" />}>
                 <AdminClientsScreen
                   workspaceTabs={renderAdminWorkspaceTabs()}
                   workspaceTab={clientWorkspaceTab}
@@ -4817,7 +5160,7 @@ export function BookingHome() {
             ) : null}
 
             {adminSection === "analytics" ? (
-              <Suspense fallback={<div className="admin-panel-loading" aria-label="Ładowanie analityki" />}>
+              <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie analityki" />}>
                 <AdminAnalyticsScreen
                   appointments={adminAppointments}
                   currentDate={currentDate}
@@ -4829,7 +5172,7 @@ export function BookingHome() {
             ) : null}
 
             {adminSection === "work" ? (
-              <Suspense fallback={<div className="admin-panel-loading" aria-label="Ładowanie ustawień pracy" />}>
+              <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie ustawień pracy" />}>
                 <AdminSettingsScreen
                   mode="work"
                   workspaceTabs={renderWorkWorkspaceTabs()}
@@ -4848,7 +5191,6 @@ export function BookingHome() {
                   feedback={workFeedback}
                   today={today}
                   timeOptions={workTimeOptions}
-                  quickAvailabilityOptions={quickAvailabilityOptions}
                   availability={workSettings.availability}
                   availabilityMonthGroups={availabilityMonthGroups}
                   expandedAvailabilityMonth={expandedAvailabilityMonth}
@@ -4866,9 +5208,6 @@ export function BookingHome() {
                   }}
                   onUpdateAvailability={updateAvailabilityDraft}
                   onSaveAvailability={() => void addAvailabilityRange()}
-                  onQuickAddAvailability={(offset, startTime, endTime) =>
-                    void quickAddAvailability(offset, startTime, endTime)
-                  }
                   onToggleAvailabilityMonth={setExpandedAvailabilityMonth}
                   onEditAvailability={beginAvailabilityEdit}
                   onRemoveAvailability={(dateKeyValue) => void removeAvailabilityDate(dateKeyValue)}
@@ -4882,7 +5221,7 @@ export function BookingHome() {
             ) : null}
 
             {isOwner && adminSection === "team" ? (
-              <Suspense fallback={<div className="admin-panel-loading" aria-label="Ładowanie zespołu" />}>
+              <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie zespołu" />}>
                 <AdminSettingsScreen
                   mode="team"
                   members={teamMembers}
@@ -4904,7 +5243,7 @@ export function BookingHome() {
             ) : null}
 
             {adminSection === "profile" ? (
-              <Suspense fallback={<div className="admin-panel-loading" aria-label="Ładowanie profilu" />}>
+              <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie profilu" />}>
                 <AdminSettingsScreen
                   mode="profile"
                   barberName={activeBarberName}
@@ -4944,10 +5283,6 @@ export function BookingHome() {
                   type="button"
                   onClick={() => {
                     setAdminSection(section);
-                    if (section === "schedule") setAdminWorkspaceTab("upcoming");
-                    if (section === "work") {
-                      setWorkWorkspaceTab(canAccessAdminWork ? "days" : "services");
-                    }
                   }}
                 >
                   <NavigationIcon
@@ -4964,6 +5299,41 @@ export function BookingHome() {
           )}
         </section>
       ) : visibleStep === "booking" ? (
+        wizardOpen ? (
+            <BookingWizard
+              barbers={clientBarberOptions} barberId={selectedBarberId}
+              services={services} serviceId={selectedServiceId}
+              days={days} dateKey={selectedKey} month={visibleMonth}
+              times={selectedKey === selectedDayKey ? availableTimes : []} time={selectedTime} form={form}
+              catalogReady={serviceCatalogReady} calendarReady={calendarDataReady}
+              canPreviousMonth={canShiftToPreviousMonth}
+              canConfirm={canConfirm && canContinue} busy={isSaving}
+              step={bookingWizardStep}
+              initialStep={reschedulingAppointment ? 2 : bookingWizardStep}
+              rescheduling={Boolean(reschedulingAppointment)}
+              price={reschedulingAppointment?.price}
+              refreshing={isRetryingData} error={bookingError || dataError || barberServicesError || workSettingsError}
+              nearest={nearestFreeSlot}
+              onBarber={(id) => selectBookingBarber(id, false)}
+              onService={(id) => { if (id !== selectedServiceId) { setSelectedServiceId(id); setSelectedTime(""); } }}
+              onDay={(key) => { if (key !== selectedKey) { setSelectedKey(key); setSelectedTime(""); } }}
+              onTime={setSelectedTime} onMonth={shiftMonth} onForm={updateForm}
+              onConfirm={reschedulingAppointment ? saveClientReschedule : confirmBooking} onRetry={async () => { retryCatalog(); await retryClientAppointmentData(); }}
+              onNearest={selectNearestFreeSlot} onWaitlist={openWaitlistDialog}
+              onStepChange={setBookingWizardStep}
+              overlayOpen={waitlistDialogOpen} onOverlayBack={() => { if (!isWaitlistSaving) setWaitlistDialogOpen(false); }}
+              onClose={() => {
+                setWizardOpen(false);
+                setSalonOpen(true);
+                setReschedulingAppointmentId(null);
+                setBookingError("");
+                window.requestAnimationFrame(() => {
+                  window.scrollTo({ top: salonScrollPositionRef.current, behavior: "instant" });
+                });
+              }}
+            />
+          ) : null
+      ) : activeUser && String(visibleStep) === "booking" ? (
         <ClientScreen>
           <BookingHero />
           <section className="booking-panel" aria-label="Kalendarz rezerwacji">
@@ -6160,7 +6530,7 @@ export function BookingHome() {
             </div>
 
             {canAccessAdminClients && canAccessAdminSchedule ? (
-              <Suspense fallback={<p>Ładowanie scalania klientów…</p>}>
+              <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie scalania klientów" />}>
                 <ClientMergePanel
                   key={selectedAdminClient.id}
                   current={selectedAdminClient}
@@ -7122,7 +7492,7 @@ export function BookingHome() {
         </div>
       ) : null}
 
-      {(bookingError || dataError) && visibleStep !== "confirm" ? (
+      {(bookingError || dataError) && visibleStep !== "confirm" && !(wizardOpen && visibleStep === "booking") ? (
         <div
           className={`booking-operation-error${!bookingError && dataError ? " has-action" : ""}`}
           role="alert"
@@ -7141,7 +7511,7 @@ export function BookingHome() {
         </div>
       ) : null}
 
-      {visibleStep !== "admin" && (visibleStep !== "booking" || selectedBarber) ? (
+      {visibleStep !== "admin" && visibleStep !== "booking" ? (
         <footer className="bottom-footer" aria-label="Akcja rezerwacji">
           <button
             className={footerClassName}
@@ -7150,22 +7520,9 @@ export function BookingHome() {
             aria-busy={
               visibleStep === "confirm"
                 ? isActionPending("create_client:booking")
-                : Boolean(
-                    reschedulingAppointment &&
-                      isActionPending(`reschedule_client:${reschedulingAppointment.id}`),
-                  )
+                : false
             }
             onClick={() => {
-              if (visibleStep === "booking") {
-                if (reschedulingAppointment) {
-                  void saveClientReschedule();
-                  return;
-                }
-
-                setStep("confirm");
-                return;
-              }
-
               if (visibleStep === "confirm") {
                 void confirmBooking();
                 return;
@@ -7173,6 +7530,8 @@ export function BookingHome() {
 
               setSelectedTime("");
               setBookingSummary(null);
+              setWizardOpen(false);
+              setSalonOpen(true);
               setStep("booking");
             }}
           >

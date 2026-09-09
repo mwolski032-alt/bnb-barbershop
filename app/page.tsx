@@ -3,7 +3,7 @@ import { BookingHome } from "./booking-home";
 
 export const metadata: Metadata = {
   title: "BNB Barbershop | Rezerwacja wizyty",
-  description: "Ciemny kalendarz rezerwacji usług barberskich BNB Barbershop.",
+  description: "B'n'B Barbershop — poznaj barberów, zobacz salon i umów wizytę.",
 };
 
 export default function Home() {

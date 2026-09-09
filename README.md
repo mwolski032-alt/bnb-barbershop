@@ -15,10 +15,18 @@ npm run dev
 npm run lint
 npm run typecheck
 npm test
+npm run verify
+npm run verify:lighthouse
 npm run build:netlify
 ```
 
-`build:netlify` zawsze uruchamia kontrolę TypeScript przed przygotowaniem paczki produkcyjnej.
+`verify` uruchamia kontrolę TypeScript, lint, produkcyjny build oraz wszystkie testy aplikacji.
+`build:netlify` korzysta z tej samej pełnej bramki, więc nieudany test zatrzymuje publikację.
+
+Workflow `BNB Quality Gate` uruchamia się automatycznie przy każdej zmianie wysłanej do
+gałęzi `main` oraz przy każdym pull requeście. Oprócz pełnej bramki sprawdza wydajność,
+dostępność i stabilność układu w Lighthouse oraz prawdziwe reguły dostępu w emulatorze
+Firebase. Raport Lighthouse jest zachowywany przez 7 dni tylko wtedy, gdy kontrola się nie powiedzie.
 
 ## Konfiguracja Netlify
 

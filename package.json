@@ -8,15 +8,18 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "node build/netlify-build.mjs",
-    "build:netlify": "npm run typecheck && npm run build",
+    "build:netlify": "npm run verify",
     "start": "vinext start",
-    "test": "npm run build && node --test tests/*.test.mjs",
+    "test": "npm run build && npm run test:unit",
+    "test:unit": "node --test tests/*.test.mjs",
     "test:rules": "firebase emulators:exec --only database --project demo-bnb-stage3 \"node --test tests/emulator/firebase-rules.test.mjs\"",
     "deploy:firebase": "firebase deploy --only database --project bnbbarber-9a7bd",
     "data:migrate:dry-run": "node scripts/migrate-data-model.mjs",
     "data:cleanup:clients": "node scripts/cleanup-client-database.mjs",
     "typecheck": "tsc --noEmit --incremental false",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "verify": "npm run typecheck && npm run lint && npm run build && npm run test:unit",
+    "verify:lighthouse": "node scripts/lighthouse-quality-gate.mjs",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
@@ -30,6 +33,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
     "@firebase/rules-unit-testing": "^5.0.1",
+    "@lhci/cli": "^0.15.1",
     "@tailwindcss/postcss": "4.2.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "22.19.19",

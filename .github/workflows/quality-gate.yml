@@ -1,0 +1,74 @@
+name: BNB Quality Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bnb-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    name: Application, PWA and performance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download source
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run the publication gate
+        run: npm run verify
+
+      - name: Guard performance and accessibility
+        run: npm run verify:lighthouse
+
+      - name: Keep Lighthouse report after a failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-report
+          path: .lighthouseci
+          if-no-files-found: ignore
+          retention-days: 7
+
+  firebase-rules:
+    name: Firebase access rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download source
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Use Java 21 for the Firebase emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify database permissions
+        run: npm run test:rules

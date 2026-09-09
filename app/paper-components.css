@@ -174,7 +174,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--color-primary); 
 .calendar-save-button span::before { background: var(--color-primary); }
 
 /* Work and service controls are outlined before selection and filled afterwards. */
-:is(.work-week-strip button, .work-preset-grid button, .quick-availability-list button,
+:is(.work-week-strip button, .work-preset-grid button,
   .availability-window-row button:not(.remove):not(.confirm-remove),
   .work-editor-cancel, .work-toggle, .work-copy-actions button, .vacation-list button,
   .service-cancel-button, .service-management-actions button:not(.danger)) {
@@ -182,13 +182,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--color-primary); 
 }
 .availability-month { border-color: var(--color-primary); }
 .availability-month-toggle { border: 0; border-radius: inherit; }
-:is(.work-preset-grid button.active, .quick-availability-list button.existing,
+:is(.work-preset-grid button.active,
   .work-toggle.active, .vacation-list button.active) {
   background: var(--color-primary);
   border-color: var(--color-primary);
   color: var(--color-on-primary);
 }
-:is(.work-preset-grid button.active, .quick-availability-list button.existing,
+:is(.work-preset-grid button.active,
   .work-toggle.active, .vacation-list button.active) :is(span, strong, small) {
   color: inherit;
 }

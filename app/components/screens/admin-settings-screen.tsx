@@ -5,6 +5,7 @@ import type { ChangeEvent, ReactNode } from "react";
 import ProfileAvatar from "../profile-avatar";
 
 type BarberDetails = {
+  specialties?: string;
   displayName: string;
   phone: string;
   email: string;
@@ -76,14 +77,6 @@ type WorkScreenProps = {
   feedback: { kind: "success" | "error"; message: string } | null;
   today: Date;
   timeOptions: string[];
-  quickAvailabilityOptions: Array<{
-    label: string;
-    offset: number;
-    startTime: string;
-    endTime: string;
-    date: Date;
-    dateKey: string;
-  }>;
   availability: Record<string, AvailabilityWindow>;
   availabilityMonthGroups: Array<{
     key: string;
@@ -91,7 +84,7 @@ type WorkScreenProps = {
     items: AvailabilityWindow[];
     totalMinutes: number;
   }>;
-  expandedAvailabilityMonth: string | null | undefined;
+  expandedAvailabilityMonth: string | null;
   pendingAvailabilityRemovalKey: string | null | undefined;
   services: Service[];
   editingService: Service | null;
@@ -103,7 +96,6 @@ type WorkScreenProps = {
   onSetAvailabilityPreset: (startTime: string, endTime: string) => void;
   onUpdateAvailability: (field: keyof AvailabilityDraft, value: string) => void;
   onSaveAvailability: () => void;
-  onQuickAddAvailability: (offset: number, startTime: string, endTime: string) => void;
   onToggleAvailabilityMonth: (key: string | null) => void;
   onEditAvailability: (windowItem: AvailabilityWindow) => void;
   onRemoveAvailability: (dateKey: string) => void;
@@ -332,36 +324,6 @@ function WorkSettingsScreen(props: WorkScreenProps) {
               {props.feedback ? (
                 <p className={`work-feedback ${props.feedback.kind}`} role="status">{props.feedback.message}</p>
               ) : null}
-            </section>
-
-            <section className="work-editor-card">
-              <div className="work-editor-top">
-                <div>
-                  <p className="eyebrow">Szybkie dodawanie</p>
-                  <h2>Gotowe okienka</h2>
-                </div>
-              </div>
-              <div className="quick-availability-list">
-                {props.quickAvailabilityOptions.map((option) => (
-                  <button
-                    className={props.availability[option.dateKey] ? "existing" : ""}
-                    key={`${option.dateKey}-${option.startTime}`}
-                    type="button"
-                    disabled={props.isWorkSaving}
-                    aria-busy={props.isActionPending("quick_availability")}
-                    onClick={() => props.onQuickAddAvailability(option.offset, option.startTime, option.endTime)}
-                  >
-                    <span className="quick-availability-date">
-                      <strong>{option.label}</strong>
-                      <small>{clientDateFormatter.format(option.date)}</small>
-                    </span>
-                    <span className="quick-availability-time">
-                      <strong>{option.startTime}-{option.endTime}</strong>
-                      <small>{props.availability[option.dateKey] ? "Zaktualizuj" : "Dodaj"}</small>
-                    </span>
-                  </button>
-                ))}
-              </div>
             </section>
 
             <section className="availability-list-card">
@@ -708,7 +670,7 @@ function BarberProfileScreen(props: ProfileScreenProps) {
 
           <div className="barber-profile-fields">
             <label>
-              Imię wyświetlane
+              Imię i nazwisko (wyświetlane publicznie)
               <input
                 type="text"
                 maxLength={50}
@@ -747,12 +709,18 @@ function BarberProfileScreen(props: ProfileScreenProps) {
                 <input
                   type="text"
                   inputMode="text"
-                  maxLength={40}
+                  maxLength={120}
                   value={props.draft.instagram}
                   onChange={(event) => props.onChange("instagram", event.target.value.replace(/^@+/, ""))}
-                  placeholder="nazwa_profilu"
+                  placeholder="nazwa_profilu lub https://instagram.com/..."
                 />
               </span>
+            </label>
+            <label className="barber-profile-bio">
+              Specjalizacje
+              <input maxLength={180} value={props.draft.specialties ?? ""}
+                onChange={(event) => props.onChange("specialties", event.target.value)}
+                placeholder="np. fade, broda, klasyczne strzyżenie" />
             </label>
             <label className="barber-profile-bio">
               Krótki opis

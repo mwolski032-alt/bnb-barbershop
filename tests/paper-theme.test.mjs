@@ -23,11 +23,14 @@ test("paper palette and global serif typography have a single source of truth", 
   }
 });
 
-test("PWA launches on paper and gives the system bar a contrasting brand color", () => {
+test("PWA launches on paper with a dark system bar, white system icons and safe area", () => {
   const manifest = JSON.parse(read("public/manifest.webmanifest"));
   assert.equal(manifest.background_color, `#${palette.background}`);
   assert.equal(manifest.theme_color, `#${palette.primary}`);
   assert.match(read("app/layout.tsx"), /themeColor: "#014241"/);
+  assert.match(read("app/layout.tsx"), /statusBarStyle: "black"/);
+  assert.doesNotMatch(read("app/layout.tsx"), /prefers-color-scheme/);
+  assert.match(read("app/layout.tsx"), /viewportFit: "cover"/);
   assert.match(read("app/layout.tsx"), /colorScheme: "light"/);
   assert.match(read("app/layout.tsx"), /import "\.\/paper-components.css"/);
 });

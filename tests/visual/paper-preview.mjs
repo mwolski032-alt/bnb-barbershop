@@ -40,14 +40,14 @@ const settingsBase = {
   availabilityDraftDays: 1, availabilityDraftDuration: 480, availabilityOverwriteCount: 0,
   canSaveAvailability: true, isWorkSaving: false, feedback: null, today,
   timeOptions: ["09:00", "10:00", "11:00", "12:00", "17:00", "18:00"],
-  quickAvailabilityOptions: [], availability: { [availability.id]: availability },
+  availability: { [availability.id]: availability },
   availabilityMonthGroups: [{ key: "2026-09", label: "Wrzesień 2026", items: [availability], totalMinutes: 480 }],
-  expandedAvailabilityMonth: "2026-09", pendingAvailabilityRemovalKey: null,
+  expandedAvailabilityMonth: null, pendingAvailabilityRemovalKey: null,
   services: [{ id: "cut", barberId: "mateusz", name: "Strzyżenie i pielęgnacja brody", price: "80 zł", durationMinutes: 60 }],
   editingService: null, serviceDraft: { name: "", price: "", durationMinutes: "30" }, canSaveService: false,
   isSavingService: false, isActionPending: () => false,
 };
-const noopProps = { onResetAvailability: noop, onSetAvailabilityPreset: noop, onUpdateAvailability: noop, onSaveAvailability: noop, onQuickAddAvailability: noop, onToggleAvailabilityMonth: noop, onEditAvailability: noop, onRemoveAvailability: noop, onResetService: noop, onUpdateService: noop, onSaveService: noop, onEditService: noop, onDeleteService: noop };
+const noopProps = { onResetAvailability: noop, onSetAvailabilityPreset: noop, onUpdateAvailability: noop, onSaveAvailability: noop, onToggleAvailabilityMonth: noop, onEditAvailability: noop, onRemoveAvailability: noop, onResetService: noop, onUpdateService: noop, onSaveService: noop, onEditService: noop, onDeleteService: noop };
 const calendarBase = { workspaceTabs: tabs, selectedDateKey: "2026-09-07", dayAppointments: [appointment], dayAvailability: availability, scheduleDays: ["2026-09-07","2026-09-08","2026-09-09","2026-09-10","2026-09-11","2026-09-12","2026-09-13"], allAppointments: [appointment], availability: { [availability.id]: availability }, scheduleSlots: Array.from({length:32},(_,i)=>`${String(10+Math.floor(i/4)).padStart(2,"0")}:${String(i%4*15).padStart(2,"0")}`), scheduleHours: ["10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00"], scheduleStartMinutes: 600, today, currentDate: today, draggedAppointmentId: null, currentTimeLineVisible: false, currentTimeLineTop: 0, currentTimeLineMinutes: 570, isTouchDevice: true, onCreateAppointment: noop, onShiftDay: noop, onSelectDate: noop, onEditAppointment: noop, onOpenWorkEditor: noop, onMoveAppointment: noop, onDragStart: noop, renderAppointmentActions: () => h("div",{className:"appointment-actions"},h("button",{className:"confirm"},"Potwierdź"),h("button",{className:"no-show"},"Nieobecność")) };
 const profile = { displayName: "Mateusz", phone: "", email: "", instagram: "bnb.barbershop", bio: "Klasyczne strzyżenie, precyzyjna broda i dbałość o detale.", photoUrl: "" };
 const access = Object.fromEntries(["schedule","clients","analytics","work","services","profile"].map(key=>[key,true]));

@@ -1,0 +1,92 @@
+/* Booking story: shared paper/ink tokens, no new brand palette. */
+.app-shell:has(> .booking-story) { display: block; max-width: none; width: 100%; padding: 0; min-height: 100dvh; }
+.booking-story { min-height: 100dvh; background: var(--color-background); color: var(--color-text); padding-bottom: max(32px, env(safe-area-inset-bottom)); }
+.story-header { padding: max(16px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 22px max(20px, env(safe-area-inset-left)); background: var(--color-surface); border-bottom: 1px solid var(--color-border); }
+.story-toolbar, .story-progress { max-width: 800px; margin: auto; }
+.story-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.story-toolbar > span { font-size: 26px; color: var(--color-primary); letter-spacing: -.04em; }
+.story-toolbar small { display: block; text-align: center; font-size: 9px; letter-spacing: .2em; }
+.booking-story button { cursor: pointer; font: inherit; touch-action: manipulation; transition: background-color .15s, border-color .15s, transform .12s; }
+.booking-story button:active:not(:disabled) { transform: scale(.98); }
+.booking-story button:focus-visible, .booking-story input:focus-visible { outline: 3px solid var(--color-primary); outline-offset: 3px; }
+.story-toolbar button, .story-month button { display: grid; place-items: center; min-width: 44px; min-height: 44px; padding: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: transparent; color: var(--color-primary); }
+.story-toolbar svg { width: 20px; height: 20px; }
+.story-progress { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); list-style: none; padding: 24px 0 0; gap: 8px; }
+.story-segment { display: block; height: 4px; background: var(--color-border); border-radius: 8px; }
+.story-progress .done .story-segment, .story-progress .current .story-segment { background: var(--color-primary); }
+.story-progress .current .story-segment { box-shadow: 0 3px 0 var(--color-primary-soft); }
+.story-step-label { display: block; color: var(--color-text-secondary); font-size: 12px; margin-top: 9px; }
+.story-progress .current .story-step-label { color: var(--color-primary); font-weight: 700; }
+.story-body { max-width: 720px; margin: auto; padding: 38px max(22px,env(safe-area-inset-right)) 16px max(22px,env(safe-area-inset-left)); }
+.story-heading { margin-bottom: 28px; }
+.story-heading h1 { margin: 12px 0; font-size: clamp(29px,5vw,43px); line-height: 1.12; font-weight: 500; color: var(--color-primary); letter-spacing: -.035em; outline: none; }
+.story-heading p { line-height: 1.5; color: var(--color-text-secondary); margin: 0; }
+.story-scene { animation: story-enter .18s ease-out; }
+@keyframes story-enter { from { opacity: .35; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.story-options { display: grid; gap: 12px; }
+.story-card-skeletons { display: grid; gap: 12px; }
+.story-card-skeleton { display: block; width: 100%; min-height: 96px; border: 1px solid var(--color-border); border-radius: var(--radius-card); }
+.booking-story .story-barber, .booking-story .story-service { width: 100%; display: flex; align-items: center; gap: 18px; padding: 22px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-card); background: var(--color-surface); color: var(--color-text); text-align: left; }
+.story-barber > span:not(.profile-avatar), .story-service > span { flex: 1; min-width: 0; }
+.story-barber strong, .story-service strong { display: block; font-size: 23px; font-weight: 500; }
+.story-barber small, .story-service small { display: flex; align-items: center; gap: 5px; color: var(--color-text-secondary); font-size: 13px; margin: 5px 0; }
+.story-barber em { font-style: normal; color: var(--color-text-secondary); font-size: 14px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.booking-story .story-avatar { width: 68px; height: 68px; min-width: 68px; flex: 0 0 68px; border-radius: 50%; overflow: hidden; aspect-ratio: 1; background: var(--color-primary-soft); color: var(--color-primary); }
+.booking-story .story-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.story-barber > svg { flex: 0 0 20px; width: 20px; color: var(--color-primary); }
+.story-service small svg { width: 14px; height: 14px; }
+.story-service b { font-size: 18px; color: var(--color-primary); white-space: nowrap; }
+.booking-story .story-barber.selected, .booking-story .story-service.selected { border-color: var(--color-primary); box-shadow: inset 0 0 0 1px var(--color-primary); }
+.story-calendar { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); padding: 18px; }
+.story-month { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.story-month h2 { font-size: 21px; color: var(--color-primary); text-align: center; margin: 0; }
+.story-month button { font-size: 26px; }
+.story-week, .story-days { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 5px; }
+.story-week { text-align: center; margin: 24px 0 12px; color: var(--color-text-secondary); font-size: 12px; }
+.story-calendar-skeleton { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 5px; }
+.story-calendar-skeleton span { display: block; min-height: 48px; border-radius: 9px; }
+.story-days button { border: 1px solid transparent; border-radius: 9px; min-height: 48px; background: transparent; color: var(--color-text); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 17px; padding: 3px; }
+.story-days button i { width: 4px; height: 4px; border-radius: 50%; background: var(--color-primary); }
+.story-days button.outside { opacity: .65; }
+.booking-story .story-days button.selected:not(:disabled), .booking-story .story-times button.selected { background: var(--color-primary); color: var(--color-on-primary); }
+.story-days button.selected i { background: var(--color-on-primary); }
+.story-nearest { display: flex; width: 100%; align-items: center; gap: 14px; margin-top: 20px; padding: 18px; border: 1px solid var(--color-primary); border-radius: var(--radius-control); background: var(--color-primary-soft); color: var(--color-primary); text-align: left; }
+.story-nearest span { flex: 1; }
+.story-nearest small, .story-nearest strong { display: block; line-height: 1.5; }
+.story-nearest svg { width: 20px; flex-shrink: 0; }
+.booking-story .story-text-button { display: block; padding: 12px 4px; margin: 10px auto 0; min-height: 44px; border: 0; background: transparent; color: var(--color-primary); text-decoration: underline; text-underline-offset: 4px; line-height: 1.5; }
+.story-date-label { display: flex; gap: 10px; align-items: center; color: var(--color-primary); font-size: 20px; margin-bottom: 24px; }
+.story-times { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; }
+.story-times-skeleton span { display: block; min-height: 52px; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.story-times button { padding: 15px 5px; min-height: 52px; border: 1px solid var(--color-primary); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-primary); font-size: 20px; }
+.story-form { display: grid; gap: 20px; }
+.story-form label { display: grid; gap: 10px; color: var(--color-primary); font-size: 17px; }
+.story-form input { width: 100%; min-width: 0; padding: 16px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 18px; scroll-margin-block: 30px; }
+.story-form input:focus { border-color: var(--color-primary); }
+.story-phone { display: flex; align-items: center; gap: 12px; }
+.story-phone > span { color: var(--color-text-secondary); }
+.story-form p { margin: -10px 0 0; font-size: 13px; color: var(--color-text-secondary); }
+.booking-story .salon-cta { width: 100%; justify-content: center; min-height: 54px; border-radius: var(--radius-control); background: var(--color-primary); color: var(--color-on-primary); }
+.story-ticket { padding: 28px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-card); background: var(--color-surface); }
+.story-ticket h2 { font-size: 28px; color: var(--color-primary); margin: 14px 0 22px; }
+.story-ticket-barber { display: flex; gap: 14px; align-items: center; margin-bottom: 20px; }
+.story-ticket-barber small, .story-ticket-barber strong { display: block; line-height: 1.5; }
+.story-ticket-barber small { color: var(--color-text-secondary); }
+.story-ticket dl { margin: 0; border-top: 1px solid var(--color-border); padding: 14px 0; }
+.story-ticket dl > div { display: flex; justify-content: space-between; gap: 20px; padding: 7px 0; }
+.story-ticket dt { color: var(--color-text-secondary); }
+.story-ticket dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.story-price { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px dashed var(--color-border-strong); padding-top: 20px; color: var(--color-primary); }
+.story-price strong { font-size: 28px; white-space: nowrap; }
+.story-confirm { margin-top: 22px; }
+.story-notice { padding: 16px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-warning-soft); color: var(--color-text); line-height: 1.5; margin: 16px 0; }
+.story-notice p { margin: 0; }
+.story-recap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; border-top: 1px solid var(--color-border); padding-top: 18px; margin-top: 32px; font-size: 13px; color: var(--color-text-secondary); }
+.story-loading { color: var(--color-primary); padding: 20px 0; }
+.booking-story button:disabled { cursor: not-allowed; background: var(--color-disabled-bg); color: var(--color-text-secondary); box-shadow: none; border-color: var(--color-border); }
+.booking-story .story-days button:disabled { background: transparent !important; color: var(--color-text-muted) !important; border-color: transparent !important; }
+.story-spinner { width: 18px; height: 18px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: story-spin .75s linear infinite; }
+@keyframes story-spin { to { transform: rotate(360deg); } }
+@media (hover:hover) { .booking-story button:hover:not(:disabled) { border-color: var(--color-primary); } .booking-story .salon-cta:hover:not(:disabled) { background: var(--color-primary-hover); } }
+@media (max-width: 480px) { .story-step-label { display: none; } .story-header { padding-bottom: 18px; } .story-body { padding-top: 28px; } .booking-story .story-barber, .booking-story .story-service { padding: 17px; gap: 12px; } .story-barber strong, .story-service strong { font-size: 21px; } .booking-story .story-avatar { width: 56px; height: 56px; min-width: 56px; flex-basis: 56px; } .story-calendar { padding: 12px 8px; } .story-days { gap: 2px; } .story-days button { min-height: 44px; } .story-times { grid-template-columns: repeat(3,minmax(0,1fr)); } .story-ticket { padding: 20px; } }
+@media (prefers-reduced-motion: reduce) { .booking-story *, .booking-story *::before, .booking-story *::after { animation: none !important; transition: none !important; } }

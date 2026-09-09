@@ -38,6 +38,29 @@
         }
       }
     },
+    "shopfront": {
+      ".read": true,
+      "settings": {
+        ".write": "auth != null && root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true",
+        "address": { ".validate": "newData.isString() && newData.val().length <= 160" },
+        "openingHours": { ".validate": "newData.isString() && newData.val().length <= 300" },
+        "$other": { ".validate": false }
+      },
+      "gallery": {
+        ".write": "auth != null && root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true",
+        "$imageId": {
+          ".validate": "$imageId.matches(/^[0-5]$/) && newData.hasChildren(['id', 'imageUrl', 'alt', 'order'])",
+          "id": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 36" },
+          "imageUrl": { ".validate": "newData.isString() && newData.val().length <= 350000 && newData.val().matches(/^data:image\\/(webp|png|jpeg);base64,[A-Za-z0-9+\\/=]+$/)" },
+          "alt": { ".validate": "newData.isString() && newData.val().length <= 160" },
+          "order": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 5" },
+          "createdAt": { ".validate": "newData.isNumber()" },
+          "updatedAt": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
+      },
+      "$other": { ".write": false, ".validate": false }
+    },
     "appointments": {
       ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && ((auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now) || (auth.token.lockScope.matches(/^barber_[a-zA-Z0-9_-]+$/) && auth.token.lockOwner === root.child('systemLocks').child(auth.token.lockScope).child('owner').val() && root.child('systemLocks').child(auth.token.lockScope).child('expiresAt').val() > now && auth.token.globalEpoch > 0 && auth.token.globalEpoch === root.child('systemLocks/appointments/epoch').val() && (!root.child('systemLocks/appointments/owner').exists() || root.child('systemLocks/appointments/expiresAt').val() <= now) && !root.child('appointmentOperations').child(auth.token.operationId).exists()))",
       ".read": "auth != null && root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true",

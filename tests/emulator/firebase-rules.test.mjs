@@ -26,6 +26,25 @@ const fullAccess = {
 
 let environment;
 
+test("gallery is public to read but only the active owner may add, reorder and delete", async () => {
+  const path = "shopfront/gallery/0";
+  const photo = { id: "qa-photo", imageUrl: "data:image/webp;base64,AAAA", alt: "Salon", order: 0 };
+  const anonymous = environment.unauthenticatedContext().database();
+  for (const db of [anonymous, databaseFor(clientUid), databaseFor(mateuszUid), databaseFor(kacperUid)]) {
+    await assertSucceeds(get(ref(db, "shopfront/gallery")));
+    await assertFails(set(ref(db, path), photo));
+  }
+  const owner = databaseFor(ownerUid);
+  await assertFails(set(ref(owner, "shopfront/gallery/6"), photo));
+  await assertSucceeds(set(ref(owner, path), photo));
+  await assertSucceeds(set(ref(owner, `${path}/order`), 1));
+  await assertFails(set(ref(owner, `${path}/imageUrl`), "javascript:alert(1)"));
+  await assertFails(set(ref(owner, `${path}/privateEmail`), "private"));
+  await assertFails(set(ref(databaseFor(mateuszUid), path), null));
+  await assertFails(set(ref(databaseFor(clientUid), `${path}/order`), 2));
+  await assertSucceeds(set(ref(owner, path), null));
+});
+
 const databaseFor = (uid) => environment.authenticatedContext(uid).database();
 
 before(async () => {

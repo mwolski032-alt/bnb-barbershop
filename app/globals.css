@@ -36,6 +36,24 @@ input {
   letter-spacing: 0;
 }
 
+.skeleton-block,
+.admin-panel-loading::before,
+.admin-panel-loading::after {
+  background: linear-gradient(
+    100deg,
+    var(--color-surface-secondary) 18%,
+    var(--color-surface) 42%,
+    var(--color-surface-secondary) 66%
+  );
+  background-size: 220% 100%;
+  animation: bnb-skeleton-shimmer 1.25s ease-in-out infinite;
+}
+
+@keyframes bnb-skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -120% 0; }
+}
+
 button:focus-visible,
 input:focus-visible {
   outline: 3px solid var(--color-primary);
@@ -2812,6 +2830,50 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   height: 2.75rem;
 }
 
+.owner-admin-home {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  min-width: 0;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+.owner-panel-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  width: min(27rem, calc(100% - 2rem));
+  margin: 0 auto;
+}
+
+.owner-panel-tabs button {
+  min-height: 2.85rem;
+  border: 1px solid var(--color-primary);
+  border-radius: 0.72rem;
+  background: var(--color-surface);
+  color: var(--color-primary);
+  cursor: pointer;
+  font-weight: 700;
+  transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.owner-panel-tabs button:active {
+  transform: scale(0.98);
+}
+
+.owner-panel-tabs button.active {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.owner-admin-home > .salon-manager {
+  margin: 0 1rem;
+}
+
+.owner-admin-home > .owner-barber-select {
+  min-height: 0;
+}
+
 .owner-barber-select {
   display: grid;
   align-content: center;
@@ -3057,18 +3119,25 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
 
 .admin-panel-loading {
   display: grid;
-  place-items: center;
+  align-content: start;
+  gap: 1rem;
   min-height: 45vh;
+  padding: clamp(1rem, 4vw, 2rem);
 }
 
 .admin-panel-loading::before {
-  width: 1.65rem;
-  height: 1.65rem;
-  border: 2px solid var(--color-border);
-  border-top-color: var(--color-primary);
-  border-radius: 50%;
+  width: min(15rem, 58%);
+  height: 2.2rem;
+  border-radius: var(--radius-control);
   content: "";
-  animation: action-spin 680ms linear infinite;
+}
+
+.admin-panel-loading::after {
+  width: 100%;
+  height: min(17rem, 34vh);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  content: "";
 }
 
 .admin-tab-panel {
@@ -7107,61 +7176,6 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   color: var(--color-error);
 }
 
-.quick-availability-list {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.55rem;
-  overflow: visible;
-  padding-bottom: 0.05rem;
-}
-
-.quick-availability-list button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  min-height: 3.2rem;
-  padding: 0.72rem 0.78rem;
-  border: 1px solid transparent;
-  border-radius: 1.12rem;
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
-  text-align: left;
-}
-
-.quick-availability-list button.existing {
-  border-color: var(--color-success);
-  background: var(--color-success-soft);
-}
-
-.quick-availability-list button:disabled {
-  cursor: wait;
-  opacity: 0.55;
-}
-
-.quick-availability-date,
-.quick-availability-time {
-  display: grid;
-  gap: 0.16rem;
-}
-
-.quick-availability-time {
-  justify-items: end;
-  text-align: right;
-}
-
-.quick-availability-list strong {
-  color: var(--color-text);
-  font-size: 0.82rem;
-}
-
-.quick-availability-list small {
-  color: var(--color-text-secondary);
-  font-size: .75rem;
-  font-weight: 700;
-}
-
 .availability-month-list {
   display: grid;
   align-content: start;
@@ -8211,6 +8225,30 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
     border-radius: 1.65rem;
     background:
       var(--color-surface);
+  }
+
+  .owner-admin-home {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-height: 0;
+    height: 100%;
+    overflow-y: auto;
+    padding: 0;
+  }
+
+  .owner-panel-tabs {
+    width: min(27rem, 100%);
+    margin: 0;
+  }
+
+  .owner-admin-home > .salon-manager {
+    margin: 0;
+  }
+
+  .owner-admin-home > .owner-barber-select {
+    grid-column: auto;
+    grid-row: auto;
+    height: auto;
   }
 
   .owner-barber-heading h2 {

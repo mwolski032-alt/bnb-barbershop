@@ -289,6 +289,7 @@ export type TeamMemberDraft = {
 };
 
 export type BarberDetails = {
+  specialties?: string;
   displayName: string;
   phone: string;
   email: string;

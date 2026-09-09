@@ -16,7 +16,7 @@ test("pre-renders the BNB booking app shell", async () => {
   assert.match(html, /<html lang="pl"/i);
   assert.match(html, /BNB Barbershop/);
   assert.match(html, /Rezerwacja wizyty/);
-  assert.match(html, /\/brand\/bnb-logo\.png/);
+  assert.match(html, /\/brand\/bnb-mark\.png/);
   assert.doesNotMatch(html, /Your site is taking shape|Building your site|codex-preview/i);
 });
 
@@ -35,13 +35,14 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(page, /BNB Barbershop \| Rezerwacja wizyty/);
   assert.match(page, /<BookingHome \/>/);
   assert.match(layout, /applicationName:\s*"BNB Barbershop"/);
-  assert.match(layout, /manifest:\s*"\/manifest\.webmanifest\?v=5"/);
+  assert.match(layout, /viewport-fit=cover/);
+  assert.match(layout, /manifest:\s*"\/manifest\.webmanifest\?v=9"/);
   assert.match(layout, /\/icons\/apple-touch-icon\.png\?v=3/);
   assert.match(manifest, /"name":\s*"BNB Barbershop"/);
   assert.match(manifest, /\/icons\/icon-192\.png\?v=3/);
   assert.match(manifest, /\/icons\/icon-512\.png\?v=3/);
   assert.match(manifest, /maskable-512\.png\?v=3/);
-  assert.match(serviceWorker, /bnb-barbershop-v10/);
+  assert.match(serviceWorker, /bnb-barbershop-v14/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(bookingHome, /updateViaCache:\s*"none"/);
   assert.match(bookingHome, /registration\.update\(\)/);
@@ -339,11 +340,16 @@ test("keeps the owner-only multi-barber workspace", async () => {
   assert.match(bookingHome, /sessionContext\?\.role === "barber"/);
   assert.match(bookingHome, /const \[teamMembers, setTeamMembers\] = useState<BarberProfile\[]>\(\[]\)/);
   assert.match(bookingHome, /Czyj panel chcesz otworzyć\?/);
+  assert.match(bookingHome, /ownerPanelTab === "photos"/);
+  assert.match(bookingHome, />\s*Zdjęcia\s*</);
+  assert.match(bookingHome, />\s*Barberzy\s*</);
+  assert.doesNotMatch(bookingHome, /Gotowe okienka/);
   assert.doesNotMatch(bookingHome, /appointment\.barberId \|\|/);
   assert.match(bookingHome, /barbers\/\$\{activeBarberId\}\/workSettings/);
   assert.match(bookingHome, /barbers\/\$\{activeBarberId\}\/services/);
   assert.match(appointmentApi, /upsertClientIntoDatabase/);
   assert.match(styles, /\.owner-barber-grid/);
+  assert.match(styles, /\.owner-panel-tabs/);
   assert.match(styles, /\.selected-barber-context/);
 });
 
@@ -750,6 +756,46 @@ test("keeps manual booking services bound to the selected barber", async () => {
   );
   assert.match(styles, /\.manual-booking-status\.loading/);
   assert.match(styles, /\.manual-booking-status\.unavailable/);
+});
+
+test("places the gallery above the landing copy and keeps explicit mobile status colors", async () => {
+  const [home, styles] = await Promise.all([
+    readFile(new URL("../app/components/salon-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/salon.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(home, /className="salon-cover-media">\{galleryShowcase[\s\S]*id="salon-title">Dobre cięcie/);
+  assert.doesNotMatch(home, /Z bliska|02 \/ GALERIA/);
+  assert.match(home, /Pokaż wszystkie zdjęcia/);
+  assert.match(home, /\/brand\/bnb-mark\.png/);
+  assert.match(styles, /\.salon-brand\s*\{[^}]*aspect-ratio:\s*16\/9/s);
+  assert.match(styles, /\.salon-header \.salon-notification\.enabled\s*\{[^}]*background:\s*var\(--color-primary\)/s);
+  assert.match(styles, /\.salon-header \.salon-notification\.disabled[^\{]*\{[^}]*background:\s*var\(--color-error\)/s);
+  assert.match(styles, /\.salon-header nav\s*\{[^}]*border-top:\s*1px solid var\(--color-border-strong\)/s);
+});
+
+test("shows content-shaped loading states and closes slow actions optimistically", async () => {
+  const [bookingHome, home, wizard, manager, globalStyles, salonStyles, wizardStyles] = await Promise.all([
+    readBookingModules(),
+    readFile(new URL("../app/components/salon-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/booking-wizard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/salon-manager.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/salon.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/booking-wizard.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(home, /salon-team-skeleton/);
+  assert.match(wizard, /story-card-skeletons/);
+  assert.match(wizard, /story-calendar-skeleton/);
+  assert.match(wizard, /story-times-skeleton/);
+  assert.match(manager, /salon-manager-skeleton/);
+  assert.match(globalStyles, /@keyframes bnb-skeleton-shimmer/);
+  assert.match(salonStyles, /\.salon-feedback\.pending/);
+  assert.match(wizardStyles, /\.story-calendar-skeleton/);
+  assert.match(bookingHome, /const operation = runAppointmentOperation\([\s\S]{0,900}setWizardOpen\(false\);[\s\S]{0,260}await operation;/);
+  assert.match(bookingHome, /catch \(error\) \{[\s\S]{0,250}setBookingWizardStep\(5\);[\s\S]{0,120}setWizardOpen\(true\);/);
+  assert.match(manager, /setGallery\(optimistic\)[\s\S]{0,700}setGallery\(previous\)/);
 });
 
 // Architectural assertions follow the modules extracted from the former monolith.
