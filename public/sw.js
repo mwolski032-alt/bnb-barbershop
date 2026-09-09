@@ -1,4 +1,4 @@
-const CACHE_NAME = "bnb-barbershop-v14";
+const CACHE_NAME = "bnb-barbershop-v15";
 const APP_SHELL_URL = "/";
 const APP_SHELL = [
   APP_SHELL_URL,

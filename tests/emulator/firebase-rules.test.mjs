@@ -45,6 +45,21 @@ test("gallery is public to read but only the active owner may add, reorder and d
   await assertSucceeds(set(ref(owner, path), null));
 });
 
+test("diagnostic reports cannot be read or forged through the public Firebase client", async () => {
+  const path = "clientErrorReports/example";
+  const report = { id: "example", message: "private diagnostic" };
+  const databases = [
+    environment.unauthenticatedContext().database(),
+    databaseFor(clientUid),
+    databaseFor(mateuszUid),
+    databaseFor(ownerUid),
+  ];
+  for (const database of databases) {
+    await assertFails(get(ref(database, "clientErrorReports")));
+    await assertFails(set(ref(database, path), report));
+  }
+});
+
 const databaseFor = (uid) => environment.authenticatedContext(uid).database();
 
 before(async () => {

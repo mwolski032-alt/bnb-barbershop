@@ -99,11 +99,12 @@ const AdminAnalyticsScreen = lazy(() => import("./components/screens/admin-analy
 const AdminSettingsScreen = lazy(() => import("./components/screens/admin-settings-screen"));
 const ClientMergePanel = lazy(() => import("./components/client-merge-panel"));
 const SalonManager = lazy(() => import("./components/salon-manager"));
+const ErrorMonitoringPanel = lazy(() => import("./components/error-monitoring-panel"));
 
 const googleRedirectPendingKey = "bnb-google-redirect-pending";
 const viewMemoryVersion = 1;
 
-type OwnerPanelTab = "photos" | "barbers";
+type OwnerPanelTab = "photos" | "barbers" | "errors";
 type ViewMemory = {
   version: typeof viewMemoryVersion;
   surface: "salon" | "admin";
@@ -1657,6 +1658,21 @@ export function BookingHome() {
   }, [availabilityWindows]);
   const nearestAvailability = availabilityWindows[0] ?? null;
   const visibleStep = step === "admin" && !isAdmin ? "booking" : step;
+  useEffect(() => {
+    const screen = wizardOpen
+      ? `rezerwacja-krok-${bookingWizardStep + 1}`
+      : visibleStep === "admin"
+        ? isOwner && !selectedBarber
+          ? `wlasciciel-${ownerPanelTab}`
+          : `panel-${adminSection}`
+        : visibleStep === "confirm"
+          ? "potwierdzenie-rezerwacji"
+          : visibleStep === "success"
+            ? "rezerwacja-zakonczona"
+            : "strona-glowna";
+    document.body.dataset.bnbScreen = screen;
+    return () => { delete document.body.dataset.bnbScreen; };
+  }, [adminSection, bookingWizardStep, isOwner, ownerPanelTab, selectedBarber, visibleStep, wizardOpen]);
   const activeViewScrollKey =
     visibleStep === "admin"
       ? isOwner && !selectedBarber
@@ -2350,7 +2366,7 @@ export function BookingHome() {
       if (isOneOf(memory.adminWorkspaceTab, ["upcoming", "schedule", "clients"])) {
         setAdminWorkspaceTab(memory.adminWorkspaceTab);
       }
-      if (isOneOf(memory.ownerPanelTab, ["photos", "barbers"])) {
+      if (isOneOf(memory.ownerPanelTab, ["photos", "barbers", "errors"])) {
         setOwnerPanelTab(memory.ownerPanelTab);
       }
       if (isOneOf(memory.workWorkspaceTab, ["days", "services"])) {
@@ -4968,11 +4984,23 @@ export function BookingHome() {
                 >
                   Barberzy
                 </button>
+                <button
+                  className={ownerPanelTab === "errors" ? "active" : ""}
+                  type="button"
+                  aria-pressed={ownerPanelTab === "errors"}
+                  onClick={() => setOwnerPanelTab("errors")}
+                >
+                  Błędy
+                </button>
               </nav>
 
               {ownerPanelTab === "photos" ? (
                 <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie zarządzania stroną" />}>
                   <SalonManager />
+                </Suspense>
+              ) : ownerPanelTab === "errors" ? (
+                <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie monitoringu błędów" />}>
+                  <ErrorMonitoringPanel />
                 </Suspense>
               ) : (
                 <div className="owner-barber-select" aria-label="Wybór barbera">

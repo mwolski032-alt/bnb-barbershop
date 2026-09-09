@@ -86,6 +86,14 @@ try {
   for(const role of ["barber","owner"]) {
     const page=await browser.newPage({viewport:{width:390,height:844}});
     const errors=[];page.on("pageerror",e=>errors.push(e.message));
+    if(role==="owner") await page.route("**/api/client-errors",async route=>{
+      if(route.request().method()==="GET") return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({reports:[{
+        id:"1234567890abcdef1234567890abcdef",type:"network",message:"POST /appointments: HTTP 503",stack:"",
+        route:"/",screen:"rezerwacja-krok-6",release:"qa-release",count:2,firstSeenAt:Date.now()-60000,
+        lastSeenAt:Date.now(),resolvedAt:null,device:{browser:"Chrome 152",os:"Android 15",viewport:"390x844",installed:true,online:true,connection:"4g"}
+      }]})});
+      return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({report:{}})});
+    });
     let salonCatalogRequests=0;
     page.on("request",request=>{if(request.url().includes("/.netlify/functions/public-barbers"))salonCatalogRequests+=1;});
     await page.goto(`http://127.0.0.1:4191/?role=${role}`);
@@ -117,6 +125,13 @@ try {
       await page.getByRole("button",{name:"Barberzy",exact:true}).click();
       await page.locator('[aria-label="Wybór barbera"]').waitFor();
       assert.equal(await page.getByRole("region",{name:"Zarządzanie stroną salonu"}).count(),0);
+      await page.getByRole("button",{name:"Błędy",exact:true}).click();
+      await page.getByRole("region",{name:"Monitoring błędów"}).waitFor();
+      assert.match(await page.locator(".error-monitor").innerText(),/Android 15.*Chrome 152/s);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+      await page.screenshot({path:"outputs/integration-owner-monitoring.png",fullPage:true});
+      await page.getByRole("button",{name:"Barberzy",exact:true}).click();
+      await page.locator('[aria-label="Wybór barbera"]').waitFor();
     } else {
       assert.equal(await page.getByRole("region",{name:"Zarządzanie stroną salonu"}).count(),0);
       await page.getByRole("button",{name:"Praca",exact:true}).click();

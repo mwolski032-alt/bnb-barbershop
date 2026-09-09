@@ -118,7 +118,7 @@ obliczenia wykonywane pod blokadą barbera. Reguły sprawdzają również unikal
 Sygnały realtime korzystają z atomowego przyrostu, więc równoległe zapisy nie gubią zmian.
 Przy współistnieniu starszego wdrożenia brak epoki bezpiecznie wymusza blokadę globalną.
 
-Cache PWA v7 zapisuje tylko zweryfikowany dokument aplikacji z oznaczeniem
+Cache PWA v15 zapisuje tylko zweryfikowany dokument aplikacji z oznaczeniem
 `data-bnb-app-shell`. Nie przechwytuje tras logowania, callbacków ani API i nie zapisuje
 przekierowań logowania zamiast aplikacji. Usuwane są wyłącznie stare cache BNB.
 
@@ -148,3 +148,17 @@ terminarz już obejmuje ich rewizję. Nowszy sygnał nadal wymusza aktualizację
 Odpowiedzi API mają nagłówek `Server-Timing` z czasami auth, credentials, permissions
 i total, bez tokenów lub danych klientów. Pozwala on oddzielić czas serwera od sieci
 i renderowania podczas kolejnych pomiarów na telefonie.
+
+## Monitoring błędów na telefonach
+
+Globalny monitor zapisuje błędy JavaScript i React, odrzucone operacje w tle, problemy
+z ładowaniem zasobów oraz odpowiedzi API 5xx. Raport zawiera ekran, wersję wdrożenia,
+system, przeglądarkę, rozmiar ekranu, tryb PWA i rodzaj połączenia. Nie wysyła identyfikatora
+konta, nazwiska, telefonu, e-maila ani wartości pól formularzy. Wiadomości i stosy błędów
+są dodatkowo czyszczone po stronie telefonu i serwera.
+
+Brak sieci nie blokuje aplikacji: maksymalnie 20 raportów czeka lokalnie i jest wysyłanych
+po odzyskaniu połączenia. Powtarzające się błędy są grupowane według wersji aplikacji,
+a endpoint ma limit żądań na adres IP oraz drugi limit urządzenia. Dane nie są dostępne
+bezpośrednio przez reguły Firebase. Tylko aktywny właściciel może je odczytać i oznaczyć
+jako rozwiązane w zakładce `Panel właściciela → Błędy`.

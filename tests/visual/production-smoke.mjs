@@ -7,7 +7,7 @@ const html=await fetch(base).then(r=>r.text());
 assert.match(html,/<meta name="theme-color" content="#014241"\s*\/>/);
 assert.doesNotMatch(html,/<meta name="theme-color"[^>]*media=/);
 const sw=await fetch(base+"/sw.js");
-assert.match(await sw.text(),/bnb-barbershop-v14/);
+assert.match(await sw.text(),/bnb-barbershop-v15/);
 assert.match(sw.headers.get("cache-control"),/max-age=0/);
 const manifest=await fetch(base+"/manifest.webmanifest?v=9").then(r=>r.json());
 assert.equal(manifest.theme_color,"#014241");

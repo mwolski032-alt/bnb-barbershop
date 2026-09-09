@@ -42,7 +42,7 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(manifest, /\/icons\/icon-192\.png\?v=3/);
   assert.match(manifest, /\/icons\/icon-512\.png\?v=3/);
   assert.match(manifest, /maskable-512\.png\?v=3/);
-  assert.match(serviceWorker, /bnb-barbershop-v14/);
+  assert.match(serviceWorker, /bnb-barbershop-v15/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(bookingHome, /updateViaCache:\s*"none"/);
   assert.match(bookingHome, /registration\.update\(\)/);
@@ -341,6 +341,8 @@ test("keeps the owner-only multi-barber workspace", async () => {
   assert.match(bookingHome, /const \[teamMembers, setTeamMembers\] = useState<BarberProfile\[]>\(\[]\)/);
   assert.match(bookingHome, /Czyj panel chcesz otworzyć\?/);
   assert.match(bookingHome, /ownerPanelTab === "photos"/);
+  assert.match(bookingHome, /ownerPanelTab === "errors"/);
+  assert.match(bookingHome, /lazy\(\(\) => import\("\.\/components\/error-monitoring-panel"\)\)/);
   assert.match(bookingHome, />\s*Zdjęcia\s*</);
   assert.match(bookingHome, />\s*Barberzy\s*</);
   assert.doesNotMatch(bookingHome, /Gotowe okienka/);

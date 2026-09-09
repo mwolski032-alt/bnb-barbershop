@@ -3,6 +3,7 @@ import "./globals.css";
 import "./paper-components.css";
 import "./salon.css";
 import "./booking-wizard.css";
+import ClientErrorMonitor from "./components/client-error-monitor";
 
 export const metadata: Metadata = {
   title: "BNB Barbershop | Rezerwacje",
@@ -43,7 +44,9 @@ export default function RootLayout({
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       </head>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <ClientErrorMonitor>{children}</ClientErrorMonitor>
+      </body>
     </html>
   );
 }
