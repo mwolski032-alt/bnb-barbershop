@@ -100,11 +100,12 @@ const AdminSettingsScreen = lazy(() => import("./components/screens/admin-settin
 const ClientMergePanel = lazy(() => import("./components/client-merge-panel"));
 const SalonManager = lazy(() => import("./components/salon-manager"));
 const ErrorMonitoringPanel = lazy(() => import("./components/error-monitoring-panel"));
+const AppointmentHistoryPanel = lazy(() => import("./components/appointment-history-panel"));
 
 const googleRedirectPendingKey = "bnb-google-redirect-pending";
 const viewMemoryVersion = 1;
 
-type OwnerPanelTab = "photos" | "barbers" | "errors";
+type OwnerPanelTab = "photos" | "barbers" | "history" | "errors";
 type ViewMemory = {
   version: typeof viewMemoryVersion;
   surface: "salon" | "admin";
@@ -2366,7 +2367,7 @@ export function BookingHome() {
       if (isOneOf(memory.adminWorkspaceTab, ["upcoming", "schedule", "clients"])) {
         setAdminWorkspaceTab(memory.adminWorkspaceTab);
       }
-      if (isOneOf(memory.ownerPanelTab, ["photos", "barbers", "errors"])) {
+      if (isOneOf(memory.ownerPanelTab, ["photos", "barbers", "history", "errors"])) {
         setOwnerPanelTab(memory.ownerPanelTab);
       }
       if (isOneOf(memory.workWorkspaceTab, ["days", "services"])) {
@@ -4985,6 +4986,14 @@ export function BookingHome() {
                   Barberzy
                 </button>
                 <button
+                  className={ownerPanelTab === "history" ? "active" : ""}
+                  type="button"
+                  aria-pressed={ownerPanelTab === "history"}
+                  onClick={() => setOwnerPanelTab("history")}
+                >
+                  Historia
+                </button>
+                <button
                   className={ownerPanelTab === "errors" ? "active" : ""}
                   type="button"
                   aria-pressed={ownerPanelTab === "errors"}
@@ -5001,6 +5010,10 @@ export function BookingHome() {
               ) : ownerPanelTab === "errors" ? (
                 <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie monitoringu błędów" />}>
                   <ErrorMonitoringPanel />
+                </Suspense>
+              ) : ownerPanelTab === "history" ? (
+                <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie historii działań" />}>
+                  <AppointmentHistoryPanel />
                 </Suspense>
               ) : (
                 <div className="owner-barber-select" aria-label="Wybór barbera">

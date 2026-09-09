@@ -2,6 +2,7 @@ import {
   readDatabase,
   withDatabaseLock,
 } from "./_firebase-admin.mjs";
+import { appendAppointmentAudit } from "../../shared/appointment-audit.mjs";
 
 const defaultSections = [
   "appointments",
@@ -107,6 +108,7 @@ export const mutateScopedDatabase = async (
     const result = await mutation(database);
     if (result.error || result.idempotent) return { ...result, database: { ...database, partial: true } };
 
+    appendAppointmentAudit(database, before, result, actorUid);
     addRealtimeSyncMarkers(database, before, result, actorUid);
     const updates = {};
     collectPatch(before, database, "", updates);

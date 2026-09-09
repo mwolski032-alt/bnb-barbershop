@@ -271,6 +271,256 @@
   border-radius: 0.85rem;
 }
 
+/* Owner-only appointment protection and activity history */
+.appointment-history {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  color: var(--color-text);
+}
+
+.appointment-history-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.appointment-history-heading h2 {
+  margin: 0.15rem 0 0.2rem;
+  font-size: clamp(1.55rem, 5vw, 2.15rem);
+}
+
+.appointment-history-heading > div > span,
+.backup-card p,
+.backup-card small {
+  color: var(--color-text-secondary);
+}
+
+.appointment-history-heading > button,
+.backup-card > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.7rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--color-primary);
+  border-radius: 0.7rem;
+  background: transparent;
+  color: var(--color-primary);
+  font: inherit;
+  font-weight: 700;
+}
+
+.appointment-history-heading > button svg,
+.backup-card > button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.appointment-history-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.appointment-history-summary article {
+  display: flex;
+  min-height: 5.2rem;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.85rem;
+  background: var(--color-surface);
+}
+
+.appointment-history-summary article.protected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.appointment-history-summary svg {
+  width: 1.4rem;
+  flex: 0 0 auto;
+}
+
+.appointment-history-summary span {
+  display: grid;
+  gap: 0.18rem;
+  font-size: 0.78rem;
+}
+
+.appointment-history-summary strong {
+  font-size: 1rem;
+  line-height: 1.1;
+}
+
+.backup-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--color-primary);
+  border-radius: 0.9rem;
+  background: var(--color-primary-soft);
+}
+
+.backup-card h3,
+.backup-card p {
+  margin: 0.18rem 0;
+}
+
+.backup-card small {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+}
+
+.backup-card > button {
+  flex: 0 0 auto;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.appointment-history-message {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid;
+  border-radius: 0.7rem;
+}
+
+.appointment-history-message.success {
+  border-color: var(--color-success);
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.appointment-history-message.error {
+  border-color: var(--color-error);
+  background: var(--color-error-soft);
+  color: var(--color-error);
+}
+
+.appointment-history-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0.22rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.85rem;
+  background: var(--color-surface-secondary);
+}
+
+.appointment-history-filters button {
+  min-height: 2.65rem;
+  border: 0;
+  border-radius: 0.65rem;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-weight: 700;
+}
+
+.appointment-history-filters button.active {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.appointment-history-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.appointment-history-list > article {
+  padding: 1rem;
+  border: 1px solid var(--color-border-strong);
+  border-left: 4px solid var(--color-primary);
+  border-radius: 0.85rem;
+  background: var(--color-surface);
+}
+
+.appointment-history-list > article > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.appointment-history-list time {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+.appointment-history-role {
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.appointment-history-role.client {
+  background: var(--color-secondary-soft);
+  color: var(--color-secondary-hover);
+}
+
+.appointment-history-list h3 {
+  margin: 0.7rem 0;
+  font-size: 1.1rem;
+}
+
+.appointment-history-change {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.appointment-history-change > span,
+.appointment-history-change > small {
+  color: var(--color-text-secondary);
+}
+
+.appointment-history-change > small {
+  font-size: 0.78rem;
+}
+
+.appointment-history-empty {
+  display: grid;
+  min-height: 14rem;
+  place-items: center;
+  align-content: center;
+  gap: 0.35rem;
+  padding: 2rem;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 1rem;
+  text-align: center;
+}
+
+.appointment-history-empty svg {
+  width: 2.2rem;
+  height: 2.2rem;
+  color: var(--color-primary);
+}
+
+.appointment-history-empty h3,
+.appointment-history-empty p {
+  margin: 0;
+}
+
+.appointment-history-empty p {
+  color: var(--color-text-secondary);
+}
+
+.appointment-history-skeleton {
+  min-height: 9rem;
+  border-radius: 0.85rem;
+}
+
 .is-spinning {
   animation: monitoring-spin 0.8s linear infinite;
 }
@@ -345,6 +595,26 @@
 
   .error-monitor-summary article:first-child {
     grid-column: 1 / -1;
+  }
+
+  .appointment-history-heading,
+  .backup-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .appointment-history-heading > button,
+  .backup-card > button {
+    align-self: flex-start;
+  }
+
+  .appointment-history-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .appointment-history-list > article > header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 
@@ -3184,9 +3454,9 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
 
 .owner-panel-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.55rem;
-  width: min(27rem, calc(100% - 2rem));
+  width: min(36rem, calc(100% - 2rem));
   margin: 0 auto;
 }
 
@@ -8581,7 +8851,7 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   }
 
   .owner-panel-tabs {
-    width: min(27rem, 100%);
+    width: min(36rem, 100%);
     margin: 0;
   }
 

@@ -22,7 +22,7 @@ test("Firebase rules deny root access and keep client records admin-only", async
   assert.equal(rules.rules.notificationOutbox[".read"], false);
   assert.equal(rules.rules.clientErrorReports[".read"], false);
   assert.equal(rules.rules.clientErrorReports[".write"], false);
-  for (const section of ["appointments", "clients", "waitlistEntries", "appointmentSync", "appointmentOperations", "notificationOutbox"]) {
+  for (const section of ["appointments", "clients", "waitlistEntries", "appointmentSync", "appointmentOperations", "appointmentAudit", "notificationOutbox"]) {
     const guard = rules.rules[section][".write"];
     assert.match(guard, /auth\.uid === 'bnb-schedule-writer'/);
     assert.match(guard, /auth\.token\.bnbScheduleWriter === true/);
@@ -31,6 +31,11 @@ test("Firebase rules deny root access and keep client records admin-only", async
   }
   assert.deepEqual(rules.rules.notificationOutbox[".indexOn"], ["nextAttemptAt"]);
   assert.equal(rules.rules.appointmentOperations[".read"], false);
+  assert.equal(rules.rules.appointmentAudit[".read"], false);
+  assert.equal(rules.rules.businessBackups[".read"], false);
+  assert.equal(rules.rules.businessBackups[".write"], false);
+  assert.equal(rules.rules.businessBackupIndex[".read"], false);
+  assert.equal(rules.rules.businessBackupIndex[".write"], false);
   assert.equal(rules.rules.inAppNotifications, undefined);
 });
 

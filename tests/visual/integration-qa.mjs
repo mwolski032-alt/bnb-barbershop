@@ -130,6 +130,13 @@ try {
       assert.match(await page.locator(".error-monitor").innerText(),/Android 15.*Chrome 152/s);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
       await page.screenshot({path:"outputs/integration-owner-monitoring.png",fullPage:true});
+      await page.getByRole("button",{name:"Historia",exact:true}).click();
+      await page.getByRole("region",{name:"Kopie i historia działań"}).waitFor();
+      await page.getByRole("button",{name:"Utwórz kopię teraz",exact:true}).click();
+      await page.getByText(/Utworzono bezpieczną kopię|Dzisiejsza kopia jest już gotowa/).waitFor();
+      assert.match(await page.locator(".appointment-history").innerText(),/OCHRONA DANYCH.*Aktywne.*ostatnich działań/s);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+      await page.screenshot({path:"outputs/integration-owner-history.png",fullPage:true});
       await page.getByRole("button",{name:"Barberzy",exact:true}).click();
       await page.locator('[aria-label="Wybór barbera"]').waitFor();
     } else {
