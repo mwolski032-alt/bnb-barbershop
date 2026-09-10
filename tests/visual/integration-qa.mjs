@@ -2,15 +2,16 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 const {chromium}=createRequire(import.meta.url)("playwright");
+const baseUrl=process.env.QA_BASE_URL || "http://127.0.0.1:4191";
 const browser=await chromium.launch({executablePath:"C:/Program Files/Google/Chrome/Application/chrome.exe",headless:true});
 fs.mkdirSync("outputs",{recursive:true});
 try {
   for(const width of [360,1440]) {
-    await fetch("http://127.0.0.1:4191/qa-reset");
+    await fetch(`${baseUrl}/qa-reset`);
     const page=await browser.newPage({viewport:{width,height:850}});
     const errors=[];page.on("pageerror",e=>errors.push(e.message));
     await page.route("**/*",route=>new URL(route.request().url()).hostname==="127.0.0.1"?route.continue():route.abort());
-    await page.goto("http://127.0.0.1:4191/?slow=1");
+    await page.goto(`${baseUrl}/?slow=1`);
     await page.getByRole("button",{name:"Umów wizytę",exact:true}).click();
     await page.getByRole("button",{name:/Kontynuuj z Google/}).click();
     await page.locator(".story-barber").filter({hasText:"Mateusz"}).click();
@@ -37,7 +38,7 @@ try {
     await page.locator(".salon-visits-badge").waitFor();
     assert.ok(Number.parseInt(await page.locator(".salon-visits-badge").innerText(),10)>=1,"a barber-proposed change must appear in the visits badge");
     await page.screenshot({path:`outputs/integration-success-${width}.png`,fullPage:true});
-    const data=await fetch("http://127.0.0.1:4191/qa-database?path=appointments").then(r=>r.json());
+    const data=await fetch(`${baseUrl}/qa-database?path=appointments`).then(r=>r.json());
     assert.equal(Object.keys(data).length,4,"one new real-handler appointment only");
     await page.getByRole("button",{name:"Wyloguj",exact:true}).waitFor();
     const notificationButton=page.getByRole("button",{name:/Powiadomienia/});
@@ -60,7 +61,7 @@ try {
     await page.getByRole("button",{name:"Moje wizyty",exact:true}).click();
     await page.locator(".client-appointment-option").first().click();
     await page.getByRole("button",{name:"Odwołaj wizytę",exact:true}).click();
-    await fetch("http://127.0.0.1:4191/qa-fail-next");
+    await fetch(`${baseUrl}/qa-fail-next`);
     const rejectedCancellation=page.waitForResponse(r=>r.url().includes("/appointments")&&r.request().method()==="POST"&&r.request().postData()?.includes('"action":"cancel_client"'));
     await page.getByRole("alertdialog").getByRole("button",{name:"Odwołaj wizytę",exact:true}).click();
     await page.locator(".salon-home").waitFor({timeout:400});
@@ -96,7 +97,7 @@ try {
     });
     let salonCatalogRequests=0;
     page.on("request",request=>{if(request.url().includes("/.netlify/functions/public-barbers"))salonCatalogRequests+=1;});
-    await page.goto(`http://127.0.0.1:4191/?role=${role}`);
+    await page.goto(`${baseUrl}/?role=${role}`);
     await page.getByRole("button",{name:"Umów wizytę",exact:true}).click();
     await page.getByRole("button",{name:/Kontynuuj z Google/}).click();
     await page.locator(".salon-person").first().waitFor({state:"attached"});
@@ -139,6 +140,11 @@ try {
       await page.screenshot({path:"outputs/integration-owner-history.png",fullPage:true});
       await page.getByRole("button",{name:"Barberzy",exact:true}).click();
       await page.locator('[aria-label="Wybór barbera"]').waitFor();
+      await page.getByRole("button",{name:/Otwórz pełny panel barbera/}).first().click();
+      await page.locator('[aria-label="Wybrany barber"]').waitFor();
+      await page.getByRole("button",{name:"‹ Wróć"}).click();
+      await page.locator('[aria-label="Wybór barbera"]').waitFor();
+      assert.equal(await page.getByRole("button",{name:"Barberzy",exact:true}).getAttribute("aria-pressed"),"true","owner must return to the remembered owner tab");
     } else {
       await page.getByRole("tab",{name:/Klienci/}).click();
       await page.getByRole("button",{name:/Otwórz kartę klienta/}).first().click();

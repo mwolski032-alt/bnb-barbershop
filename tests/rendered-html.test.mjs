@@ -778,6 +778,17 @@ test("keeps manual booking services bound to the selected barber", async () => {
   assert.match(styles, /\.manual-booking-status\.unavailable/);
 });
 
+test("returns an owner from a barber workspace to the remembered owner panel", async () => {
+  const bookingHome = await readBookingModules();
+
+  assert.match(
+    bookingHome,
+    /const returnFromAdminPanel = \(\) => \{\s*if \(isOwner && selectedBarberId\) \{\s*setSelectedBarberId\(null\);\s*return;\s*\}/,
+  );
+  assert.match(bookingHome, /className="back-button"[\s\S]*?onClick=\{returnFromAdminPanel\}/);
+  assert.match(bookingHome, /<button type="button" onClick=\{returnFromAdminPanel\}>\s*Zmień/);
+});
+
 test("places the gallery above the landing copy and keeps explicit mobile status colors", async () => {
   const [home, manager, styles] = await Promise.all([
     readFile(new URL("../app/components/salon-home.tsx", import.meta.url), "utf8"),

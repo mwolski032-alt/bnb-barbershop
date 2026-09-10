@@ -3407,6 +3407,16 @@ export function BookingHome() {
     setWorkFeedback(null);
   };
 
+  const returnFromAdminPanel = () => {
+    if (isOwner && selectedBarberId) {
+      setSelectedBarberId(null);
+      return;
+    }
+
+    setStep("booking");
+    setSalonOpen(true);
+  };
+
   const openTeamMemberEditDialog = (member: BarberProfile) => {
     setTeamMemberDraft({
       name: member.name,
@@ -4967,10 +4977,7 @@ export function BookingHome() {
             <button
               className="back-button"
               type="button"
-              onClick={() => {
-                setStep("booking");
-                setSalonOpen(true);
-              }}
+              onClick={returnFromAdminPanel}
             >
               ‹ Wróć
             </button>
@@ -5108,7 +5115,7 @@ export function BookingHome() {
                   <strong>{activeBarberName}</strong>
                 </span>
                 {isOwner ? (
-                  <button type="button" onClick={() => setSelectedBarberId(null)}>
+                  <button type="button" onClick={returnFromAdminPanel}>
                     Zmień
                   </button>
                 ) : null}
