@@ -6474,7 +6474,9 @@ export function BookingHome() {
           }}
         >
           <section
-            className="client-appointment-modal admin-client-profile-modal"
+            className={`client-appointment-modal admin-client-profile-modal${
+              canAccessAdminClients && canAccessAdminSchedule ? " has-merge-panel" : ""
+            }`}
             role="dialog"
             aria-modal="true"
             aria-label={`Karta klienta ${selectedAdminClient.name}`}

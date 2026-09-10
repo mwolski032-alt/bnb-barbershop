@@ -140,6 +140,30 @@ try {
       await page.getByRole("button",{name:"Barberzy",exact:true}).click();
       await page.locator('[aria-label="Wybór barbera"]').waitFor();
     } else {
+      await page.getByRole("tab",{name:/Klienci/}).click();
+      await page.getByRole("button",{name:/Otwórz kartę klienta/}).first().click();
+      const clientCard=page.locator(".admin-client-profile-modal");
+      await clientCard.waitFor();
+      await clientCard.locator(".client-merge-panel").waitFor();
+      assert.equal(await clientCard.getByText("Historia wizyt",{exact:true}).isVisible(),true);
+      const cardLayout=await clientCard.evaluate(element=>{
+        const merge=element.querySelector(".client-merge-panel");
+        const heading=element.querySelector(".client-history-heading");
+        const email=[...element.querySelectorAll("a")].find(link=>link.textContent?.trim()==="E-mail");
+        return {
+          mergeBottom:merge?.getBoundingClientRect().bottom,
+          headingTop:heading?.getBoundingClientRect().top,
+          emailWhiteSpace:email?getComputedStyle(email).whiteSpace:null,
+          viewportFits:document.documentElement.scrollWidth<=innerWidth,
+          modalClass:element.className,
+          gridRows:getComputedStyle(element).gridTemplateRows,
+        };
+      });
+      await page.screenshot({path:"outputs/integration-client-card-mobile.png",fullPage:true});
+      assert.ok(Number(cardLayout.headingTop)>=Number(cardLayout.mergeBottom),`history heading must stay below the merge panel: ${JSON.stringify(cardLayout)}`);
+      assert.equal(cardLayout.emailWhiteSpace,"nowrap","E-mail action must remain on one line");
+      assert.equal(cardLayout.viewportFits,true);
+      await page.getByRole("button",{name:"Zamknij kartę klienta"}).click();
       assert.equal(await page.getByRole("region",{name:"Zarządzanie stroną salonu"}).count(),0);
       await page.getByRole("button",{name:"Praca",exact:true}).click();
       await page.getByRole("heading",{name:"Dni dostępne dla klientów"}).waitFor();

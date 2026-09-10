@@ -42,7 +42,7 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(manifest, /\/icons\/icon-192\.png\?v=3/);
   assert.match(manifest, /\/icons\/icon-512\.png\?v=3/);
   assert.match(manifest, /maskable-512\.png\?v=3/);
-  assert.match(serviceWorker, /bnb-barbershop-v18/);
+  assert.match(serviceWorker, /bnb-barbershop-v19/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(bookingHome, /updateViaCache:\s*"none"/);
   assert.match(bookingHome, /registration\.update\(\)/);
@@ -268,6 +268,11 @@ test("keeps the professional admin client directory and SMS workflow", async () 
   assert.match(bookingHome, /Potwierdzam Twoją wizytę/);
   assert.match(styles, /\.client-directory-tools/);
   assert.match(styles, /\.admin-client-profile-modal/);
+  assert.match(bookingHome, /has-merge-panel/);
+  assert.match(styles, /\.admin-client-profile-modal\.has-merge-panel\s*\{[^}]*grid-template-rows:\s*auto auto auto auto minmax\(0, 1fr\) auto/s);
+  assert.match(styles, /\.client-profile-contact small\s*\{[^}]*white-space:\s*nowrap/s);
+  assert.match(styles, /\.client-profile-contact-actions button,[\s\S]*?white-space:\s*nowrap/);
+  assert.match(styles, /\.client-profile-contact-actions\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s);
   assert.match(styles, /\.sms-template-picker/);
 });
 
