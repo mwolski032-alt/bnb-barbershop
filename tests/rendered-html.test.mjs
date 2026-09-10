@@ -42,7 +42,7 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(manifest, /\/icons\/icon-192\.png\?v=3/);
   assert.match(manifest, /\/icons\/icon-512\.png\?v=3/);
   assert.match(manifest, /maskable-512\.png\?v=3/);
-  assert.match(serviceWorker, /bnb-barbershop-v21/);
+  assert.match(serviceWorker, /bnb-barbershop-v22/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(bookingHome, /updateViaCache:\s*"none"/);
   assert.match(bookingHome, /registration\.update\(\)/);
@@ -787,6 +787,15 @@ test("returns an owner from a barber workspace to the remembered owner panel", a
   );
   assert.match(bookingHome, /className="back-button"[\s\S]*?onClick=\{returnFromAdminPanel\}/);
   assert.match(bookingHome, /<button type="button" onClick=\{returnFromAdminPanel\}>\s*Zmień/);
+});
+
+test("keeps tablet and desktop admin workspaces aligned without empty nearest-visit gaps", async () => {
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(styles, /@media \(min-width: 768px\) and \(max-width: 1199px\)[\s\S]*?\.app-shell\.admin-page\s*\{[^}]*width:\s*min\(calc\(100% - 2rem\), 62rem\)/);
+  assert.match(styles, /\.nearest-workspace-panel\.active\s*\{[^}]*align-content:\s*start;[^}]*grid-template-rows:\s*auto auto auto auto;/s);
+  assert.match(styles, /\.nearest-workspace-panel > \.admin-waitlist\s*\{[^}]*margin:\s*0 0\.95rem 1rem;/s);
+  assert.match(styles, /@media \(min-width: 900px\)[\s\S]*?\.nearest-appointments-list\s*\{[^}]*repeat\(auto-fit, minmax\(28rem, 1fr\)\)/);
 });
 
 test("places the gallery above the landing copy and keeps explicit mobile status colors", async () => {

@@ -9981,6 +9981,36 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   }
 }
 
+@media (min-width: 768px) and (max-width: 1199px) {
+  .app-shell.admin-page {
+    width: min(calc(100% - 2rem), 62rem);
+    padding: 0.75rem 0 calc(6rem + env(safe-area-inset-bottom));
+  }
+
+  .admin-view {
+    min-height: calc(100svh - 1.5rem);
+    border: 1px solid var(--color-border);
+    border-radius: 1.5rem;
+  }
+
+  .admin-section-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 1rem;
+    min-height: 5.5rem;
+    padding: 0.85rem 1rem;
+  }
+
+  .admin-section-stats {
+    grid-template-columns: repeat(2, minmax(7.5rem, auto));
+  }
+
+  .admin-bottom-nav {
+    right: max(2rem, calc((100vw - 62rem) / 2 + 1rem));
+    left: max(2rem, calc((100vw - 62rem) / 2 + 1rem));
+  }
+}
+
 @media (min-width: 768px) {
   .client-modal-backdrop {
     align-items: center;
@@ -9988,6 +10018,86 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
 
   .install-guide-backdrop {
     align-items: center;
+  }
+
+  .nearest-workspace-panel.active {
+    align-content: start;
+    grid-template-rows: auto auto auto auto;
+    overflow-y: auto;
+  }
+
+  .nearest-appointments-view {
+    overflow: visible;
+    padding: 0.95rem;
+  }
+
+  .nearest-workspace-panel > .admin-waitlist {
+    margin: 0 0.95rem 1rem;
+  }
+}
+
+@media (min-width: 900px) {
+  .nearest-appointments-list {
+    grid-template-columns: repeat(auto-fit, minmax(28rem, 1fr));
+    align-items: stretch;
+  }
+
+  .nearest-appointment-card {
+    grid-template-columns: 4.3rem 2.85rem minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto;
+    gap: 0.65rem 0.75rem;
+    min-height: 0;
+    padding: 0.9rem;
+  }
+
+  .nearest-appointment-order,
+  .nearest-appointment-order.primary-label {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .nearest-appointment-order.primary-label strong {
+    width: auto;
+    max-width: 100%;
+  }
+
+  .nearest-appointment-time {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .nearest-appointment-avatar {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .nearest-appointment-main {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .nearest-appointment-state {
+    grid-column: 4;
+    grid-row: 2;
+  }
+
+  .nearest-appointment-actions {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-content: stretch;
+    padding-top: 0.65rem;
+    padding-left: 0;
+    border-top: 1px solid var(--color-border);
+    border-left: 0;
+  }
+
+  .nearest-appointment-actions button {
+    flex: 1 1 auto;
   }
 }
 
