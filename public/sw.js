@@ -1,5 +1,6 @@
-const CACHE_NAME = "bnb-barbershop-v19";
+const CACHE_NAME = "bnb-barbershop-v20";
 const APP_SHELL_URL = "/";
+const ASSET_MANIFEST_URL = "/asset-manifest.json";
 const APP_SHELL = [
   APP_SHELL_URL,
   "/manifest.webmanifest?v=10",
@@ -13,6 +14,18 @@ const isAppShell = async (response) => response.ok && !response.redirected &&
   (await response.clone().text()).includes('data-bnb-app-shell="true"');
 const isExcludedPath = (path) => path.startsWith("/__/") || path.startsWith("/.netlify/") ||
   path.startsWith("/api/") || path.startsWith("/signin") || path.startsWith("/callback") || path.startsWith("/auth/");
+const readBuildAssets = async () => {
+  try {
+    const response = await fetch(ASSET_MANIFEST_URL, { cache: "reload" });
+    if (!response.ok || response.redirected) return [];
+    const manifest = await response.json();
+    return Array.isArray(manifest?.assets)
+      ? manifest.assets.filter((path) => typeof path === "string" && /^\/assets\/[A-Za-z0-9._-]+$/.test(path)).slice(0, 100)
+      : [];
+  } catch {
+    return [];
+  }
+};
 let firebaseMessagingReady = false;
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyATrBnGXzcxUR8r6Y-AeAeXDVPeKAjrymU",
@@ -60,13 +73,17 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => Promise.allSettled(APP_SHELL.map(async (path) => {
-        const response = await fetch(path, { cache: "reload" });
-        if (path === APP_SHELL_URL ? await isAppShell(response) : response.ok && !response.redirected &&
-          !(response.headers.get("content-type") || "").includes("text/html")) {
-          await cache.put(path, response);
-        }
-      })))
+      .then(async (cache) => {
+        const buildAssets = await readBuildAssets();
+        const paths = [...new Set([...APP_SHELL, ASSET_MANIFEST_URL, ...buildAssets])];
+        await Promise.allSettled(paths.map(async (path) => {
+          const response = await fetch(path, { cache: "reload" });
+          if (path === APP_SHELL_URL ? await isAppShell(response) : response.ok && !response.redirected &&
+            !(response.headers.get("content-type") || "").includes("text/html")) {
+            await cache.put(path, response);
+          }
+        }));
+      })
       .then(() => self.skipWaiting()),
   );
 });

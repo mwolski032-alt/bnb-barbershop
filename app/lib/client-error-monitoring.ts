@@ -23,6 +23,7 @@ const endpoint = "/api/client-errors";
 const queueKey = "bnb-diagnostic-queue-v1";
 const deviceKey = "bnb-diagnostic-device-v1";
 const maxQueueSize = 20;
+const retryDelayMs = 350;
 const recentFingerprints = new Map<string, number>();
 let monitoringStarted = false;
 let originalFetch: typeof window.fetch | null = null;
@@ -159,6 +160,11 @@ const errorArgument = (value: unknown) => value instanceof Error
   ? { message: value.message, stack: value.stack ?? "" }
   : { message: typeof value === "string" || typeof value === "number" ? String(value) : "Błąd zapisany w konsoli", stack: "" };
 
+const isCancelledRequest = (error: unknown, signal?: AbortSignal | null) =>
+  Boolean(signal?.aborted) || (error as { name?: unknown } | null)?.name === "AbortError";
+
+const waitBeforeRetry = () => new Promise<void>((resolve) => window.setTimeout(resolve, retryDelayMs));
+
 export const startClientErrorMonitoring = () => {
   if (monitoringStarted || typeof window === "undefined") return () => undefined;
   monitoringStarted = true;
@@ -196,18 +202,50 @@ export const startClientErrorMonitoring = () => {
   window.fetch = async (input, init) => {
     const requestUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(requestUrl, location.href);
+    const method = String(init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+    const signal = init?.signal ?? (input instanceof Request ? input.signal : null);
+    const monitored = url.origin === location.origin && url.pathname !== endpoint;
+    const retryable = monitored && method === "GET";
+    let retried = false;
+    let response: Response;
     try {
-      const response = await originalFetch!(input, init);
-      if (url.origin === location.origin && url.pathname !== endpoint && response.status >= 500) {
-        reportClientError("network", `${String(init?.method ?? "GET").toUpperCase()} ${url.pathname}: HTTP ${response.status}`);
-      }
-      return response;
+      response = await originalFetch!(input, init);
     } catch (error) {
-      if (url.origin === location.origin && url.pathname !== endpoint) {
-        reportClientError("network", `${String(init?.method ?? "GET").toUpperCase()} ${url.pathname}: brak odpowiedzi`, error);
+      if (!retryable || isCancelledRequest(error, signal) || !navigator.onLine) {
+        if (monitored && !isCancelledRequest(error, signal) && navigator.onLine) {
+          reportClientError("network", `${method} ${url.pathname}: brak odpowiedzi`, error);
+        }
+        throw error;
       }
-      throw error;
+      await waitBeforeRetry();
+      if (signal?.aborted || !navigator.onLine) throw error;
+      retried = true;
+      try {
+        response = await originalFetch!(input, init);
+      } catch (retryError) {
+        if (!isCancelledRequest(retryError, signal) && navigator.onLine) {
+          reportClientError("network", `${method} ${url.pathname}: brak odpowiedzi`, retryError);
+        }
+        throw retryError;
+      }
     }
+    if (monitored && response.status >= 500 && retryable && !retried && !signal?.aborted && navigator.onLine) {
+      await waitBeforeRetry();
+      if (!signal?.aborted && navigator.onLine) {
+        try {
+          response = await originalFetch!(input, init);
+        } catch (retryError) {
+          if (!isCancelledRequest(retryError, signal)) {
+            reportClientError("network", `${method} ${url.pathname}: brak odpowiedzi`, retryError);
+          }
+          throw retryError;
+        }
+      }
+    }
+    if (monitored && response.status >= 500) {
+      reportClientError("network", `${method} ${url.pathname}: HTTP ${response.status}`);
+    }
+    return response;
   };
   void flushQueue();
 

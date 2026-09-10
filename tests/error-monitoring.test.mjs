@@ -52,11 +52,12 @@ test("fingerprints group the same failure and separate releases", () => {
 });
 
 test("monitoring endpoint is owner-only for reading and never opens Firebase rules", async () => {
-  const [handler, rules, layout, bookingHome] = await Promise.all([
+  const [handler, rules, layout, bookingHome, clientMonitor] = await Promise.all([
     readFile(new URL("../netlify/functions/client-errors.mjs", import.meta.url), "utf8"),
     readFile(new URL("../database.rules.json", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/booking-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/client-error-monitoring.ts", import.meta.url), "utf8"),
   ]);
   const parsedRules = JSON.parse(rules);
   assert.equal(parsedRules.rules.clientErrorReports[".read"], false);
@@ -66,7 +67,12 @@ test("monitoring endpoint is owner-only for reading and never opens Firebase rul
   assert.match(handler, /maxReportsPerWindow = 12/);
   assert.match(handler, /path: "\/api\/client-errors"/);
   assert.match(handler, /aggregateBy: \["ip", "domain"\]/);
+  assert.match(handler, /context\.deploy\?\.id/);
   assert.match(layout, /<ClientErrorMonitor>/);
   assert.match(bookingHome, /ownerPanelTab === "errors"/);
   assert.match(bookingHome, />\s*Błędy\s*</);
+  assert.match(clientMonitor, /retryDelayMs = 350/);
+  assert.match(clientMonitor, /method === "GET"/);
+  assert.match(clientMonitor, /name === "AbortError"/);
+  assert.match(clientMonitor, /!navigator\.onLine/);
 });

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const vinextCli = fileURLToPath(new URL("../node_modules/vinext/dist/cli.js", import.meta.url));
@@ -25,6 +25,15 @@ const exitCode = await new Promise((resolve) => {
 const completedStaticExport =
   existsSync(fileURLToPath(new URL("../dist/client/index.html", import.meta.url))) &&
   output.includes("Build complete");
+if (completedStaticExport) {
+  const assetsDirectory = fileURLToPath(new URL("../dist/client/assets/", import.meta.url));
+  const manifestPath = fileURLToPath(new URL("../dist/client/asset-manifest.json", import.meta.url));
+  const assets = readdirSync(assetsDirectory, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && !entry.name.endsWith(".map"))
+    .map((entry) => `/assets/${entry.name}`)
+    .sort();
+  writeFileSync(manifestPath, JSON.stringify({ assets }, null, 2));
+}
 const knownWindowsShutdownAssertion =
   process.platform === "win32" && output.includes("UV_HANDLE_CLOSING");
 

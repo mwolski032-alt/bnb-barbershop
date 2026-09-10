@@ -42,7 +42,7 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(manifest, /\/icons\/icon-192\.png\?v=3/);
   assert.match(manifest, /\/icons\/icon-512\.png\?v=3/);
   assert.match(manifest, /maskable-512\.png\?v=3/);
-  assert.match(serviceWorker, /bnb-barbershop-v19/);
+  assert.match(serviceWorker, /bnb-barbershop-v20/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(bookingHome, /updateViaCache:\s*"none"/);
   assert.match(bookingHome, /registration\.update\(\)/);
@@ -54,7 +54,7 @@ test("keeps BNB metadata and production assets wired", async () => {
 });
 
 test("ships a static lightweight startup with an offline app shell", async () => {
-  const [nextConfig, netlifyConfig, layout, bookingHome, bookingHero, serviceWorker, hero960, hero1440] =
+  const [nextConfig, netlifyConfig, layout, bookingHome, bookingHero, serviceWorker, hero960, hero1440, assetManifest, buildScript] =
     await Promise.all([
       readFile(new URL("../next.config.ts", import.meta.url), "utf8"),
       readFile(new URL("../netlify.toml", import.meta.url), "utf8"),
@@ -64,6 +64,8 @@ test("ships a static lightweight startup with an offline app shell", async () =>
       readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
       stat(new URL("../public/brand/bnb-hero-960.avif", import.meta.url)),
       stat(new URL("../public/brand/bnb-hero-1440.avif", import.meta.url)),
+      readFile(new URL("../dist/client/asset-manifest.json", import.meta.url), "utf8"),
+      readFile(new URL("../build/netlify-build.mjs", import.meta.url), "utf8"),
     ]);
 
   assert.match(nextConfig, /output:\s*"export"/);
@@ -77,6 +79,11 @@ test("ships a static lightweight startup with an offline app shell", async () =>
   assert.equal(hero960.size < 100_000, true);
   assert.equal(hero1440.size < 150_000, true);
   assert.match(serviceWorker, /APP_SHELL_URL/);
+  assert.match(serviceWorker, /ASSET_MANIFEST_URL/);
+  assert.match(buildScript, /asset-manifest\.json/);
+  const precachedAssets = JSON.parse(assetManifest).assets;
+  assert.ok(precachedAssets.some((path) => /\/assets\/admin-clients-screen-.*\.js$/.test(path)));
+  assert.ok(precachedAssets.every((path) => path.startsWith("/assets/")));
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(
     serviceWorker,
@@ -96,6 +103,8 @@ test("loads barber workspaces on demand and isolates hero scrolling", async () =
   ]);
 
   assert.match(bookingHome, /import ClientScreen from "\.\/components\/screens\/client-screen"/);
+  assert.match(bookingHome, /import ClientMergePanel from "\.\/components\/client-merge-panel"/);
+  assert.doesNotMatch(bookingHome, /const ClientMergePanel = lazy/);
   assert.match(bookingHome, /lazy\(\(\) => import\("\.\/components\/screens\/admin-calendar-screen"\)\)/);
   assert.match(bookingHome, /lazy\(\(\) => import\("\.\/components\/screens\/admin-clients-screen"\)\)/);
   assert.match(bookingHome, /lazy\(\(\) => import\("\.\/components\/screens\/admin-analytics-screen"\)\)/);
