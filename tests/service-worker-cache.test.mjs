@@ -72,7 +72,7 @@ test("login HTML and redirects cannot replace the cached application shell", asy
 
 test("offline navigation refuses a poisoned shell even if a cache entry already exists", async () => {
   const h = harness();
-  const cache = await h.caches.open("bnb-barbershop-v17");
+  const cache = await h.caches.open("bnb-barbershop-v18");
   await cache.put("/", html("<html>Login</html>"));
   h.fetch(async () => { throw new Error("offline"); });
   await assert.rejects(h.navigate());
@@ -84,7 +84,7 @@ test("activation removes old BNB caches but leaves unrelated caches alone", asyn
   await h.caches.open("other-application");
   await h.lifecycle("install");
   await h.lifecycle("activate");
-  assert.deepEqual([...h.stores.keys()].sort(), ["bnb-barbershop-v17", "other-application"]);
+  assert.deepEqual([...h.stores.keys()].sort(), ["bnb-barbershop-v18", "other-application"]);
 });
 
 test("storage quota failure does not hide a successful network response", async () => {
@@ -104,5 +104,5 @@ test("installation under a login redirect does not cache its HTML at the root", 
   const h = harness();
   h.fetch(async () => html("Login", { path: "/signin", redirected: true }));
   await h.lifecycle("install");
-  assert.equal(await (await h.caches.open("bnb-barbershop-v17")).match("/"), undefined);
+  assert.equal(await (await h.caches.open("bnb-barbershop-v18")).match("/"), undefined);
 });

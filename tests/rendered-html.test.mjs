@@ -42,7 +42,7 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(manifest, /\/icons\/icon-192\.png\?v=3/);
   assert.match(manifest, /\/icons\/icon-512\.png\?v=3/);
   assert.match(manifest, /maskable-512\.png\?v=3/);
-  assert.match(serviceWorker, /bnb-barbershop-v17/);
+  assert.match(serviceWorker, /bnb-barbershop-v18/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(bookingHome, /updateViaCache:\s*"none"/);
   assert.match(bookingHome, /registration\.update\(\)/);
@@ -761,14 +761,18 @@ test("keeps manual booking services bound to the selected barber", async () => {
 });
 
 test("places the gallery above the landing copy and keeps explicit mobile status colors", async () => {
-  const [home, styles] = await Promise.all([
+  const [home, manager, styles] = await Promise.all([
     readFile(new URL("../app/components/salon-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/salon-manager.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/salon.css", import.meta.url), "utf8"),
   ]);
 
   assert.match(home, /className="salon-cover-media">\{galleryShowcase[\s\S]*id="salon-title">Dobre cięcie/);
   assert.doesNotMatch(home, /Z bliska|02 \/ GALERIA/);
   assert.match(home, /Pokaż wszystkie zdjęcia/);
+  assert.match(home, /imageBarber/);
+  assert.match(home, /salon-work-credit/);
+  assert.match(manager, /Wykonawca zdjęcia/);
   assert.match(home, /\/brand\/bnb-mark\.png/);
   assert.match(styles, /\.salon-brand\s*\{[^}]*aspect-ratio:\s*16\/9/s);
   assert.match(styles, /\.salon-header \.salon-notification\.enabled\s*\{[^}]*background:\s*var\(--color-primary\)/s);

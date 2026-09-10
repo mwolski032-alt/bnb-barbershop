@@ -28,6 +28,7 @@ export default function SalonHome(props: Props) {
   const [profile, setProfile] = useState<PublicBarber | null>(null);
   const [image, setImage] = useState<SalonImage | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const imageBarber = image?.barberId ? barbers.find(barber => barber.id === image.barberId) ?? null : null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -145,6 +146,14 @@ export default function SalonHome(props: Props) {
         <img src={photo.imageUrl} alt={photo.alt} loading="lazy" decoding="async" /><span>{String(index + 1).padStart(2, "0")}</span>
       </button>)}</div>
     </SalonDialog>}
-    {image && <SalonDialog title={image.alt || "Zdjęcie galerii"} onClose={() => setImage(null)} wide><img src={image.imageUrl} alt={image.alt} /></SalonDialog>}
+    {image && <SalonDialog title={image.alt || "Zdjęcie galerii"} onClose={() => setImage(null)} wide>
+      <div className="salon-lightbox-work">
+        {imageBarber && <div className="salon-work-credit" aria-label={`Wykonawca: ${imageBarber.displayName}`}>
+          <ProfileAvatar className="salon-work-credit-avatar" name={imageBarber.displayName} photoUrl={imageBarber.photoUrl} />
+          <span><small>WYKONAŁ</small><strong>{imageBarber.displayName}</strong></span>
+        </div>}
+        <img className="salon-lightbox-photo" src={image.imageUrl} alt={image.alt} />
+      </div>
+    </SalonDialog>}
   </main>;
 }

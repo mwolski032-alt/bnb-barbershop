@@ -54,6 +54,7 @@
           "imageUrl": { ".validate": "newData.isString() && newData.val().length <= 350000 && newData.val().matches(/^data:image\\/(webp|png|jpeg);base64,[A-Za-z0-9+\\/=]+$/)" },
           "alt": { ".validate": "newData.isString() && newData.val().length <= 160" },
           "order": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 5" },
+          "barberId": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 80 && root.child('team/barbers').child(newData.val()).exists())" },
           "createdAt": { ".validate": "newData.isNumber()" },
           "updatedAt": { ".validate": "newData.isNumber()" },
           "$other": { ".validate": false }

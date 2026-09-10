@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const firebaseMock = `
-let store={gallery:{0:{id:'one',imageUrl:'/brand/bnb-hero-960.webp',alt:'Wnętrze salonu',order:0},1:{id:'two',imageUrl:'/brand/bnb-hero-1440.jpg',alt:'Detal salonu',order:1}},settings:{address:'',openingHours:''}};
+let store={gallery:{0:{id:'one',imageUrl:'/brand/bnb-hero-960.webp',alt:'Wnętrze salonu',order:0,barberId:'mateusz'},1:{id:'two',imageUrl:'/brand/bnb-hero-1440.jpg',alt:'Detal salonu',order:1}},settings:{address:'',openingHours:''}};
 const listeners=new Set();
 export const ref=(_,path)=>path;
 export function onValue(_,cb){listeners.add(cb);cb({val:()=>store});return ()=>listeners.delete(cb)}

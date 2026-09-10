@@ -4,7 +4,8 @@ import { onValue, ref, runTransaction, set } from "firebase/database";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { realtimeDb } from "../lib/firebase";
 
-export type SalonImage = { id: string; imageUrl: string; alt: string; order: number };
+export type SalonImage = { id: string; imageUrl: string; alt: string; order: number; barberId?: string };
+type GalleryBarber = { id: string; displayName: string };
 
 async function preparePhoto(file: File): Promise<string> {
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 10 * 1024 * 1024) throw new Error("Wybierz JPG, PNG lub WebP do 10 MB.");
@@ -27,6 +28,8 @@ async function preparePhoto(file: File): Promise<string> {
 
 export default function SalonManager() {
   const [gallery, setGallery] = useState<SalonImage[]>([]);
+  const [barbers, setBarbers] = useState<GalleryBarber[]>([]);
+  const [barbersLoading, setBarbersLoading] = useState(true);
   const [settings, setSettings] = useState({ address: "", openingHours: "" });
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -39,6 +42,15 @@ export default function SalonManager() {
     setGallery((Object.values(value?.gallery || {}) as SalonImage[]).sort((a, b) => a.order - b.order));
     if (!dirty.current) setSettings({ address: String(value?.settings?.address || ""), openingHours: String(value?.settings?.openingHours || "") });
   }, () => setFeedback("Nie udało się wczytać galerii. Sprawdź połączenie i uprawnienia.")), []);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/.netlify/functions/public-barbers", { signal: controller.signal })
+      .then(async response => { if (!response.ok) throw new Error(); return response.json(); })
+      .then(data => setBarbers(Array.isArray(data.barbers) ? data.barbers : []))
+      .catch(() => { /* Przypisania pozostają zachowane, nawet gdy lista zespołu jest chwilowo niedostępna. */ })
+      .finally(() => { if (!controller.signal.aborted) setBarbersLoading(false); });
+    return () => controller.abort();
+  }, []);
 
   async function perform(operation: () => Promise<void>) {
     if (locked.current) return;
@@ -70,7 +82,25 @@ export default function SalonManager() {
     <p>Galeria jest widoczna dla wszystkich. Pierwsze zdjęcie jest także okładką strony. Zarządza nią wyłącznie administrator.</p>
     <div className="salon-manager-grid" aria-busy={!loaded}>{!loaded ? [0, 1, 2].map(item => <article className="salon-manager-skeleton skeleton-block" key={item} aria-hidden="true" />) : gallery.map((photo, index) => <article key={photo.id}>
       <img src={photo.imageUrl} alt={photo.alt} />
-      <span>Zdjęcie {index + 1}</span><div>
+      <span>Zdjęcie {index + 1}</span>
+      <label className="salon-photo-barber">
+        <span>Wykonawca</span>
+        <select value={photo.barberId || ""} disabled={busy || barbersLoading} onChange={event => {
+          const barberId = event.target.value;
+          void perform(() => changeGallery(images => images.map(item => {
+            if (item.id !== photo.id) return item;
+            if (barberId) return { ...item, barberId };
+            const withoutBarber = { ...item };
+            delete withoutBarber.barberId;
+            return withoutBarber;
+          })));
+        }} aria-label={`Wykonawca zdjęcia ${index + 1}`}>
+          <option value="">Bez przypisania</option>
+          {photo.barberId && !barbers.some(barber => barber.id === photo.barberId) && <option value={photo.barberId}>Przypisany barber (niedostępny)</option>}
+          {barbers.map(barber => <option key={barber.id} value={barber.id}>{barber.displayName}</option>)}
+        </select>
+      </label>
+      <div>
         {([-1, 1] as const).map(direction => <button type="button" key={direction} aria-label={direction < 0 ? "Przesuń zdjęcie wcześniej" : "Przesuń zdjęcie dalej"} disabled={busy || index + direction < 0 || index + direction >= gallery.length} onClick={() => void perform(() => changeGallery(images => {
           const position = images.findIndex(item => item.id === photo.id); const destination = position + direction;
           if (position >= 0 && destination >= 0 && destination < images.length) [images[position], images[destination]] = [images[destination], images[position]];
