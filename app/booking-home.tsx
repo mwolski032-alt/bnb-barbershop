@@ -1155,6 +1155,12 @@ export function BookingHome() {
   const [draggedAppointmentId, setDraggedAppointmentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [pendingNotificationAppointmentId, setPendingNotificationAppointmentId] = useState("");
+  const [notificationConfirmationAppointmentId, setNotificationConfirmationAppointmentId] =
+    useState("");
+  const closeClientAppointmentDetails = () => {
+    setClientAppointmentId(null);
+    setNotificationConfirmationAppointmentId("");
+  };
   const [clientSearch, setClientSearch] = useState("");
   const [calendarClientSearch, setCalendarClientSearch] = useState("");
   const [calendarClientPickerOpen, setCalendarClientPickerOpen] = useState(false);
@@ -1498,6 +1504,10 @@ export function BookingHome() {
     selectedClientAppointmentIsRescheduled &&
       selectedClientAppointment &&
       selectedClientAppointment.rescheduledBy !== "client",
+  );
+  const selectedClientOpenedFromConfirmationNotification = Boolean(
+    selectedClientAppointment &&
+      selectedClientAppointment.id === notificationConfirmationAppointmentId,
   );
   const selectedClientAppointmentBarber = selectedClientAppointment
     ? clientBarberOptions.find((barber) => barber.id === selectedClientAppointment.barberId) ?? null
@@ -2295,7 +2305,12 @@ export function BookingHome() {
     const url = new URL(window.location.href);
     const event = url.searchParams.get("event")?.trim() ?? "";
     const appointmentId = url.searchParams.get("appointment")?.trim();
-    if (appointmentId) setPendingNotificationAppointmentId(appointmentId);
+    if (appointmentId) {
+      setPendingNotificationAppointmentId(appointmentId);
+      if (event === "admin_rescheduled" || event === "admin_reschedule_reminder") {
+        setNotificationConfirmationAppointmentId(appointmentId);
+      }
+    }
     const waitlistId = url.searchParams.get("waitlist")?.trim() ?? "";
     const barberId = url.searchParams.get("barber")?.trim() ?? "";
     const serviceId = url.searchParams.get("service")?.trim() ?? "";
@@ -3844,7 +3859,7 @@ export function BookingHome() {
     setSelectedKey(appointment.dateKey);
     setSelectedTime(appointment.startTime);
     setForm({ fullName: appointment.clientName, phone: appointment.phone ?? "" });
-    setClientAppointmentId(null);
+    closeClientAppointmentDetails();
     setClientAppointmentsListOpen(false);
     setReschedulingAppointmentId(appointment.id);
     setBookingWizardStep(2);
@@ -3858,7 +3873,7 @@ export function BookingHome() {
     const appointment = ownClientAppointments.find((item) => item.id === appointmentId);
 
     setPendingClientCancellationId(null);
-    setClientAppointmentId(null);
+    closeClientAppointmentDetails();
     setClientAppointmentsListOpen(false);
     if (reschedulingAppointmentId === appointmentId) {
       setReschedulingAppointmentId(null);
@@ -7282,6 +7297,7 @@ export function BookingHome() {
                   type="button"
                   onClick={() => {
                     setClientAppointmentId(appointment.id);
+                    setNotificationConfirmationAppointmentId("");
                     setClientAppointmentsListOpen(false);
                   }}
                 >
@@ -7309,23 +7325,36 @@ export function BookingHome() {
 
       {selectedClientAppointment && visibleStep !== "admin" ? (
         <div
-          className="client-modal-backdrop"
+          className={`client-modal-backdrop ${
+            selectedClientOpenedFromConfirmationNotification
+              ? "notification-confirmation-backdrop"
+              : ""
+          }`}
           role="presentation"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setClientAppointmentId(null);
+            if (event.target === event.currentTarget) closeClientAppointmentDetails();
           }}
         >
           <section
-            className="client-appointment-modal client-bottom-sheet appointment-detail-sheet"
-            role="dialog"
+            className={`client-appointment-modal client-bottom-sheet appointment-detail-sheet ${
+              selectedClientOpenedFromConfirmationNotification
+                ? "notification-confirmation-modal"
+                : ""
+            }`}
+            role={selectedClientNeedsConfirmation ? "alertdialog" : "dialog"}
             aria-modal="true"
             aria-labelledby="client-appointment-detail-title"
+            aria-describedby={
+              selectedClientOpenedFromConfirmationNotification
+                ? "notification-confirmation-description"
+                : undefined
+            }
           >
             <div
               className="sheet-grabber"
               aria-hidden="true"
               onPointerDown={beginSheetGesture}
-              onPointerUp={(event) => endSheetGesture(event, () => setClientAppointmentId(null))}
+              onPointerUp={(event) => endSheetGesture(event, closeClientAppointmentDetails)}
               onPointerCancel={() => {
                 sheetGestureRef.current = null;
               }}
@@ -7344,19 +7373,36 @@ export function BookingHome() {
             <button
               className="modal-close-button"
               type="button"
-              onClick={() => setClientAppointmentId(null)}
+              onClick={closeClientAppointmentDetails}
               aria-label="Zamknij szczegóły wizyty"
             >
               ×
             </button>
             <div className="modal-title">
               <p className="eyebrow">
-                {selectedClientAppointmentIsRescheduled
+                {selectedClientOpenedFromConfirmationNotification && selectedClientNeedsConfirmation
+                  ? "Odpowiedź wymagana"
+                  : selectedClientAppointmentIsRescheduled
                   ? "Zmiana terminu"
                   : "Twoja wizyta"}
               </p>
-              <h2 id="client-appointment-detail-title">{selectedClientAppointment.serviceName}</h2>
+              <h2 id="client-appointment-detail-title">
+                {selectedClientOpenedFromConfirmationNotification && selectedClientNeedsConfirmation
+                  ? "Potwierdź nowy termin"
+                  : selectedClientAppointment.serviceName}
+              </h2>
             </div>
+
+            {selectedClientOpenedFromConfirmationNotification ? (
+              <div className="notification-confirmation-intro">
+                <span aria-hidden="true">✓</span>
+                <p id="notification-confirmation-description">
+                  {selectedClientNeedsConfirmation
+                    ? "Barber zaproponował zmianę Twojej wizyty. Sprawdź nowy termin i wybierz jedną z dwóch odpowiedzi."
+                    : "Dziękujemy — odpowiedź została zapisana i barber już ją widzi."}
+                </p>
+              </div>
+            ) : null}
 
             {selectedClientAppointmentBarber ? (
               <div className="appointment-barber-row">
@@ -7438,12 +7484,13 @@ export function BookingHome() {
               <div
                 className={`modal-actions ${
                   selectedClientNeedsConfirmation ? "with-confirmation" : ""
-                }`}
+                } ${selectedClientOpenedFromConfirmationNotification ? "notification-confirmation-actions" : ""}`}
               >
                 {selectedClientNeedsConfirmation ? (
                   <button
                     className="confirm"
                     type="button"
+                    autoFocus={selectedClientOpenedFromConfirmationNotification}
                     disabled={isSaving || isActionPending(`confirm_client:${selectedClientAppointment.id}`)}
                     aria-busy={isActionPending(`confirm_client:${selectedClientAppointment.id}`)}
                     onClick={() => confirmClientRescheduledAppointment(selectedClientAppointment.id)}
@@ -7451,21 +7498,34 @@ export function BookingHome() {
                     {isSaving ? "Potwierdzanie..." : "Potwierdzam nowy termin"}
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  disabled={isSaving}
-                  onClick={() => beginClientReschedule(selectedClientAppointment)}
-                >
-                  Zmień
-                </button>
-                <button
-                  className="danger"
-                  type="button"
-                  disabled={isSaving}
-                  onClick={() => setPendingClientCancellationId(selectedClientAppointment.id)}
-                >
-                  Odwołaj wizytę
-                </button>
+                {selectedClientOpenedFromConfirmationNotification && !selectedClientNeedsConfirmation ? (
+                  <button className="confirm" type="button" onClick={closeClientAppointmentDetails}>
+                    Gotowe — zamknij
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className={selectedClientOpenedFromConfirmationNotification ? "alternative" : ""}
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() => beginClientReschedule(selectedClientAppointment)}
+                    >
+                      {selectedClientOpenedFromConfirmationNotification
+                        ? "Termin mi nie pasuje"
+                        : "Zmień"}
+                    </button>
+                    {!selectedClientOpenedFromConfirmationNotification ? (
+                      <button
+                        className="danger"
+                        type="button"
+                        disabled={isSaving}
+                        onClick={() => setPendingClientCancellationId(selectedClientAppointment.id)}
+                      >
+                        Odwołaj wizytę
+                      </button>
+                    ) : null}
+                  </>
+                )}
               </div>
             ) : null}
           </section>

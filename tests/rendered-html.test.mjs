@@ -42,7 +42,7 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(manifest, /\/icons\/icon-192\.png\?v=3/);
   assert.match(manifest, /\/icons\/icon-512\.png\?v=3/);
   assert.match(manifest, /maskable-512\.png\?v=3/);
-  assert.match(serviceWorker, /bnb-barbershop-v20/);
+  assert.match(serviceWorker, /bnb-barbershop-v21/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(bookingHome, /updateViaCache:\s*"none"/);
   assert.match(bookingHome, /registration\.update\(\)/);
@@ -173,6 +173,10 @@ test("keeps the premium client booking flow and safety controls", async () => {
   assert.match(bookingHome, /Twoja najbliższa wizyta/);
   assert.match(bookingHome, /className="booking-progress"/);
   assert.match(bookingHome, /Potwierdzam nowy termin/);
+  assert.match(bookingHome, /Termin mi nie pasuje/);
+  assert.match(bookingHome, /notification-confirmation-modal/);
+  assert.match(bookingHome, /admin_reschedule_reminder/);
+  assert.match(styles, /\.notification-confirmation-modal\.client-bottom-sheet/);
   assert.match(bookingHome, /Odwołaj wizytę/);
   assert.match(bookingHome, /if \(direction === -1 && !canShiftToPreviousMonth\) return/);
   assert.match(bookingHome, /event\.key !== "Escape"/);

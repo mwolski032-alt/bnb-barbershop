@@ -327,12 +327,26 @@ const upsertClientIntoDatabase = (database, requestedId, value, barberId, operat
   return result;
 };
 
-const enqueueAppointmentNotification = (database, event, appointment, operationId) => {
+const rescheduleReminderDelayMs = () => {
+  const configured = Number(process.env.RESCHEDULE_CONFIRMATION_REMINDER_DELAY_MS);
+  return Number.isFinite(configured) && configured >= 60_000
+    ? configured
+    : 6 * 60 * 60 * 1000;
+};
+
+const enqueueAppointmentNotification = (
+  database,
+  event,
+  appointment,
+  operationId,
+  options = {},
+) => {
   if (!event) return;
   const now = Date.now();
   database.notificationOutbox ??= {};
   database.notificationOutbox[operationId] = {
     operationId,
+    ...(options.sourceOperationId ? { sourceOperationId: options.sourceOperationId } : {}),
     appointmentId: appointment.id,
     event,
     barberId: appointment.barberId,
@@ -340,11 +354,25 @@ const enqueueAppointmentNotification = (database, event, appointment, operationI
     status: "pending",
     attempts: 0,
     maxAttempts: 6,
-    nextAttemptAt: now,
+    nextAttemptAt: Number(options.nextAttemptAt) || now,
     deduplicationKey: operationId,
     createdAt: now,
     updatedAt: now,
   };
+};
+
+const enqueueAdminRescheduleReminder = (database, appointment, sourceOperationId) => {
+  const reminderOperationId = `${sourceOperationId}-confirmation-reminder`;
+  enqueueAppointmentNotification(
+    database,
+    "admin_reschedule_reminder",
+    appointment,
+    reminderOperationId,
+    {
+      sourceOperationId,
+      nextAttemptAt: Date.now() + rescheduleReminderDelayMs(),
+    },
+  );
 };
 
 const getWarsawDateTimeParts = (now = new Date()) =>
@@ -1536,6 +1564,13 @@ const handler = async (request, timings = {}) => {
         notificationPayload ?? next,
         operation.operationId,
       );
+      if (
+        (action === "reschedule_admin" || action === "update_admin") &&
+        next.status === "rescheduled" &&
+        next.rescheduledBy === "admin"
+      ) {
+        enqueueAdminRescheduleReminder(database, next, operation.operationId);
+      }
       return { database, appointment: next, notificationPayload, notificationOperationIds };
       },
     );

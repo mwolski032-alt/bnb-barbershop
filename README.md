@@ -133,7 +133,7 @@ obliczenia wykonywane pod blokadą barbera. Reguły sprawdzają również unikal
 Sygnały realtime korzystają z atomowego przyrostu, więc równoległe zapisy nie gubią zmian.
 Przy współistnieniu starszego wdrożenia brak epoki bezpiecznie wymusza blokadę globalną.
 
-Cache PWA v20 zapisuje tylko zweryfikowany dokument aplikacji z oznaczeniem
+Cache PWA v21 zapisuje tylko zweryfikowany dokument aplikacji z oznaczeniem
 `data-bnb-app-shell`. Nie przechwytuje tras logowania, callbacków ani API i nie zapisuje
 przekierowań logowania zamiast aplikacji. Usuwane są wyłącznie stare cache BNB.
 

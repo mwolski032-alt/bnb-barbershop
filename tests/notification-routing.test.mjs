@@ -417,6 +417,7 @@ test("booking, reschedule, confirmation and cancellation each create a backend d
     {
       "flow-create": "new_booking",
       "flow-reschedule": "admin_rescheduled",
+      "flow-reschedule-confirmation-reminder": "admin_reschedule_reminder",
       "flow-confirm": "client_confirmed",
       "flow-cancel": "client_cancelled",
     },
@@ -450,6 +451,82 @@ test("admin changes reach every active client device and link to the exact appoi
     assert.equal(link.searchParams.get("event"), "admin_rescheduled");
     assert.equal(message.webpush.headers.Urgency, "high");
   }
+});
+
+test("admin reschedule queues one reminder and skips it after the client answers", async () => {
+  reset();
+  const appointment = appointmentFor({ id: "confirmation-reminder", startTime: "12:00" });
+  database.appointments[appointment.id] = appointment;
+
+  const response = await appointmentRequest("mateusz-id-token", {
+    action: "reschedule_admin",
+    operationId: "reminder-source",
+    expectedVersion: 1,
+    appointmentId: appointment.id,
+    dateKey: "2099-01-10",
+    startTime: "13:00",
+  });
+  const result = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(result));
+  assert.deepEqual(result.notificationOperationIds, ["reminder-source"]);
+
+  const reminderId = "reminder-source-confirmation-reminder";
+  const reminder = database.notificationOutbox[reminderId];
+  assert.equal(reminder.event, "admin_reschedule_reminder");
+  assert.equal(reminder.sourceOperationId, "reminder-source");
+  assert.equal(reminder.nextAttemptAt - reminder.createdAt, 6 * 60 * 60 * 1000);
+
+  await dispatchNotifications("mateusz-id-token", result.notificationOperationIds);
+  sentPushes = [];
+  const reminderResult = await notificationService.processDueNotificationJobs({
+    now: reminder.nextAttemptAt,
+    siteUrl: "https://bnb.example",
+  });
+  assert.equal(reminderResult.delivered, 1);
+  assert.deepEqual(sentPushes.map(({ message }) => message.token), [
+    "client-phone-token",
+    "client-tablet-token",
+  ]);
+  assert.equal(sentPushes[0].message.data.event, "admin_reschedule_reminder");
+  assert.equal(
+    new URL(sentPushes[0].message.data.link).searchParams.get("appointment"),
+    appointment.id,
+  );
+
+  reset();
+  const unansweredAppointment = appointmentFor({
+    id: "confirmation-reminder-unanswered",
+    startTime: "12:00",
+  });
+  database.appointments[unansweredAppointment.id] = unansweredAppointment;
+  await appointmentRequest("mateusz-id-token", {
+    action: "reschedule_admin",
+    operationId: "answered-reminder-source",
+    expectedVersion: 1,
+    appointmentId: unansweredAppointment.id,
+    dateKey: "2099-01-10",
+    startTime: "13:00",
+  });
+  const answeredReminderId = "answered-reminder-source-confirmation-reminder";
+  const answeredDueAt = database.notificationOutbox[answeredReminderId].nextAttemptAt;
+  await appointmentRequest("client-token", {
+    action: "confirm_client",
+    operationId: "client-answered-reminder",
+    expectedVersion: 2,
+    appointmentId: unansweredAppointment.id,
+  });
+  sentPushes = [];
+  await notificationService.processNotificationJob(answeredReminderId, {
+    now: answeredDueAt,
+    force: true,
+    siteUrl: "https://bnb.example",
+  });
+  assert.equal(sentPushes.length, 0);
+  assert.equal(database.notificationOutbox[answeredReminderId].status, "delivered");
+  assert.equal(
+    database.notificationOutbox[answeredReminderId].history.attempt_1.status,
+    "skipped_answered_or_changed",
+  );
 });
 
 test("individual discount notifies the client with the old and new price", async () => {

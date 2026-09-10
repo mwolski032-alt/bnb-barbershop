@@ -2935,6 +2935,46 @@ h2 {
   box-shadow: var(--shadow-card);
 }
 
+.notification-confirmation-backdrop {
+  align-items: center;
+}
+
+.notification-confirmation-modal {
+  width: min(100%, 44rem);
+  padding: clamp(1.15rem, 3vw, 2rem);
+  border-color: var(--color-primary);
+}
+
+.notification-confirmation-intro {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.85rem 0 1rem;
+  padding: 0.85rem;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-card);
+  background: var(--color-primary-soft);
+  color: var(--color-text);
+}
+
+.notification-confirmation-intro > span {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 2.25rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 800;
+}
+
+.notification-confirmation-intro p {
+  margin: 0;
+  font-size: 0.94rem;
+  line-height: 1.45;
+}
+
 .booking-error,
 .booking-operation-error {
   margin: 0;
@@ -3321,6 +3361,18 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   min-height: 3.15rem;
   background: var(--color-surface);
   color: var(--color-text);
+}
+
+.notification-confirmation-actions button.confirm {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.notification-confirmation-actions button.alternative {
+  grid-column: 1 / -1;
+  border: 1px solid var(--color-primary);
+  background: var(--color-surface);
+  color: var(--color-primary);
 }
 
 .modal-actions button.danger {
@@ -10763,6 +10815,33 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
     border-radius: 26px 26px 0 0;
     animation: sheet-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
     overscroll-behavior: contain;
+  }
+
+  .notification-confirmation-backdrop {
+    align-items: stretch;
+  }
+
+  .notification-confirmation-modal.client-bottom-sheet {
+    width: 100%;
+    min-height: 100svh;
+    max-height: 100svh;
+    padding: calc(1rem + env(safe-area-inset-top)) 0.95rem
+      calc(0.95rem + env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
+  }
+
+  .notification-confirmation-modal .sheet-grabber {
+    display: none;
+  }
+
+  .notification-confirmation-modal .modal-close-button,
+  .notification-confirmation-modal .modal-calendar-button {
+    top: calc(1rem + env(safe-area-inset-top));
+  }
+
+  .notification-confirmation-modal .modal-title {
+    padding-top: 2.75rem;
   }
 
   .sheet-grabber {

@@ -47,6 +47,27 @@ const waitlistDateRange = (appointment) =>
 const waitlistPreferenceLabel = (appointment) =>
   waitlistTimePreferenceLabels[appointment.timePreference] || waitlistTimePreferenceLabels.any;
 
+const appointmentIsStillAhead = (appointment, now = Date.now()) => {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "Europe/Warsaw",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date(now))
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+  const today = `${parts.year}-${parts.month}-${parts.day}`;
+  const currentTime = `${parts.hour}:${parts.minute}`;
+  return appointment.dateKey > today ||
+    (appointment.dateKey === today && appointment.startTime > currentTime);
+};
+
 const formatPrice = (value, fallback = "") => {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return fallback;
@@ -126,9 +147,16 @@ const eventCopy = {
   },
   admin_rescheduled: {
     target: "client",
-    title: "Wizyta została przesunięta",
-    body: (appointment) => `Nowy termin: ${appointment.dateKey}, ${appointment.startTime}.`,
+    title: "Potwierdź nowy termin wizyty",
+    body: (appointment) =>
+      `${appointment.serviceName}: ${formatDateKey(appointment.dateKey)} o ${appointment.startTime}. Otwórz aplikację i daj znać, czy termin Ci odpowiada.`,
     clientEmail: true,
+  },
+  admin_reschedule_reminder: {
+    target: "client",
+    title: "Czekamy na potwierdzenie terminu",
+    body: (appointment) =>
+      `${appointment.serviceName}: ${formatDateKey(appointment.dateKey)} o ${appointment.startTime}. Potwierdź termin albo poproś o inną godzinę.`,
   },
   admin_confirmed: {
     target: "client",
@@ -450,16 +478,50 @@ const finishJob = async (accessToken, job, update) => {
 };
 
 const processClaimedJob = async (accessToken, job, siteUrl) => {
-  const operation = await readDatabase(`appointmentOperations/${encodeURIComponent(job.operationId)}`, accessToken);
+  const sourceOperationId = job.sourceOperationId || job.operationId;
+  const operation = await readDatabase(`appointmentOperations/${encodeURIComponent(sourceOperationId)}`, accessToken);
   const expectedEvent = notificationEventByAction[operation?.action];
-  const appointment = operation?.notificationPayload ?? operation?.appointment;
-  if (!appointment || operation.appointmentId !== job.appointmentId || expectedEvent !== job.event) {
+  const reminderMatchesSource =
+    job.event === "admin_reschedule_reminder" &&
+    (operation?.action === "reschedule_admin" ||
+      (operation?.action === "update_admin" && operation?.appointment?.rescheduledBy === "admin"));
+  let appointment = operation?.notificationPayload ?? operation?.appointment;
+  if (
+    !appointment ||
+    operation.appointmentId !== job.appointmentId ||
+    (!reminderMatchesSource && expectedEvent !== job.event)
+  ) {
     return finishJob(accessToken, job, {
       status: "exhausted",
       lastError: "Notification operation is missing or does not match its outbox job.",
       deliveries: job.deliveries ?? {},
       history: { status: "invalid_operation", sent: 0, failed: 1, invalid: 0 },
     });
+  }
+
+  if (job.event === "admin_reschedule_reminder") {
+    const currentAppointment = await readDatabase(
+      `appointments/${encodeURIComponent(job.appointmentId)}`,
+      accessToken,
+    );
+    const stillAwaitsClient =
+      currentAppointment?.status === "rescheduled" &&
+      currentAppointment?.rescheduledBy === "admin" &&
+      currentAppointment?.lastOperationId === sourceOperationId &&
+      appointmentIsStillAhead(currentAppointment, job.nextAttemptAt);
+    if (!stillAwaitsClient) {
+      return finishJob(accessToken, job, {
+        status: "delivered",
+        deliveries: job.deliveries ?? {},
+        history: {
+          status: "skipped_answered_or_changed",
+          sent: 0,
+          failed: 0,
+          invalid: 0,
+        },
+      });
+    }
+    appointment = currentAppointment;
   }
 
   const copy = eventCopy[job.event];

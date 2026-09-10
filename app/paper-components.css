@@ -64,6 +64,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--color-primary); 
   border-radius: var(--radius-control);
   box-shadow: none;
 }
+.client-appointment-modal .notification-confirmation-actions button.alternative {
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-primary) !important;
+  color: var(--color-primary) !important;
+}
+.client-appointment-modal .notification-confirmation-actions button.alternative:hover:not(:disabled) {
+  background: var(--color-primary-soft) !important;
+  color: var(--color-primary-hover) !important;
+}
 :is(.modal-close-button, .back-button, .avatar-button, .session-pill button,
   .month-controls button, .appointment-actions button) { box-shadow: none; }
 

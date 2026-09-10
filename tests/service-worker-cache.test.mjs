@@ -72,7 +72,7 @@ test("login HTML and redirects cannot replace the cached application shell", asy
 
 test("offline navigation refuses a poisoned shell even if a cache entry already exists", async () => {
   const h = harness();
-  const cache = await h.caches.open("bnb-barbershop-v20");
+  const cache = await h.caches.open("bnb-barbershop-v21");
   await cache.put("/", html("<html>Login</html>"));
   h.fetch(async () => { throw new Error("offline"); });
   await assert.rejects(h.navigate());
@@ -84,7 +84,7 @@ test("activation removes old BNB caches but leaves unrelated caches alone", asyn
   await h.caches.open("other-application");
   await h.lifecycle("install");
   await h.lifecycle("activate");
-  assert.deepEqual([...h.stores.keys()].sort(), ["bnb-barbershop-v20", "other-application"]);
+  assert.deepEqual([...h.stores.keys()].sort(), ["bnb-barbershop-v21", "other-application"]);
 });
 
 test("installation precaches lazy application files from the build manifest", async () => {
@@ -99,7 +99,7 @@ test("installation precaches lazy application files from the build manifest", as
     return new Response("asset", { headers: { "content-type": contentType } });
   });
   await h.lifecycle("install");
-  const cache = await h.caches.open("bnb-barbershop-v20");
+  const cache = await h.caches.open("bnb-barbershop-v21");
   assert.ok(await cache.match("/assets/admin-clients-screen-test.js"));
   assert.ok(await cache.match("/assets/index-test.css"));
 });
@@ -121,5 +121,5 @@ test("installation under a login redirect does not cache its HTML at the root", 
   const h = harness();
   h.fetch(async () => html("Login", { path: "/signin", redirected: true }));
   await h.lifecycle("install");
-  assert.equal(await (await h.caches.open("bnb-barbershop-v20")).match("/"), undefined);
+  assert.equal(await (await h.caches.open("bnb-barbershop-v21")).match("/"), undefined);
 });

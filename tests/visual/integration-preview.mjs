@@ -12,6 +12,7 @@ const { default: publicBarbers } = await import("../../netlify/functions/public-
 const { default: appointmentHistory } = await import("../../netlify/functions/appointment-history.mjs");
 const { default: dataBackup } = await import("../../netlify/functions/data-backup.mjs");
 const root = fileURLToPath(new URL("../../", import.meta.url));
+const qaPort = Number(process.env.QA_PORT) || 4191;
 let failNextAppointment = false;
 function reset() {
   fixture.reset();
@@ -85,4 +86,4 @@ http.createServer(async(req,res)=>{
     }
     res.setHeader("Content-Type","text/html; charset=utf-8");res.end(`<!doctype html><html lang="pl"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${css}</style></head><body><div id="root"></div><script type="module" src="/qa.js"></script></body></html>`);
   }catch(e){res.statusCode=500;res.end(JSON.stringify({error:e.message}));}
-}).listen(4191,"127.0.0.1",()=>console.log("Isolated app + real API: http://127.0.0.1:4191/"));
+}).listen(qaPort,"127.0.0.1",()=>console.log(`Isolated app + real API: http://127.0.0.1:${qaPort}/`));
