@@ -1,4 +1,4 @@
-const CACHE_NAME = "bnb-barbershop-v22";
+const CACHE_NAME = "bnb-barbershop-v23";
 const APP_SHELL_URL = "/";
 const ASSET_MANIFEST_URL = "/asset-manifest.json";
 const APP_SHELL = [
@@ -42,6 +42,8 @@ const showPushNotification = (payload = {}) => {
   const notification = payload.notification ?? {};
   const data = payload.data ?? {};
   const title = notification.title ?? data.title ?? "BNB Barbershop";
+  const confirmActionToken = data.confirmActionToken ?? "";
+  const isSupportedAndroid = /Android/i.test(self.navigator?.userAgent ?? "");
   const options = {
     body: notification.body ?? data.body ?? "Masz nowe powiadomienie.",
     icon: notification.icon ?? data.icon ?? "/icons/icon-192.png",
@@ -49,7 +51,16 @@ const showPushNotification = (payload = {}) => {
     tag: notification.tag ?? data.tag ?? "bnb-barbershop",
     data: {
       url: payload.fcmOptions?.link ?? data.link ?? "/",
+      confirmActionToken,
     },
+    ...(confirmActionToken && isSupportedAndroid
+      ? {
+          actions: [
+            { action: "confirm", title: "Potwierdź" },
+            { action: "details", title: "Zobacz szczegóły" },
+          ],
+        }
+      : {}),
   };
 
   return self.registration.showNotification(title, options);
@@ -163,24 +174,62 @@ self.addEventListener("push", (event) => {
   event.waitUntil(showPushNotification(payload));
 });
 
+const openNotificationTarget = async (targetUrl) => {
+  const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const existingClient = clientList.find((client) => client.url.startsWith(self.location.origin));
+  if (existingClient) {
+    const navigatedClient = await existingClient.navigate(targetUrl);
+    return navigatedClient?.focus();
+  }
+  return self.clients.openWindow(targetUrl);
+};
+
+const confirmAppointmentFromNotification = async (notification, targetUrl) => {
+  try {
+    const response = await fetch("/.netlify/functions/notification-action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: notification.data?.confirmActionToken ?? "" }),
+      cache: "no-store",
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.ok !== true) {
+      await self.registration.showNotification("Sprawdź termin wizyty", {
+        body: result.error ?? "Nie udało się potwierdzić terminu. Otwórz szczegóły wizyty.",
+        icon: "/icons/icon-192.png",
+        badge: "/icons/notification-b-v4.png",
+        tag: notification.tag,
+        data: { url: targetUrl, confirmActionToken: "" },
+      });
+      return;
+    }
+    await self.registration.showNotification("Termin potwierdzony", {
+      body: result.message ?? "Nowy termin wizyty został potwierdzony.",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/notification-b-v4.png",
+      tag: notification.tag,
+      data: { url: targetUrl, confirmActionToken: "" },
+    });
+  } catch {
+    await self.registration.showNotification("Sprawdź termin wizyty", {
+      body: "Brak połączenia. Otwórz szczegóły i spróbuj ponownie.",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/notification-b-v4.png",
+      tag: notification.tag,
+      data: { url: targetUrl, confirmActionToken: "" },
+    });
+  }
+};
+
 self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
+  const notification = event.notification;
+  const targetUrl = new URL(notification.data?.url ?? "/", self.location.origin).href;
+  notification.close();
 
-  const targetUrl = new URL(event.notification.data?.url ?? "/", self.location.origin).href;
+  if (event.action === "confirm" && notification.data?.confirmActionToken) {
+    event.waitUntil(confirmAppointmentFromNotification(notification, targetUrl));
+    return;
+  }
 
-  event.waitUntil(
-    self.clients
-      .matchAll({ type: "window", includeUncontrolled: true })
-      .then((clientList) => {
-        const existingClient = clientList.find((client) => client.url.startsWith(self.location.origin));
-
-        if (existingClient) {
-          return existingClient
-            .navigate(targetUrl)
-            .then((navigatedClient) => navigatedClient?.focus());
-        }
-
-        return self.clients.openWindow(targetUrl);
-      }),
-  );
+  event.waitUntil(openNotificationTarget(targetUrl));
 });

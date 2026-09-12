@@ -42,7 +42,7 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(manifest, /\/icons\/icon-192\.png\?v=3/);
   assert.match(manifest, /\/icons\/icon-512\.png\?v=3/);
   assert.match(manifest, /maskable-512\.png\?v=3/);
-  assert.match(serviceWorker, /bnb-barbershop-v22/);
+  assert.match(serviceWorker, /bnb-barbershop-v23/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(bookingHome, /updateViaCache:\s*"none"/);
   assert.match(bookingHome, /registration\.update\(\)/);
@@ -816,6 +816,29 @@ test("places the gallery above the landing copy and keeps explicit mobile status
   assert.match(styles, /\.salon-header \.salon-notification\.enabled\s*\{[^}]*background:\s*var\(--color-primary\)/s);
   assert.match(styles, /\.salon-header \.salon-notification\.disabled[^\{]*\{[^}]*background:\s*var\(--color-error\)/s);
   assert.match(styles, /\.salon-header nav\s*\{[^}]*border-top:\s*1px solid var\(--color-border-strong\)/s);
+});
+
+test("offers one repeat booking from the last completed client visit", async () => {
+  const [bookingHome, home, globalStyles, salonStyles, worker, notifications] = await Promise.all([
+    readBookingModules(),
+    readFile(new URL("../app/components/salon-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/salon.css", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/notification-worker.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/_notification-service.mjs", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /const lastCompletedClientAppointment = useMemo/);
+  assert.match(bookingHome, /const repeatClientAppointment = \(appointment: AdminAppointment\)/);
+  assert.match(bookingHome, /setBookingWizardStep\(2\)/);
+  assert.match(bookingHome, /Poprzednia usługa nie jest już dostępna/);
+  assert.match(home, /Czas na kolejne cięcie\?/);
+  assert.match(home, /Ostatnio: \{props\.repeatVisit\.serviceName\} · \{props\.repeatVisit\.barberName\}/);
+  assert.match(home, /Umów ponownie/);
+  assert.match(globalStyles, /\.client-repeat-visit/);
+  assert.match(salonStyles, /\.salon-repeat-card/);
+  assert.match(worker, /enqueueAppointmentReminders/);
+  assert.match(notifications, /Twoja wizyta jest jutro o \$\{appointment\.startTime\}/);
 });
 
 test("shows content-shaped loading states and closes slow actions optimistically", async () => {

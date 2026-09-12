@@ -3363,6 +3363,58 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   color: var(--color-text);
 }
 
+.client-appointment-empty {
+  margin: 0;
+  padding: 1rem;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-card);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.client-repeat-visit {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-card);
+  background: var(--color-primary-soft);
+}
+
+.client-repeat-visit h3 {
+  margin: .3rem 0 .2rem;
+  color: var(--color-primary);
+  font-size: 1.2rem;
+}
+
+.client-repeat-visit p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: .85rem;
+}
+
+.client-repeat-visit > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .7rem;
+  width: 100%;
+  min-height: 2.8rem;
+  margin-top: .8rem;
+  padding: .65rem .85rem;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-control);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.client-repeat-visit > button svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
 .notification-confirmation-actions button.confirm {
   background: var(--color-primary);
   color: var(--color-on-primary);

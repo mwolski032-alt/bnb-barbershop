@@ -8,6 +8,7 @@ import {
   advanceExpiredWaitlistOffers,
   offerAvailableWaitlistSlots,
 } from "../../shared/waitlist.mjs";
+import { enqueueAppointmentReminders } from "../../shared/appointment-reminders.mjs";
 
 const advanceWaitlist = async (accessToken, now) => {
   return mutateScopedDatabase(
@@ -18,14 +19,17 @@ const advanceWaitlist = async (accessToken, now) => {
       now,
       excludedEntryIds: expired.expiredEntryIds,
     });
-    const changed = expired.changed || available.changed;
+    const reminders = enqueueAppointmentReminders(database, now);
+    const changed = expired.changed || available.changed || reminders.changed;
     const result = {
       changed,
       expiredCount: expired.expiredCount,
       offeredCount: available.offeredCount,
+      reminderCount: reminders.queuedCount,
       notificationOperationIds: [
         ...expired.notificationOperationIds,
         ...available.notificationOperationIds,
+        ...reminders.notificationOperationIds,
       ],
     };
     if (!changed) return { ...result, database, idempotent: true };

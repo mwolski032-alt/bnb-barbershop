@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { onValue, ref } from "firebase/database";
-import { ArrowUpRight, AtSign, MapPin, Clock3, Bell, LogOut } from "lucide-react";
+import { ArrowUpRight, AtSign, MapPin, Clock3, Bell, LogOut, Scissors } from "lucide-react";
 import { realtimeDb } from "../lib/firebase";
 import SalonDialog from "./salon-dialog";
 import ProfileAvatar from "./profile-avatar";
@@ -13,9 +13,11 @@ type Props = {
   onBook: () => void; onPanel: () => void; onVisits: () => void; onInstall: () => void;
   account?: { name: string; photoUrl?: string | null } | null;
   visitsBadge?: number;
+  repeatVisit?: { serviceName: string; barberName: string } | null;
   notification?: { label: string; enabled: boolean; status: string; busy: boolean } | null;
   notice?: { kind: "pending" | "success" | "error"; message: string } | null;
   signingOut?: boolean; onNotifications?: () => void; onSignOut?: () => void;
+  onRepeatVisit?: () => void;
 };
 
 export default function SalonHome(props: Props) {
@@ -103,6 +105,15 @@ export default function SalonHome(props: Props) {
         </div>}
       </div>
     </header>
+    {props.repeatVisit && <section className="salon-repeat-card" aria-labelledby="salon-repeat-title">
+      <span className="salon-repeat-icon" aria-hidden="true"><Scissors /></span>
+      <div>
+        <span className="salon-overline">TWOJA OSTATNIA WIZYTA</span>
+        <h2 id="salon-repeat-title">Czas na kolejne cięcie?</h2>
+        <p>Ostatnio: {props.repeatVisit.serviceName} · {props.repeatVisit.barberName}.</p>
+      </div>
+      <button type="button" onClick={props.onRepeatVisit}>Umów ponownie <ArrowUpRight aria-hidden="true" /></button>
+    </section>}
     <section className="salon-cover" id="salon" aria-labelledby="salon-title">
       <div className="salon-cover-media">{galleryShowcase ?? <div className="salon-cover-photo"><picture>
         <source type="image/avif" srcSet="/brand/bnb-hero-960.avif 960w, /brand/bnb-hero-1440.avif 1440w" sizes="(max-width: 700px) 100vw, 65vw" />

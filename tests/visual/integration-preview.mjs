@@ -25,6 +25,17 @@ function reset() {
   }
   fixture.database.appointments["mateusz-upcoming"].status = "rescheduled";
   fixture.database.appointments["mateusz-upcoming"].rescheduledBy = "admin";
+  const completedDate = new Date(); completedDate.setDate(completedDate.getDate()-28);
+  const completedKey = `${completedDate.getFullYear()}-${String(completedDate.getMonth()+1).padStart(2,"0")}-${String(completedDate.getDate()).padStart(2,"0")}`;
+  fixture.database.appointments["mateusz-completed"] = {
+    ...fixture.database.appointments["mateusz-upcoming"],
+    id: "mateusz-completed",
+    dateKey: completedKey,
+    startTime: "14:00",
+    status: "completed",
+    rescheduledBy: undefined,
+    settlement: { barberId: "mateusz", settledAt: completedDate.getTime(), amount: 50 },
+  };
   fixture.database.barbers.mateusz.profile = {displayName:"Mateusz",bio:"Klasyczne strzyżenia",instagram:"mateusz",specialties:"Broda, Fade"};
 }
 reset();

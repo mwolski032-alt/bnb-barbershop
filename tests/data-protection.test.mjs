@@ -101,6 +101,7 @@ test("backup and history endpoints remain owner-only and backups are scheduled",
   assert.match(backup, /context\.isOwner && context\.active/);
   assert.match(worker, /schedule: "30 2 \* \* \*"/);
   assert.match(scoped, /appendAppointmentAudit\(database, before, result, actorUid\)/);
+  assert.match(scoped, /database\.appointmentAudit \?\?= \{\}/);
   assert.match(bookingHome, /ownerPanelTab === "history"/);
   assert.match(bookingHome, />\s*Historia\s*</);
 });

@@ -318,14 +318,25 @@ export const listenForForegroundPushNotifications = async (
     const notification = payload.notification ?? {};
     const data = payload.data ?? {};
     const title = notification.title ?? data.title ?? "BNB Barbershop";
-    const options = {
+    const confirmActionToken = data.confirmActionToken ?? "";
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    const options: NotificationOptions = {
       body: notification.body ?? data.body ?? "Masz nowe powiadomienie.",
       icon: notification.icon ?? data.icon ?? "/icons/icon-192.png",
       badge: "/icons/notification-b-v4.png",
       tag: data.tag ?? "bnb-barbershop",
       data: {
         url: data.link ?? "/",
+        confirmActionToken,
       },
+      ...(confirmActionToken && isAndroid
+        ? {
+            actions: [
+              { action: "confirm", title: "Potwierdź" },
+              { action: "details", title: "Zobacz szczegóły" },
+            ],
+          }
+        : {}),
     };
 
     if ("serviceWorker" in navigator) {

@@ -1151,6 +1151,12 @@ export function BookingHome() {
   );
   const [adminEditAppointmentId, setAdminEditAppointmentId] = useState<string | null>(null);
   const [reschedulingAppointmentId, setReschedulingAppointmentId] = useState<string | null>(null);
+  const [repeatBookingIntent, setRepeatBookingIntent] = useState<{
+    barberId: string;
+    serviceId: string;
+    serviceName: string;
+    durationMinutes: number;
+  } | null>(null);
   const [successReady, setSuccessReady] = useState(false);
   const [draggedAppointmentId, setDraggedAppointmentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -1478,6 +1484,28 @@ export function BookingHome() {
   const nearestClientAppointment = clientAppointments[0] ?? null;
   const nearestClientAppointmentBarber = nearestClientAppointment
     ? clientBarberOptions.find((barber) => barber.id === nearestClientAppointment.barberId) ?? null
+    : null;
+  const lastCompletedClientAppointment = useMemo(
+    () =>
+      activeUser
+        ? ownClientAppointments
+            .filter(
+              (appointment) =>
+                appointment.userId === activeUser.uid &&
+                normalizeAppointmentStatus(appointment.status) === "completed",
+            )
+            .sort(
+              (first, second) =>
+                getAppointmentEndDateTime(second).getTime() -
+                getAppointmentEndDateTime(first).getTime(),
+            )[0] ?? null
+        : null,
+    [activeUser, ownClientAppointments],
+  );
+  const lastCompletedClientAppointmentBarber = lastCompletedClientAppointment
+    ? clientBarberOptions.find(
+        (barber) => barber.id === lastCompletedClientAppointment.barberId,
+      ) ?? null
     : null;
   const reschedulingClientBarber = reschedulingAppointment
     ? clientBarberOptions.find((barber) => barber.id === reschedulingAppointment.barberId) ?? null
@@ -2813,6 +2841,35 @@ export function BookingHome() {
   }, [manualBookingDraft.serviceId, selectedServiceId, services, serviceCatalogReady]);
 
   useEffect(() => {
+    if (
+      !repeatBookingIntent ||
+      activeBarberId !== repeatBookingIntent.barberId ||
+      !serviceCatalogReady
+    ) {
+      return;
+    }
+
+    const matchingService =
+      services.find((service) => service.id === repeatBookingIntent.serviceId) ??
+      services.find(
+        (service) =>
+          service.name.trim().toLocaleLowerCase("pl") ===
+            repeatBookingIntent.serviceName.trim().toLocaleLowerCase("pl") &&
+          service.durationMinutes === repeatBookingIntent.durationMinutes,
+      );
+    if (matchingService) {
+      setSelectedServiceId(matchingService.id);
+      setBookingWizardStep(2);
+      setBookingError("");
+    } else {
+      setSelectedServiceId("");
+      setBookingWizardStep(1);
+      setBookingError("Poprzednia usługa nie jest już dostępna. Wybierz usługę z aktualnej oferty.");
+    }
+    setRepeatBookingIntent(null);
+  }, [activeBarberId, repeatBookingIntent, serviceCatalogReady, services]);
+
+  useEffect(() => {
     if (!reschedulingAppointment || reschedulingAppointment.barberId !== activeBarberId) return;
 
     const matchingService =
@@ -3936,6 +3993,47 @@ export function BookingHome() {
     }
   };
 
+  const repeatClientAppointment = (appointment: AdminAppointment) => {
+    const barberAvailable = clientBarberOptions.some(
+      (barber) => barber.id === appointment.barberId,
+    );
+    salonScrollPositionRef.current = window.scrollY;
+    viewScrollPositionsRef.current.salon = window.scrollY;
+    closeClientAppointmentDetails();
+    setClientAppointmentsListOpen(false);
+    setReschedulingAppointmentId(null);
+    setSelectedTime("");
+    setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    setSelectedKey(dayKey(today));
+    setForm({
+      fullName: appointment.clientName || activeUser?.displayName || "",
+      phone: appointment.phone ?? "",
+    });
+    setWizardOpen(true);
+    setSalonOpen(false);
+    setStep("booking");
+
+    if (!barberAvailable) {
+      setSelectedBarberId(null);
+      setSelectedServiceId("");
+      setRepeatBookingIntent(null);
+      setBookingWizardStep(0);
+      setBookingError("Poprzedni barber nie jest obecnie dostępny. Wybierz barbera z zespołu.");
+      return;
+    }
+
+    setSelectedBarberId(appointment.barberId);
+    setSelectedServiceId("");
+    setRepeatBookingIntent({
+      barberId: appointment.barberId,
+      serviceId: appointment.serviceId ?? "",
+      serviceName: appointment.serviceName,
+      durationMinutes: appointment.durationMinutes,
+    });
+    setBookingWizardStep(1);
+    setBookingError("");
+  };
+
   const saveClientReschedule = async () => {
     if (!reschedulingAppointment || !selectedTime || isSaving) return;
 
@@ -4834,6 +4932,14 @@ export function BookingHome() {
       } : null)}
       signingOut={isSigningOut}
       visitsBadge={clientVisitsBadgeCount}
+      repeatVisit={
+        activeUser && !isAdmin && !nearestClientAppointment && lastCompletedClientAppointment
+          ? {
+              serviceName: lastCompletedClientAppointment.serviceName,
+              barberName: lastCompletedClientAppointmentBarber?.name ?? "barbera B'n'B",
+            }
+          : null
+      }
       onBook={() => {
         salonScrollPositionRef.current = window.scrollY;
         viewScrollPositionsRef.current.salon = window.scrollY;
@@ -4843,6 +4949,9 @@ export function BookingHome() {
       }}
       onPanel={() => { setSalonOpen(false); setStep("admin"); }}
       onVisits={() => { setWizardOpen(false); setSalonOpen(false); setClientAppointmentsListOpen(true); }}
+      onRepeatVisit={() => {
+        if (lastCompletedClientAppointment) repeatClientAppointment(lastCompletedClientAppointment);
+      }}
       onNotifications={() => void handlePushDeviceToggle()}
       onSignOut={() => void handleSignOut()}
       onInstall={() => setInstallGuideOpen(true)}
@@ -5389,6 +5498,7 @@ export function BookingHome() {
                 setWizardOpen(false);
                 setSalonOpen(true);
                 setReschedulingAppointmentId(null);
+                setRepeatBookingIntent(null);
                 setBookingError("");
                 window.requestAnimationFrame(() => {
                   window.scrollTo({ top: salonScrollPositionRef.current, behavior: "instant" });
@@ -7325,7 +7435,27 @@ export function BookingHome() {
                   <b>{appointment.price}</b>
                 </button>
               ))}
+              {!clientAppointments.length ? (
+                <p className="client-appointment-empty">Nie masz teraz zaplanowanej wizyty.</p>
+              ) : null}
             </div>
+            {lastCompletedClientAppointment ? (
+              <section className="client-repeat-visit" aria-labelledby="client-repeat-title">
+                <span className="eyebrow">Ostatnia wizyta</span>
+                <h3 id="client-repeat-title">{lastCompletedClientAppointment.serviceName}</h3>
+                <p>
+                  {dayFormatter.format(dateFromKey(lastCompletedClientAppointment.dateKey))} ·{" "}
+                  {lastCompletedClientAppointmentBarber?.name ?? "Barber B'n'B"}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => repeatClientAppointment(lastCompletedClientAppointment)}
+                >
+                  Umów ponownie
+                  <ChevronRight aria-hidden="true" />
+                </button>
+              </section>
+            ) : null}
           </section>
         </div>
       ) : null}
