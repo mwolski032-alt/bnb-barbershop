@@ -208,9 +208,10 @@ test("offers an explicit retry when appointment data cannot refresh", async () =
   assert.match(bookingHome, /aria-busy=\{isRetryingData\}/);
 });
 
-test("keeps the client-focused sign-in experience concise", async () => {
-  const [bookingHome, styles, firebaseSource, netlifyConfig, firebaseConfig] = await Promise.all([
+test("keeps installation on the salon page and opens the native prompt when available", async () => {
+  const [bookingHome, salonHome, styles, firebaseSource, netlifyConfig, firebaseConfig] = await Promise.all([
     readBookingModules(),
+    readFile(new URL("../app/components/salon-home.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/firebase.ts", import.meta.url), "utf8"),
     readFile(new URL("../netlify.toml", import.meta.url), "utf8"),
@@ -220,8 +221,15 @@ test("keeps the client-focused sign-in experience concise", async () => {
   assert.match(bookingHome, /Twój następny termin/);
   assert.match(bookingHome, /Rezerwacja w mniej niż minutę/);
   assert.match(bookingHome, /Przypomnienie przed wizytą/);
-  assert.match(bookingHome, /className="install-guide-trigger"/);
-  assert.match(bookingHome, /Zainstaluj aplikację/);
+  assert.doesNotMatch(bookingHome, /className="install-guide-trigger"/);
+  assert.doesNotMatch(styles, /\.install-guide-trigger/);
+  assert.match(salonHome, /Zainstaluj aplikację/);
+  assert.match(salonHome, /!props\.installed/);
+  assert.match(bookingHome, /beforeinstallprompt/);
+  assert.match(bookingHome, /installPrompt\.prompt\(\)/);
+  assert.match(bookingHome, /installPrompt\.userChoice/);
+  assert.match(bookingHome, /appinstalled/);
+  assert.match(bookingHome, /isAppleMobileDevice/);
   assert.match(bookingHome, /Wybierz swój telefon/);
   assert.match(bookingHome, /iPhone lub iPad/);
   assert.match(bookingHome, /Telefon z Androidem/);

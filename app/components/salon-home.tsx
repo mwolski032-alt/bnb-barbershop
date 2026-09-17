@@ -11,6 +11,8 @@ export type PublicBarber = { id: string; displayName: string; photoUrl: string; 
 type Props = {
   busy: boolean; signedIn: boolean; admin: boolean; error: string;
   onBook: () => void; onPanel: () => void; onVisits: () => void; onInstall: () => void;
+  installed?: boolean;
+  installing?: boolean;
   account?: { name: string; photoUrl?: string | null } | null;
   visitsBadge?: number;
   repeatVisit?: { serviceName: string; barberName: string } | null;
@@ -142,7 +144,7 @@ export default function SalonHome(props: Props) {
       {settings.address && <p><MapPin aria-hidden="true" /><span>{settings.address}</span></p>}
       {settings.openingHours && <p><Clock3 aria-hidden="true" /><span>{settings.openingHours}</span></p>}
     </section>}
-    <footer className="salon-footer"><span>B&apos;n&apos;B Barbershop</span><button type="button" onClick={props.onInstall}>Zainstaluj aplikację <ArrowUpRight aria-hidden="true" /></button></footer>
+    <footer className="salon-footer"><span>B&apos;n&apos;B Barbershop</span>{!props.installed && <button type="button" onClick={props.onInstall} disabled={props.installing} aria-busy={props.installing}>{props.installing ? "Otwieram instalację…" : "Zainstaluj aplikację"} <ArrowUpRight aria-hidden="true" /></button>}</footer>
     {profile && <SalonDialog title={`Profil: ${profile.displayName}`} onClose={() => setProfile(null)}>
       <ProfileAvatar className="salon-profile-photo" name={profile.displayName} photoUrl={profile.photoUrl} />
       <span className="salon-overline">TWÓJ BARBER</span><h2>{profile.displayName}</h2>

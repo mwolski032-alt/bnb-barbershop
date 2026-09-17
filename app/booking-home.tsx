@@ -185,6 +185,26 @@ const shouldResolveGoogleRedirect = () => {
   );
 };
 
+type DeferredInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
+const isAppleMobileDevice = (navigatorValue: Navigator) =>
+  /iPad|iPhone|iPod/i.test(navigatorValue.userAgent) ||
+  (navigatorValue.platform === "MacIntel" && navigatorValue.maxTouchPoints > 1);
+
+const detectInstallPlatform = (): InstallPlatform =>
+  isAppleMobileDevice(window.navigator) ? "ios" : "android";
+
+const isRunningAsInstalledApp = () => {
+  const standaloneNavigator = window.navigator as Navigator & { standalone?: boolean };
+  return (
+    standaloneNavigator.standalone === true ||
+    window.matchMedia("(display-mode: standalone)").matches
+  );
+};
+
 const signInWithGoogleRedirect = async (firebaseAuth: Auth, provider: GoogleAuthProvider) => {
   try {
     window.sessionStorage.setItem(googleRedirectPendingKey, "1");
@@ -871,8 +891,14 @@ function InstallStepGraphic({ icon }: { icon: InstallGuideIcon }) {
   return <CheckCircle2 aria-hidden="true" />;
 }
 
-function InstallGuideDialog({ onClose }: { onClose: () => void }) {
-  const [platform, setPlatform] = useState<InstallPlatform | null>(null);
+function InstallGuideDialog({
+  onClose,
+  initialPlatform = null,
+}: {
+  onClose: () => void;
+  initialPlatform?: InstallPlatform | null;
+}) {
+  const [platform, setPlatform] = useState<InstallPlatform | null>(initialPlatform);
   const [stepIndex, setStepIndex] = useState(0);
   const dialogRef = useRef<HTMLElement>(null);
 
@@ -1071,7 +1097,15 @@ export function BookingHome() {
   const [sessionReady, setSessionReady] = useState(false);
   const [authError, setAuthError] = useState("");
   const [installGuideOpen, setInstallGuideOpen] = useState(false);
-  const closeInstallGuide = useCallback(() => setInstallGuideOpen(false), []);
+  const [installGuidePlatform, setInstallGuidePlatform] = useState<InstallPlatform | null>(null);
+  const [deferredInstallPrompt, setDeferredInstallPrompt] =
+    useState<DeferredInstallPromptEvent | null>(null);
+  const [isPwaInstalled, setIsPwaInstalled] = useState(false);
+  const [isInstallPrompting, setIsInstallPrompting] = useState(false);
+  const closeInstallGuide = useCallback(() => {
+    setInstallGuideOpen(false);
+    setInstallGuidePlatform(null);
+  }, []);
   const [bookingError, setBookingError] = useState("");
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
   const [pendingActionKeys, setPendingActionKeys] = useState<Set<string>>(() => new Set());
@@ -2142,11 +2176,72 @@ export function BookingHome() {
   const isActionPending = (key: string) => pendingActionKeys.has(key);
   const isDirectActionPending = (key: string) =>
     actionFeedback?.kind === "pending" && actionFeedback.key === key;
-  const showActionFeedback = (
+  const showActionFeedback = useCallback((
     key: string,
     kind: ActionFeedback["kind"],
     message: string,
-  ) => setActionFeedback({ key, kind, message });
+  ) => setActionFeedback({ key, kind, message }), []);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setDeferredInstallPrompt(event as DeferredInstallPromptEvent);
+    };
+    const handleAppInstalled = () => {
+      setDeferredInstallPrompt(null);
+      setIsPwaInstalled(true);
+      setIsInstallPrompting(false);
+      closeInstallGuide();
+      showActionFeedback("pwa_install", "success", "Aplikacja BNB została zainstalowana.");
+    };
+
+    setIsPwaInstalled(isRunningAsInstalledApp());
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, [closeInstallGuide, showActionFeedback]);
+
+  const handleInstallApp = useCallback(async () => {
+    if (isPwaInstalled) {
+      showActionFeedback("pwa_install", "success", "Aplikacja BNB jest już zainstalowana.");
+      return;
+    }
+    if (isInstallPrompting) return;
+
+    if (deferredInstallPrompt) {
+      const installPrompt = deferredInstallPrompt;
+      setDeferredInstallPrompt(null);
+      setIsInstallPrompting(true);
+      try {
+        await installPrompt.prompt();
+        const choice = await installPrompt.userChoice;
+        if (choice.outcome === "accepted") {
+          showActionFeedback(
+            "pwa_install",
+            "success",
+            "Instalacja została zaakceptowana. Za chwilę pojawi się ikona BNB.",
+          );
+        } else {
+          showActionFeedback("pwa_install", "error", "Instalacja nie została jeszcze potwierdzona.");
+        }
+        return;
+      } catch {
+        // Some Chromium-based browsers can withdraw the prompt between the
+        // click and prompt(). Give the user a clear, platform-specific route.
+        setInstallGuidePlatform(detectInstallPlatform());
+        setInstallGuideOpen(true);
+      } finally {
+        setIsInstallPrompting(false);
+      }
+      return;
+    }
+
+    setInstallGuidePlatform(detectInstallPlatform());
+    setInstallGuideOpen(true);
+  }, [deferredInstallPrompt, isInstallPrompting, isPwaInstalled, showActionFeedback]);
 
   const registerCurrentPushDevice = useCallback(async () => {
     if (!activeUser || isOwner) return null;
@@ -4954,9 +5049,16 @@ export function BookingHome() {
       }}
       onNotifications={() => void handlePushDeviceToggle()}
       onSignOut={() => void handleSignOut()}
-      onInstall={() => setInstallGuideOpen(true)}
+      installed={isPwaInstalled}
+      installing={isInstallPrompting}
+      onInstall={() => void handleInstallApp()}
     />
-    {installGuideOpen && <InstallGuideDialog onClose={closeInstallGuide} />}
+    {installGuideOpen && (
+      <InstallGuideDialog
+        onClose={closeInstallGuide}
+        initialPlatform={installGuidePlatform}
+      />
+    )}
   </>;
   if (salonOpen && (!activeUser || !sessionReady) && !pendingNotificationAppointmentId && !pendingAdminWaitlistSelection && !pendingWaitlistSelection && !clientAppointmentId && !adminEditAppointmentId && step === "booking") {
     return salonHomeView;
@@ -5019,31 +5121,9 @@ export function BookingHome() {
               {isSigningIn ? "Łączenie..." : "Kontynuuj z Google"}
             </button>
 
-            <button
-              className="install-guide-trigger"
-              type="button"
-              onClick={() => setInstallGuideOpen(true)}
-            >
-              <span className="install-guide-trigger-icon" aria-hidden="true">
-                <Smartphone />
-              </span>
-              <span className="install-guide-trigger-copy">
-                <strong>Zainstaluj aplikację</strong>
-                <small>Instrukcja dla iPhone&apos;a i Androida</small>
-              </span>
-              <span className="install-guide-trigger-browsers" aria-hidden="true">
-                <Compass />
-                <ChromeBrandIcon />
-              </span>
-              <ChevronRight className="install-guide-trigger-chevron" aria-hidden="true" />
-            </button>
-
             {authError ? <p className="auth-error">{authError}</p> : null}
           </section>
         </main>
-        {installGuideOpen ? (
-          <InstallGuideDialog onClose={closeInstallGuide} />
-        ) : null}
       </>
     );
   }
