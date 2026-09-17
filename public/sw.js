@@ -1,4 +1,4 @@
-const CACHE_NAME = "bnb-barbershop-v23";
+const CACHE_NAME = "bnb-barbershop-v24";
 const APP_SHELL_URL = "/";
 const ASSET_MANIFEST_URL = "/asset-manifest.json";
 const APP_SHELL = [
