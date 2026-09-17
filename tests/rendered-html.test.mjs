@@ -42,10 +42,14 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(manifest, /\/icons\/icon-192\.png\?v=3/);
   assert.match(manifest, /\/icons\/icon-512\.png\?v=3/);
   assert.match(manifest, /maskable-512\.png\?v=3/);
-  assert.match(serviceWorker, /bnb-barbershop-v24/);
+  assert.match(serviceWorker, /bnb-barbershop-v25/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(bookingHome, /updateViaCache:\s*"none"/);
-  assert.match(bookingHome, /registration\.update\(\)/);
+  assert.match(bookingHome, /currentRegistration\.update\(\)/);
+  assert.match(bookingHome, /Pojawiła się aktualizacja/);
+  assert.match(bookingHome, /waitingWorker\.postMessage\(\{ type: "SKIP_WAITING" \}\)/);
+  assert.match(serviceWorker, /event\.data\?\.type === "SKIP_WAITING"/);
+  assert.doesNotMatch(serviceWorker, /\.then\(\(\) => self\.skipWaiting\(\)\)/);
   assert.match(netlifyConfig, /for\s*=\s*"\/sw\.js"/);
   assert.match(netlifyConfig, /max-age=0, must-revalidate/);
   assert.match(serviceWorker, /icon:.*\/icons\/icon-192\.png/);

@@ -44,6 +44,7 @@ import {
   Mail,
   MessageSquare,
   Phone,
+  RefreshCw,
   Scissors,
   Share2,
   Smartphone,
@@ -1088,6 +1089,46 @@ function InstallGuideDialog({
   );
 }
 
+function PwaUpdateNotice({
+  visible,
+  refreshing,
+  onRefresh,
+  onDismiss,
+}: {
+  visible: boolean;
+  refreshing: boolean;
+  onRefresh: () => void;
+  onDismiss: () => void;
+}) {
+  if (!visible) return null;
+
+  return (
+    <aside className="pwa-update-notice" role="status" aria-live="polite" aria-label="Aktualizacja aplikacji">
+      <span className="pwa-update-notice-icon" aria-hidden="true">
+        <RefreshCw />
+      </span>
+      <div className="pwa-update-notice-copy">
+        <strong>Pojawiła się aktualizacja</strong>
+        <span>Odśwież, aby korzystać z najnowszej wersji.</span>
+      </div>
+      <div className="pwa-update-notice-actions">
+        <button type="button" className="pwa-update-later" onClick={onDismiss} disabled={refreshing}>
+          Później
+        </button>
+        <button
+          type="button"
+          className="pwa-update-refresh"
+          onClick={onRefresh}
+          disabled={refreshing}
+          aria-busy={refreshing}
+        >
+          {refreshing ? "Odświeżam…" : "Odśwież"}
+        </button>
+      </div>
+    </aside>
+  );
+}
+
 export function BookingHome() {
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const today = currentDate;
@@ -1102,6 +1143,10 @@ export function BookingHome() {
     useState<DeferredInstallPromptEvent | null>(null);
   const [isPwaInstalled, setIsPwaInstalled] = useState(false);
   const [isInstallPrompting, setIsInstallPrompting] = useState(false);
+  const [isPwaUpdateReady, setIsPwaUpdateReady] = useState(false);
+  const [isPwaUpdateRefreshing, setIsPwaUpdateRefreshing] = useState(false);
+  const pwaRegistrationRef = useRef<ServiceWorkerRegistration | null>(null);
+  const pwaUpdateReloadingRef = useRef(false);
   const closeInstallGuide = useCallback(() => {
     setInstallGuideOpen(false);
     setInstallGuidePlatform(null);
@@ -2243,6 +2288,22 @@ export function BookingHome() {
     setInstallGuideOpen(true);
   }, [deferredInstallPrompt, isInstallPrompting, isPwaInstalled, showActionFeedback]);
 
+  const refreshPwaUpdate = useCallback(() => {
+    const waitingWorker = pwaRegistrationRef.current?.waiting;
+    if (!waitingWorker || isPwaUpdateRefreshing) return;
+
+    pwaUpdateReloadingRef.current = true;
+    setIsPwaUpdateRefreshing(true);
+    waitingWorker.postMessage({ type: "SKIP_WAITING" });
+
+    window.setTimeout(() => {
+      if (!pwaUpdateReloadingRef.current) return;
+      pwaUpdateReloadingRef.current = false;
+      setIsPwaUpdateRefreshing(false);
+      setIsPwaUpdateReady(false);
+    }, 8_000);
+  }, [isPwaUpdateRefreshing]);
+
   const registerCurrentPushDevice = useCallback(async () => {
     if (!activeUser || isOwner) return null;
 
@@ -2381,10 +2442,57 @@ export function BookingHome() {
       return;
     }
 
+    let active = true;
+    let observedWorker: ServiceWorker | null = null;
+    let removeInstallingListener: () => void = () => {};
+    let removeUpdateFoundListener: () => void = () => {};
+
+    const revealUpdate = (currentRegistration: ServiceWorkerRegistration) => {
+      if (!active || !navigator.serviceWorker.controller || !currentRegistration.waiting) return;
+      pwaRegistrationRef.current = currentRegistration;
+      setIsPwaUpdateReady(true);
+    };
+    const observeInstallingWorker = (currentRegistration: ServiceWorkerRegistration) => {
+      const installingWorker = currentRegistration.installing;
+      if (!installingWorker || installingWorker === observedWorker) return;
+      removeInstallingListener();
+      observedWorker = installingWorker;
+      const handleStateChange = () => {
+        if (installingWorker.state === "installed") revealUpdate(currentRegistration);
+      };
+      installingWorker.addEventListener("statechange", handleStateChange);
+      removeInstallingListener = () => installingWorker.removeEventListener("statechange", handleStateChange);
+    };
+    const handleControllerChange = () => {
+      if (pwaUpdateReloadingRef.current) window.location.reload();
+    };
+    const checkForUpdateOnFocus = () => {
+      pwaRegistrationRef.current?.update().catch(() => undefined);
+    };
+
+    navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
+    window.addEventListener("focus", checkForUpdateOnFocus);
     navigator.serviceWorker
       .register("/sw.js", { updateViaCache: "none" })
-      .then((registration) => registration.update())
+      .then((currentRegistration) => {
+        if (!active) return;
+        pwaRegistrationRef.current = currentRegistration;
+        const handleUpdateFound = () => observeInstallingWorker(currentRegistration);
+        currentRegistration.addEventListener("updatefound", handleUpdateFound);
+        removeUpdateFoundListener = () => currentRegistration.removeEventListener("updatefound", handleUpdateFound);
+        observeInstallingWorker(currentRegistration);
+        revealUpdate(currentRegistration);
+        currentRegistration.update().catch(() => undefined);
+      })
       .catch(() => undefined);
+
+    return () => {
+      active = false;
+      removeInstallingListener();
+      removeUpdateFoundListener();
+      navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
+      window.removeEventListener("focus", checkForUpdateOnFocus);
+    };
   }, []);
 
   useEffect(() => {
@@ -5060,31 +5168,43 @@ export function BookingHome() {
       />
     )}
   </>;
+  const pwaUpdateNotice = (
+    <PwaUpdateNotice
+      visible={isPwaUpdateReady}
+      refreshing={isPwaUpdateRefreshing}
+      onRefresh={refreshPwaUpdate}
+      onDismiss={() => setIsPwaUpdateReady(false)}
+    />
+  );
   if (salonOpen && (!activeUser || !sessionReady) && !pendingNotificationAppointmentId && !pendingAdminWaitlistSelection && !pendingWaitlistSelection && !clientAppointmentId && !adminEditAppointmentId && step === "booking") {
-    return salonHomeView;
+    return <>{pwaUpdateNotice}{salonHomeView}</>;
   }
 
   if (!authReady || (activeUser && !sessionReady)) {
     return (
-      <main className="auth-shell" aria-label="Ładowanie logowania">
-        <section className="auth-card">
-          <div className="auth-brand">
-            <span className="auth-logo" aria-hidden="true">
-              <img src="/brand/bnb-logo.png" alt="" />
-            </span>
-            <p>BNB Barbershop</p>
-          </div>
-          <div className="auth-loader" aria-hidden="true" />
-          <h1>Sprawdzamy sesję</h1>
-          <p className="auth-copy">Za chwilę pokażemy rezerwacje albo ekran logowania.</p>
-        </section>
-      </main>
+      <>
+        {pwaUpdateNotice}
+        <main className="auth-shell" aria-label="Ładowanie logowania">
+          <section className="auth-card">
+            <div className="auth-brand">
+              <span className="auth-logo" aria-hidden="true">
+                <img src="/brand/bnb-logo.png" alt="" />
+              </span>
+              <p>BNB Barbershop</p>
+            </div>
+            <div className="auth-loader" aria-hidden="true" />
+            <h1>Sprawdzamy sesję</h1>
+            <p className="auth-copy">Za chwilę pokażemy rezerwacje albo ekran logowania.</p>
+          </section>
+        </main>
+      </>
     );
   }
 
   if (!activeUser) {
     return (
       <>
+        {pwaUpdateNotice}
         <main className="auth-shell" aria-label="Logowanie do aplikacji">
           <button type="button" className="salon-return" onClick={() => setSalonOpen(true)}>‹ Strona salonu</button>
           <section className="auth-card">
@@ -5129,6 +5249,8 @@ export function BookingHome() {
   }
 
   return (
+    <>
+      {pwaUpdateNotice}
       <main
         className={`app-shell ${
           visibleStep === "confirm" || visibleStep === "success" ? "confirm-page" : ""
@@ -7857,6 +7979,7 @@ export function BookingHome() {
           </button>
         </footer>
       ) : null}
-    </main>
+      </main>
+    </>
   );
 }

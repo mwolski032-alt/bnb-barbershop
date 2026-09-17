@@ -2933,6 +2933,124 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   animation: spin-ring 700ms linear infinite;
 }
 
+.pwa-update-notice {
+  position: fixed;
+  z-index: 95;
+  right: max(0.75rem, calc((100vw - 32rem) / 2));
+  bottom: calc(0.85rem + env(safe-area-inset-bottom));
+  left: max(0.75rem, calc((100vw - 32rem) / 2));
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.72rem;
+  width: auto;
+  min-height: 4.15rem;
+  padding: 0.72rem 0.78rem;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+  color: var(--color-text);
+  animation: pwa-update-notice-in 180ms ease-out both;
+}
+
+.pwa-update-notice-icon {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.72rem;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.pwa-update-notice-icon svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.pwa-update-notice-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.08rem;
+}
+
+.pwa-update-notice-copy strong {
+  font-size: 0.86rem;
+  line-height: 1.22;
+}
+
+.pwa-update-notice-copy span {
+  color: var(--color-text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.32;
+}
+
+.pwa-update-notice-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pwa-update-notice button {
+  min-height: 2.35rem;
+  border-radius: 0.62rem;
+  padding: 0.45rem 0.7rem;
+  font: inherit;
+  font-size: 0.79rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pwa-update-later {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-primary);
+}
+
+.pwa-update-refresh {
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-surface);
+}
+
+.pwa-update-notice button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.pwa-update-notice button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+body[data-bnb-screen^="panel"] .pwa-update-notice,
+body[data-bnb-screen^="wlasciciel"] .pwa-update-notice {
+  bottom: calc(5.9rem + env(safe-area-inset-bottom));
+}
+
+@keyframes pwa-update-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.45rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 380px) {
+  .pwa-update-notice {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+
+  .pwa-update-notice-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+}
+
 .action-feedback-toast {
   position: fixed;
   z-index: 96;

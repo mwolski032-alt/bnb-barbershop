@@ -1,4 +1,4 @@
-const CACHE_NAME = "bnb-barbershop-v24";
+const CACHE_NAME = "bnb-barbershop-v25";
 const APP_SHELL_URL = "/";
 const ASSET_MANIFEST_URL = "/asset-manifest.json";
 const APP_SHELL = [
@@ -94,9 +94,14 @@ self.addEventListener("install", (event) => {
             await cache.put(path, response);
           }
         }));
-      })
-      .then(() => self.skipWaiting()),
+      }),
   );
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener("activate", (event) => {

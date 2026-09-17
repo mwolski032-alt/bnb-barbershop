@@ -17,6 +17,7 @@ function harness({ userAgent = "Desktop Chrome" } = {}) {
   const stores = new Map();
   const shownNotifications = [];
   const openedWindows = [];
+  let skipWaitingCalls = 0;
   let fetcher = async () => html();
   let failPut = false;
   const key = request => new URL(typeof request === "string" ? request : request.url, origin).href;
@@ -42,7 +43,7 @@ function harness({ userAgent = "Desktop Chrome" } = {}) {
     self: {
       location: { origin }, navigator: { userAgent },
       addEventListener: (event, listener) => handlers.set(event, listener),
-      skipWaiting: async () => undefined,
+      skipWaiting: async () => { skipWaitingCalls += 1; },
       registration: {
         showNotification: async (title, options) => { shownNotifications.push({ title, options }); },
       },
@@ -50,10 +51,11 @@ function harness({ userAgent = "Desktop Chrome" } = {}) {
     },
   });
   return {
-    stores, caches, shownNotifications, openedWindows,
+    stores, caches, shownNotifications, openedWindows, skipWaitingCalls: () => skipWaitingCalls,
     fetch: callback => { fetcher = callback; },
     quota: () => { failPut = true; },
     async lifecycle(type) { let pending; handlers.get(type)({ waitUntil: promise => { pending = promise; } }); await pending; },
+    async message(data) { let pending; handlers.get("message")({ data, waitUntil: promise => { pending = promise; } }); await pending; },
     navigate(path = "/", destination = "document") {
       let pending;
       handlers.get("fetch")({ request: { method: "GET", mode: destination === "document" ? "navigate" : "no-cors", destination, url: origin + path },
@@ -107,7 +109,7 @@ test("login HTML and redirects cannot replace the cached application shell", asy
 
 test("offline navigation refuses a poisoned shell even if a cache entry already exists", async () => {
   const h = harness();
-  const cache = await h.caches.open("bnb-barbershop-v24");
+  const cache = await h.caches.open("bnb-barbershop-v25");
   await cache.put("/", html("<html>Login</html>"));
   h.fetch(async () => { throw new Error("offline"); });
   await assert.rejects(h.navigate());
@@ -119,7 +121,7 @@ test("activation removes old BNB caches but leaves unrelated caches alone", asyn
   await h.caches.open("other-application");
   await h.lifecycle("install");
   await h.lifecycle("activate");
-  assert.deepEqual([...h.stores.keys()].sort(), ["bnb-barbershop-v24", "other-application"]);
+  assert.deepEqual([...h.stores.keys()].sort(), ["bnb-barbershop-v25", "other-application"]);
 });
 
 test("installation precaches lazy application files from the build manifest", async () => {
@@ -134,7 +136,7 @@ test("installation precaches lazy application files from the build manifest", as
     return new Response("asset", { headers: { "content-type": contentType } });
   });
   await h.lifecycle("install");
-  const cache = await h.caches.open("bnb-barbershop-v24");
+  const cache = await h.caches.open("bnb-barbershop-v25");
   assert.ok(await cache.match("/assets/admin-clients-screen-test.js"));
   assert.ok(await cache.match("/assets/index-test.css"));
 });
@@ -156,7 +158,17 @@ test("installation under a login redirect does not cache its HTML at the root", 
   const h = harness();
   h.fetch(async () => html("Login", { path: "/signin", redirected: true }));
   await h.lifecycle("install");
-  assert.equal(await (await h.caches.open("bnb-barbershop-v24")).match("/"), undefined);
+  assert.equal(await (await h.caches.open("bnb-barbershop-v25")).match("/"), undefined);
+});
+
+test("a new worker waits until the client explicitly requests refresh", async () => {
+  const h = harness();
+  await h.lifecycle("install");
+  assert.equal(h.skipWaitingCalls(), 0);
+  await h.message({ type: "IGNORE" });
+  assert.equal(h.skipWaitingCalls(), 0);
+  await h.message({ type: "SKIP_WAITING" });
+  assert.equal(h.skipWaitingCalls(), 1);
 });
 
 test("Android reschedule notification offers confirmation and details actions", async () => {
