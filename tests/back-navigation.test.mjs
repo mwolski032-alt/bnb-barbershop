@@ -428,6 +428,8 @@ test("the admin trail is wired to the bottom navigation, the owner's barber pane
   assert.ok(call.indexOf("setClientAppointmentsListOpen(false)") < call.indexOf("adminBackStack.map"));
   assert.ok(call.indexOf("adminBackStack.map") < call.indexOf('active: visibleStep === "admin",'));
   // "Wróć" keeps its old behaviour: straight to the salon page, which also clears the trail.
-  assert.match(home, /onClick=\{\(\) => withViewTransition\(\(\) => \{\s*setStep\("booking"\);\s*setSalonOpen\(true\);/);
+  // An owner who picked a barber first returns to the barber list instead.
+  assert.match(home, /onClick=\{\(\) => withViewTransition\(returnFromAdminPanel\)\}/);
+  assert.match(home, /const returnFromAdminPanel = \(\) => \{\s*if \(isOwner && selectedBarberId\) \{\s*setSelectedBarberId\(null\);\s*return;\s*\}\s*setStep\("booking"\);\s*setSalonOpen\(true\);/);
   assert.match(home, /if \(visibleStep !== "admin" \|\| adminBackStackRef\.current\.length > 0\) setAdminBackStack\(\[\]\)/);
 });

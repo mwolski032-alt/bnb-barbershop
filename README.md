@@ -79,6 +79,21 @@ a przeglądarka dobiera rozmiar przez `srcset`.
   Po zmianie reguł: `npm run deploy:firebase`, potem wdrożenie Netlify.
 - Stare zdjęcia (base64) nadal działają. W panelu właściciela, w zakładce zdjęć, pojawia się przycisk
   **Zoptymalizuj zdjęcia**, który jednorazowo przenosi je do Blobs.
+
+## Kopie danych i historia działań
+
+Każda operacja zmieniająca wizytę zapisuje w `appointmentAudit/{operationId}` prywatny,
+nieusuwalny przez aplikację kliencką stan wizyty przed i po zmianie, rodzaj działania,
+czas oraz rolę osoby wykonującej operację. Zapis historii jest częścią tego samego
+atomowego zatwierdzenia co wizyta, dlatego nie może powstać zmiana bez odpowiadającego
+jej śladu. Dane kontaktowe pozostają w chronionym zapisie odzyskiwania i nie są wysyłane
+do interfejsu historii.
+
+`backup-worker` raz dziennie tworzy kopię wizyt, kartoteki klientów, listy rezerwowej,
+zespołu, usług, dostępności i ustawień salonu. Przechowywanych jest 14 ostatnich kopii,
+każda z sumą kontrolną integralności. Właściciel widzi status w zakładce „Historia”
+i może utworzyć dzisiejszą kopię ręcznie. `appointmentAudit`, `businessBackups` oraz
+`businessBackupIndex` nie są dostępne bezpośrednio dla klientów ani barberów.
 ## Zatwierdzane scalanie klientów
 
 Zgodny telefon lub ręcznie wpisany e-mail nie przenosi automatycznie historii na konto Google.
@@ -145,7 +160,7 @@ obliczenia wykonywane pod blokadą barbera. Reguły sprawdzają również unikal
 Sygnały realtime korzystają z atomowego przyrostu, więc równoległe zapisy nie gubią zmian.
 Przy współistnieniu starszego wdrożenia brak epoki bezpiecznie wymusza blokadę globalną.
 
-Cache PWA v15 zapisuje tylko zweryfikowany dokument aplikacji z oznaczeniem
+Cache PWA v21 zapisuje tylko zweryfikowany dokument aplikacji z oznaczeniem
 `data-bnb-app-shell`. Nie przechwytuje tras logowania, callbacków ani API i nie zapisuje
 przekierowań logowania zamiast aplikacji. Usuwane są wyłącznie stare cache BNB.
 

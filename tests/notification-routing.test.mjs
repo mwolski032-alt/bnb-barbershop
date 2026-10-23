@@ -89,6 +89,9 @@ const initialDatabase = () => ({
   appointments: {},
   clients: {},
   appointmentOperations: {},
+  appointmentAudit: {
+    "legacy-audit": { id: "legacy-audit", action: "create_client", createdAt: 1 },
+  },
   notificationOutbox: {},
 });
 
@@ -195,6 +198,7 @@ globalThis.fetch = async (input, options = {}) => {
 
 const notificationService = await import("../netlify/functions/_notification-service.mjs");
 const { default: appointmentsHandler } = await import("../netlify/functions/appointments.mjs");
+const { default: notificationActionHandler } = await import("../netlify/functions/notification-action.mjs");
 const notificationDispatch = await import("../netlify/functions/notification-dispatch.mjs");
 const { default: sendPushHandler } = await import("../netlify/functions/send-push.mjs");
 const notificationWorker = await import("../netlify/functions/notification-worker.mjs");
@@ -441,6 +445,7 @@ test("booking, reschedule, confirmation and cancellation each create a backend d
     {
       "flow-create": "new_booking",
       "flow-reschedule": "admin_rescheduled",
+      "flow-reschedule-confirmation-reminder": "admin_reschedule_reminder",
       "flow-confirm": "client_confirmed",
       "flow-cancel": "client_cancelled",
     },
@@ -473,7 +478,140 @@ test("admin changes reach every active client device and link to the exact appoi
     assert.equal(link.searchParams.get("appointment"), "changed-appointment");
     assert.equal(link.searchParams.get("event"), "admin_rescheduled");
     assert.equal(message.webpush.headers.Urgency, "high");
+    assert.ok(message.data.confirmActionToken);
   }
+});
+
+test("a signed notification action confirms only the unchanged rescheduled visit", async () => {
+  reset();
+  const { appointment, operationId } = seedJob("admin_rescheduled", "reschedule_admin", {
+    id: "notification-action-appointment",
+    status: "rescheduled",
+    rescheduledBy: "admin",
+    version: 3,
+  });
+  await notificationService.processNotificationJob(operationId, {
+    force: true,
+    siteUrl: "https://bnb.example",
+  });
+  const token = sentPushes[0].message.data.confirmActionToken;
+  assert.ok(token);
+
+  const requestAction = (value = token) => notificationActionHandler(
+    new Request("https://bnb.example/.netlify/functions/notification-action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: value }),
+    }),
+  );
+  const first = await requestAction();
+  const firstBody = await first.json();
+  assert.equal(first.status, 200, JSON.stringify(firstBody));
+  assert.equal(database.appointments[appointment.id].status, "confirmed");
+  assert.equal(database.appointments[appointment.id].confirmedBy, "client");
+  assert.equal(database.appointments[appointment.id].version, 4);
+  const confirmationOperationId = database.appointments[appointment.id].lastOperationId;
+  assert.equal(database.appointmentOperations[confirmationOperationId].action, "confirm_client_notification");
+  assert.equal(database.appointmentAudit[confirmationOperationId].actorRole, "client");
+  assert.equal(database.appointmentAudit["legacy-audit"].createdAt, 1);
+  assert.equal(database.notificationOutbox[confirmationOperationId].event, "client_confirmed");
+
+  const replay = await requestAction();
+  assert.equal(replay.status, 200);
+  assert.equal((await replay.json()).idempotent, true);
+  assert.equal(database.appointments[appointment.id].version, 4);
+
+  database.appointments[appointment.id] = {
+    ...database.appointments[appointment.id],
+    status: "rescheduled",
+    rescheduledBy: "admin",
+    startTime: "11:00",
+    version: 5,
+    lastOperationId: "newer-reschedule",
+  };
+  const stale = await requestAction();
+  assert.equal(stale.status, 409);
+  assert.equal((await stale.json()).code, "stale_notification");
+  assert.equal(database.appointments[appointment.id].startTime, "11:00");
+
+  const tampered = await requestAction(`${token.slice(0, -1)}x`);
+  assert.equal(tampered.status, 401);
+});
+
+test("admin reschedule queues one reminder and skips it after the client answers", async () => {
+  reset();
+  const appointment = appointmentFor({ id: "confirmation-reminder", startTime: "12:00" });
+  database.appointments[appointment.id] = appointment;
+
+  const response = await appointmentRequest("mateusz-id-token", {
+    action: "reschedule_admin",
+    operationId: "reminder-source",
+    expectedVersion: 1,
+    appointmentId: appointment.id,
+    dateKey: "2099-01-10",
+    startTime: "13:00",
+  });
+  const result = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(result));
+  assert.deepEqual(result.notificationOperationIds, ["reminder-source"]);
+
+  const reminderId = "reminder-source-confirmation-reminder";
+  const reminder = database.notificationOutbox[reminderId];
+  assert.equal(reminder.event, "admin_reschedule_reminder");
+  assert.equal(reminder.sourceOperationId, "reminder-source");
+  assert.equal(reminder.nextAttemptAt - reminder.createdAt, 6 * 60 * 60 * 1000);
+
+  await dispatchNotifications("mateusz-id-token", result.notificationOperationIds);
+  sentPushes = [];
+  const reminderResult = await notificationService.processDueNotificationJobs({
+    now: reminder.nextAttemptAt,
+    siteUrl: "https://bnb.example",
+  });
+  assert.equal(reminderResult.delivered, 1);
+  assert.deepEqual(sentPushes.map(({ message }) => message.token), [
+    "client-phone-token",
+    "client-tablet-token",
+  ]);
+  assert.equal(sentPushes[0].message.data.event, "admin_reschedule_reminder");
+  assert.equal(
+    new URL(sentPushes[0].message.data.link).searchParams.get("appointment"),
+    appointment.id,
+  );
+
+  reset();
+  const unansweredAppointment = appointmentFor({
+    id: "confirmation-reminder-unanswered",
+    startTime: "12:00",
+  });
+  database.appointments[unansweredAppointment.id] = unansweredAppointment;
+  await appointmentRequest("mateusz-id-token", {
+    action: "reschedule_admin",
+    operationId: "answered-reminder-source",
+    expectedVersion: 1,
+    appointmentId: unansweredAppointment.id,
+    dateKey: "2099-01-10",
+    startTime: "13:00",
+  });
+  const answeredReminderId = "answered-reminder-source-confirmation-reminder";
+  const answeredDueAt = database.notificationOutbox[answeredReminderId].nextAttemptAt;
+  await appointmentRequest("client-token", {
+    action: "confirm_client",
+    operationId: "client-answered-reminder",
+    expectedVersion: 2,
+    appointmentId: unansweredAppointment.id,
+  });
+  sentPushes = [];
+  await notificationService.processNotificationJob(answeredReminderId, {
+    now: answeredDueAt,
+    force: true,
+    siteUrl: "https://bnb.example",
+  });
+  assert.equal(sentPushes.length, 0);
+  assert.equal(database.notificationOutbox[answeredReminderId].status, "delivered");
+  assert.equal(
+    database.notificationOutbox[answeredReminderId].history.attempt_1.status,
+    "skipped_answered_or_changed",
+  );
 });
 
 test("individual discount notifies the client with the old and new price", async () => {
@@ -507,6 +645,7 @@ test("individual discount notifies the client with the old and new price", async
     "Cena usługi „Strzyżenie” została obniżona z 70 zł do 45 zł. Termin: 10.01.2099 o 10:00.",
   );
   assert.equal(new URL(push.data.link).searchParams.get("event"), "admin_appointment_updated");
+  assert.equal(push.data.confirmActionToken, "");
   assert.deepEqual(sentEmails, [], "e-mail notifications are no longer sent");
 });
 
@@ -739,6 +878,71 @@ test("confirmation actions have distinct backend events for the proper audience"
     "client-phone-token",
     "client-tablet-token",
   ]);
+});
+
+test("editing a visit time also adds a direct confirmation action", async () => {
+  reset();
+  const appointment = appointmentFor({ id: "edited-time-appointment" });
+  database.appointments[appointment.id] = appointment;
+
+  const response = await appointmentRequest("mateusz-id-token", {
+    action: "update_admin",
+    operationId: "edited-time-operation",
+    expectedVersion: 1,
+    appointmentId: appointment.id,
+    dateKey: appointment.dateKey,
+    startTime: "11:00",
+    priceAmount: 70,
+  });
+  const result = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(result));
+  await dispatchNotifications("mateusz-id-token", result.notificationOperationIds);
+
+  assert.equal(sentPushes[0].message.data.event, "admin_appointment_updated");
+  assert.ok(sentPushes[0].message.data.confirmActionToken);
+});
+
+test("24-hour appointment reminder is informational, client-only and skips changed visits", async () => {
+  reset();
+  const reminder = seedJob("appointment_reminder", "appointment_reminder", {
+    id: "tomorrow-reminder",
+    dateKey: "2099-01-10",
+    startTime: "14:30",
+  });
+  const delivered = await notificationService.processNotificationJob(reminder.operationId, {
+    force: true,
+    siteUrl: "https://bnb.example",
+  });
+
+  assert.equal(delivered.state, "delivered");
+  assert.deepEqual(sentPushes.map(({ message }) => message.token), [
+    "client-phone-token",
+    "client-tablet-token",
+  ]);
+  assert.equal(sentPushes[0].message.notification, undefined);
+  assert.equal(sentPushes[0].message.data.title, "Przypomnienie o wizycie");
+  assert.equal(sentPushes[0].message.data.body, "Twoja wizyta jest jutro o 14:30.");
+  assert.equal(sentPushes[0].message.data.event, "appointment_reminder");
+  // The reminder carries the "Potwierdzam" / "Odwołuję" answer buttons; no other push does.
+  assert.equal(sentPushes[0].message.data.actions, "attend");
+  assert.equal(sentEmails.length, 0);
+
+  reset();
+  const changed = seedJob("appointment_reminder", "appointment_reminder", {
+    id: "changed-before-reminder",
+    dateKey: "2099-01-10",
+    startTime: "14:30",
+  });
+  database.appointments[changed.appointment.id].startTime = "15:00";
+  const skipped = await notificationService.processNotificationJob(changed.operationId, {
+    force: true,
+  });
+  assert.equal(skipped.state, "delivered");
+  assert.equal(sentPushes.length, 0);
+  assert.equal(
+    database.notificationOutbox[changed.operationId].history.attempt_1.status,
+    "skipped_cancelled_or_changed",
+  );
 });
 
 test("an operationId is delivered once even when the backend retries the same job", async () => {

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { onValue, ref } from "firebase/database";
-import { ArrowUpRight, AtSign, MapPin, Clock3, Bell, LogOut, Star } from "lucide-react";
+import { ArrowUpRight, AtSign, MapPin, Clock3, Bell, LogOut, Star, Scissors } from "lucide-react";
 import { realtimeDb } from "../lib/firebase";
 import {
   emptyReviewSummary,
@@ -33,9 +33,13 @@ type Props = {
   /** A settled visit the client has not reviewed yet; shown as a reminder above the gallery. */
   reviewPrompt?: { appointmentId: string; barberId: string; barberName: string } | null;
   onReviewed?: (barberId: string) => void;
+  installed?: boolean;
+  installing?: boolean;
+  repeatVisit?: { serviceName: string; barberName: string } | null;
   notification?: { label: string; enabled: boolean; status: string; busy: boolean } | null;
   notice?: { kind: "pending" | "success" | "error"; message: string } | null;
   signingOut?: boolean; onNotifications?: () => void; onSignOut?: () => void;
+  onRepeatVisit?: () => void;
 };
 
 // The salon page can be unmounted and mounted again while the session is verified. Keeping
@@ -211,6 +215,15 @@ export default function SalonHome(props: Props) {
       </span>
       <ArrowUpRight aria-hidden="true" />
     </button>}
+    {props.repeatVisit && <section className="salon-repeat-card" aria-labelledby="salon-repeat-title">
+      <span className="salon-repeat-icon" aria-hidden="true"><Scissors /></span>
+      <div>
+        <span className="salon-overline">TWOJA OSTATNIA WIZYTA</span>
+        <h2 id="salon-repeat-title">Czas na kolejne cięcie?</h2>
+        <p>Ostatnio: {props.repeatVisit.serviceName} · {props.repeatVisit.barberName}.</p>
+      </div>
+      <button type="button" onClick={props.onRepeatVisit}>Umów ponownie <ArrowUpRight aria-hidden="true" /></button>
+    </section>}
     <section className="salon-cover" id="salon" aria-labelledby="salon-title">
       <div className="salon-cover-media">{galleryShowcase ?? <div className="salon-cover-photo"><picture>
         <source type="image/avif" srcSet="/brand/bnb-hero-960.avif 960w, /brand/bnb-hero-1440.avif 1440w" sizes="(max-width: 700px) 100vw, 65vw" />
@@ -248,7 +261,7 @@ export default function SalonHome(props: Props) {
       {settings.address && <p><MapPin aria-hidden="true" /><span>{settings.address}</span></p>}
       {settings.openingHours && <p><Clock3 aria-hidden="true" /><span>{settings.openingHours}</span></p>}
     </section>}
-    <footer className="salon-footer" data-reveal><span>B&apos;n&apos;B Barbershop</span>{props.onInstall ? <button type="button" onClick={props.onInstall}>Zainstaluj aplikację <ArrowUpRight aria-hidden="true" /></button> : null}</footer>
+    <footer className="salon-footer" data-reveal><span>B&apos;n&apos;B Barbershop</span>{props.onInstall && !props.installed ? <button type="button" onClick={props.onInstall} disabled={props.installing} aria-busy={props.installing}>{props.installing ? "Otwieram instalację…" : "Zainstaluj aplikację"} <ArrowUpRight aria-hidden="true" /></button> : null}</footer>
     <div className={`salon-dock ${dockVisible ? "is-visible" : ""}`} aria-hidden={!dockVisible}>
       <button type="button" tabIndex={dockVisible ? 0 : -1} onClick={() => props.onBook()} disabled={props.busy}>Umów wizytę<ArrowUpRight aria-hidden="true" /></button>
     </div>

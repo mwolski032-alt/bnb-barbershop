@@ -39,13 +39,14 @@ test("anonymous phone report is sanitized and aggregated through the server", as
         fullName: "Jan Testowy",
         device: { os: "Android 15", browser: "Chrome 152", viewport: "390x844", installed: true },
       }),
-    }));
+    }), { deploy: { id: "production-deploy-12345678" } });
     assert.equal(response.status, 202, await response.text());
     assert.ok(storedReport);
     assert.doesNotMatch(JSON.stringify(storedReport), /jan@example|501 234|Jan Testowy/i);
     assert.equal(storedReport.count, 1);
     assert.equal(storedReport.screen, "rezerwacja-krok-5");
     assert.equal(storedReport.device.os, "Android 15");
+    assert.equal(storedReport.release, "production-deploy-12345678");
     assert.equal("deviceId" in storedReport, false);
   } finally {
     global.fetch = previousFetch;

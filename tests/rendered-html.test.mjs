@@ -36,16 +36,20 @@ test("keeps BNB metadata and production assets wired", async () => {
   assert.match(page, /<BookingHome \/>/);
   assert.match(layout, /applicationName:\s*"BNB Barbershop"/);
   assert.match(layout, /viewport-fit=cover/);
-  assert.match(layout, /manifest:\s*"\/manifest\.webmanifest\?v=9"/);
+  assert.match(layout, /manifest:\s*"\/manifest\.webmanifest\?v=10"/);
   assert.match(layout, /\/icons\/apple-touch-icon\.png\?v=3/);
   assert.match(manifest, /"name":\s*"BNB Barbershop"/);
   assert.match(manifest, /\/icons\/icon-192\.png\?v=3/);
   assert.match(manifest, /\/icons\/icon-512\.png\?v=3/);
   assert.match(manifest, /maskable-512\.png\?v=3/);
-  assert.match(serviceWorker, /bnb-barbershop-v15/);
+  assert.match(serviceWorker, /bnb-barbershop-v25/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(bookingHome, /updateViaCache:\s*"none"/);
-  assert.match(bookingHome, /registration\.update\(\)/);
+  assert.match(bookingHome, /currentRegistration\.update\(\)/);
+  assert.match(bookingHome, /Pojawiła się aktualizacja/);
+  assert.match(bookingHome, /waitingWorker\.postMessage\(\{ type: "SKIP_WAITING" \}\)/);
+  assert.match(serviceWorker, /event\.data\?\.type === "SKIP_WAITING"/);
+  assert.doesNotMatch(serviceWorker, /\.then\(\(\) => self\.skipWaiting\(\)\)/);
   assert.match(netlifyConfig, /for\s*=\s*"\/sw\.js"/);
   assert.match(netlifyConfig, /max-age=0, must-revalidate/);
   assert.match(serviceWorker, /icon:.*\/icons\/icon-192\.png/);
@@ -54,7 +58,7 @@ test("keeps BNB metadata and production assets wired", async () => {
 });
 
 test("ships a static lightweight startup with an offline app shell", async () => {
-  const [nextConfig, netlifyConfig, layout, bookingHome, bookingHero, serviceWorker, hero960, hero1440] =
+  const [nextConfig, netlifyConfig, layout, bookingHome, bookingHero, serviceWorker, hero960, hero1440, assetManifest, buildScript] =
     await Promise.all([
       readFile(new URL("../next.config.ts", import.meta.url), "utf8"),
       readFile(new URL("../netlify.toml", import.meta.url), "utf8"),
@@ -64,6 +68,8 @@ test("ships a static lightweight startup with an offline app shell", async () =>
       readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
       stat(new URL("../public/brand/bnb-hero-960.avif", import.meta.url)),
       stat(new URL("../public/brand/bnb-hero-1440.avif", import.meta.url)),
+      readFile(new URL("../dist/client/asset-manifest.json", import.meta.url), "utf8"),
+      readFile(new URL("../build/netlify-build.mjs", import.meta.url), "utf8"),
     ]);
 
   assert.match(nextConfig, /output:\s*"export"/);
@@ -77,6 +83,11 @@ test("ships a static lightweight startup with an offline app shell", async () =>
   assert.equal(hero960.size < 100_000, true);
   assert.equal(hero1440.size < 150_000, true);
   assert.match(serviceWorker, /APP_SHELL_URL/);
+  assert.match(serviceWorker, /ASSET_MANIFEST_URL/);
+  assert.match(buildScript, /asset-manifest\.json/);
+  const precachedAssets = JSON.parse(assetManifest).assets;
+  assert.ok(precachedAssets.some((path) => /\/assets\/admin-clients-screen-.*\.js$/.test(path)));
+  assert.ok(precachedAssets.every((path) => path.startsWith("/assets/")));
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(
     serviceWorker,
@@ -96,6 +107,8 @@ test("loads barber workspaces on demand and isolates hero scrolling", async () =
   ]);
 
   assert.match(bookingHome, /import ClientScreen from "\.\/components\/screens\/client-screen"/);
+  assert.match(bookingHome, /import ClientMergePanel from "\.\/components\/client-merge-panel"/);
+  assert.doesNotMatch(bookingHome, /const ClientMergePanel = lazy/);
   assert.match(bookingHome, /lazy\(\(\) => import\("\.\/components\/screens\/admin-calendar-screen"\)\)/);
   assert.match(bookingHome, /lazy\(\(\) => import\("\.\/components\/screens\/admin-clients-screen"\)\)/);
   assert.match(bookingHome, /lazy\(\(\) => import\("\.\/components\/screens\/admin-analytics-screen"\)\)/);
@@ -164,6 +177,10 @@ test("keeps the premium client booking flow and safety controls", async () => {
   assert.match(bookingHome, /Twoja najbliższa wizyta/);
   assert.match(bookingHome, /className="booking-progress"/);
   assert.match(bookingHome, /Potwierdzam nowy termin/);
+  assert.match(bookingHome, /Termin mi nie pasuje/);
+  assert.match(bookingHome, /notification-confirmation-modal/);
+  assert.match(bookingHome, /admin_reschedule_reminder/);
+  assert.match(styles, /\.notification-confirmation-modal\.client-bottom-sheet/);
   assert.match(bookingHome, /Odwołaj wizytę/);
   assert.match(bookingHome, /if \(direction === -1 && !canShiftToPreviousMonth\) return/);
   assert.match(bookingHome, /event\.key !== "Escape"/);
@@ -195,9 +212,10 @@ test("offers an explicit retry when appointment data cannot refresh", async () =
   assert.match(bookingHome, /aria-busy=\{isRetryingData\}/);
 });
 
-test("keeps the client-focused sign-in experience concise", async () => {
-  const [bookingHome, styles, firebaseSource, netlifyConfig, firebaseConfig] = await Promise.all([
+test("keeps installation on the salon page and opens the native prompt when available", async () => {
+  const [bookingHome, salonHome, styles, firebaseSource, netlifyConfig, firebaseConfig] = await Promise.all([
     readBookingModules(),
+    readFile(new URL("../app/components/salon-home.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/firebase.ts", import.meta.url), "utf8"),
     readFile(new URL("../netlify.toml", import.meta.url), "utf8"),
@@ -207,8 +225,15 @@ test("keeps the client-focused sign-in experience concise", async () => {
   assert.match(bookingHome, /Twój następny termin/);
   assert.match(bookingHome, /Rezerwacja w mniej niż minutę/);
   assert.match(bookingHome, /Przypomnienie przed wizytą/);
-  assert.match(bookingHome, /className="install-guide-trigger"/);
-  assert.match(bookingHome, /Zainstaluj aplikację/);
+  assert.doesNotMatch(bookingHome, /className="install-guide-trigger"/);
+  assert.doesNotMatch(styles, /\.install-guide-trigger/);
+  assert.match(salonHome, /Zainstaluj aplikację/);
+  assert.match(salonHome, /!props\.installed/);
+  assert.match(bookingHome, /beforeinstallprompt/);
+  assert.match(bookingHome, /installPrompt\.prompt\(\)/);
+  assert.match(bookingHome, /installPrompt\.userChoice/);
+  assert.match(bookingHome, /appinstalled/);
+  assert.match(bookingHome, /isAppleMobileDevice/);
   assert.match(bookingHome, /Wybierz swój telefon/);
   assert.match(bookingHome, /iPhone lub iPad/);
   assert.match(bookingHome, /Telefon z Androidem/);
@@ -268,6 +293,11 @@ test("keeps the professional admin client directory and SMS workflow", async () 
   assert.match(bookingHome, /Potwierdzam Twoją wizytę/);
   assert.match(styles, /\.client-directory-tools/);
   assert.match(styles, /\.admin-client-profile-modal/);
+  assert.match(bookingHome, /has-merge-panel/);
+  assert.match(styles, /\.admin-client-profile-modal\.has-merge-panel\s*\{[^}]*grid-template-rows:\s*auto auto auto auto minmax\(0, 1fr\) auto/s);
+  assert.match(styles, /\.client-profile-contact small\s*\{[^}]*white-space:\s*nowrap/s);
+  assert.match(styles, /\.client-profile-contact-actions button,[\s\S]*?white-space:\s*nowrap/);
+  assert.match(styles, /\.client-profile-contact-actions\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s);
   assert.match(styles, /\.sms-template-picker/);
 });
 
@@ -758,20 +788,65 @@ test("keeps manual booking services bound to the selected barber", async () => {
   assert.match(styles, /\.manual-booking-status\.unavailable/);
 });
 
+test("returns an owner from a barber workspace to the remembered owner panel", async () => {
+  const bookingHome = await readBookingModules();
+
+  assert.match(
+    bookingHome,
+    /const returnFromAdminPanel = \(\) => \{\s*if \(isOwner && selectedBarberId\) \{\s*setSelectedBarberId\(null\);\s*return;\s*\}/,
+  );
+  assert.match(bookingHome, /className="back-button"[\s\S]*?onClick=\{returnFromAdminPanel\}/);
+  assert.match(bookingHome, /<button type="button" onClick=\{returnFromAdminPanel\}>\s*Zmień/);
+});
+
+test("keeps tablet and desktop admin workspaces aligned without empty nearest-visit gaps", async () => {
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(styles, /@media \(min-width: 768px\) and \(max-width: 1199px\)[\s\S]*?\.app-shell\.admin-page\s*\{[^}]*width:\s*min\(calc\(100% - 2rem\), 62rem\)/);
+  assert.match(styles, /\.nearest-workspace-panel\.active\s*\{[^}]*align-content:\s*start;[^}]*grid-template-rows:\s*auto auto auto auto;/s);
+  assert.match(styles, /\.nearest-workspace-panel > \.admin-waitlist\s*\{[^}]*margin:\s*0 0\.95rem 1rem;/s);
+  assert.match(styles, /@media \(min-width: 900px\)[\s\S]*?\.nearest-appointments-list\s*\{[^}]*repeat\(auto-fit, minmax\(28rem, 1fr\)\)/);
+});
+
 test("places the gallery above the landing copy and keeps explicit mobile status colors", async () => {
-  const [home, styles] = await Promise.all([
+  const [home, manager, styles] = await Promise.all([
     readFile(new URL("../app/components/salon-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/salon-manager.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/salon.css", import.meta.url), "utf8"),
   ]);
 
   assert.match(home, /className="salon-cover-media">\{galleryShowcase[\s\S]*id="salon-title">Dobre cięcie/);
   assert.doesNotMatch(home, /Z bliska|02 \/ GALERIA/);
   assert.match(home, /Pokaż wszystkie zdjęcia/);
+  // The barber credit on gallery photos is covered by gallery-barber.test.mjs.
   assert.match(home, /\/brand\/bnb-mark\.png/);
   assert.match(styles, /\.salon-brand\s*\{[^}]*aspect-ratio:\s*16\/9/s);
   assert.match(styles, /\.salon-header \.salon-notification\.enabled\s*\{[^}]*background:\s*var\(--color-primary\)/s);
   assert.match(styles, /\.salon-header \.salon-notification\.disabled[^\{]*\{[^}]*background:\s*var\(--color-error\)/s);
   assert.match(styles, /\.salon-header nav\s*\{[^}]*border-top:\s*1px solid var\(--color-border-strong\)/s);
+});
+
+test("offers one repeat booking from the last completed client visit", async () => {
+  const [bookingHome, home, globalStyles, salonStyles, worker, notifications] = await Promise.all([
+    readBookingModules(),
+    readFile(new URL("../app/components/salon-home.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/salon.css", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/notification-worker.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../netlify/functions/_notification-service.mjs", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bookingHome, /const lastCompletedClientAppointment = useMemo/);
+  assert.match(bookingHome, /const repeatClientAppointment = \(appointment: AdminAppointment\)/);
+  assert.match(bookingHome, /setBookingWizardStep\(2\)/);
+  assert.match(bookingHome, /Poprzednia usługa nie jest już dostępna/);
+  assert.match(home, /Czas na kolejne cięcie\?/);
+  assert.match(home, /Ostatnio: \{props\.repeatVisit\.serviceName\} · \{props\.repeatVisit\.barberName\}/);
+  assert.match(home, /Umów ponownie/);
+  assert.match(globalStyles, /\.client-repeat-visit/);
+  assert.match(salonStyles, /\.salon-repeat-card/);
+  assert.match(worker, /enqueueAppointmentReminders/);
+  assert.match(notifications, /Twoja wizyta jest jutro o \$\{appointment\.startTime\}/);
 });
 
 test("shows content-shaped loading states and closes slow actions optimistically", async () => {
@@ -800,6 +875,6 @@ test("shows content-shaped loading states and closes slow actions optimistically
 
 // Architectural assertions follow the modules extracted from the former monolith.
 async function readBookingModules() {
-  const paths = ["booking-home.tsx", "lib/booking-types.ts", "lib/booking-selectors.ts", "lib/analytics.ts", "hooks/use-client-directory.ts", "hooks/use-admin-calendar.ts", "hooks/use-barber-catalog.ts", "hooks/use-appointment-synchronization.ts", "lib/booking-labels.ts", "lib/booking-format.ts", "lib/calendar-export.ts", "lib/client-sms.ts", "lib/availability-helpers.ts", "lib/team-normalizers.ts", "lib/view-memory.ts", "lib/google-redirect.ts", "components/install-guide-dialog.tsx", "components/screens/auth-screen.tsx", "components/screens/success-screen.tsx"];
+  const paths = ["booking-home.tsx", "lib/booking-types.ts", "lib/booking-selectors.ts", "lib/analytics.ts", "hooks/use-client-directory.ts", "hooks/use-admin-calendar.ts", "hooks/use-barber-catalog.ts", "hooks/use-appointment-synchronization.ts", "lib/booking-labels.ts", "lib/booking-format.ts", "lib/calendar-export.ts", "lib/client-sms.ts", "lib/availability-helpers.ts", "lib/team-normalizers.ts", "lib/view-memory.ts", "lib/google-redirect.ts", "lib/pwa-install.ts", "components/install-guide-dialog.tsx", "components/screens/auth-screen.tsx", "components/screens/success-screen.tsx"];
   return (await Promise.all(paths.map(path => readFile(new URL(`../app/${path}`, import.meta.url), "utf8")))).join("\n");
 }

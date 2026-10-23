@@ -29,7 +29,6 @@ export default function SalonManager() {
     setGallery((Object.values(value?.gallery || {}) as SalonImage[]).sort((a, b) => a.order - b.order));
     if (!dirty.current) setSettings({ address: String(value?.settings?.address || ""), openingHours: String(value?.settings?.openingHours || "") });
   }, () => setFeedback("Nie udało się wczytać galerii. Sprawdź połączenie i uprawnienia.")), []);
-
   useEffect(() => {
     const controller = new AbortController();
     fetch("/.netlify/functions/public-barbers", { signal: controller.signal })

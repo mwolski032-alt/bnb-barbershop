@@ -2,6 +2,7 @@ import {
   readDatabase,
   withDatabaseLock,
 } from "./_firebase-admin.mjs";
+import { appendAppointmentAudit } from "../../shared/appointment-audit.mjs";
 
 const defaultSections = [
   "appointments",
@@ -103,10 +104,15 @@ export const mutateScopedDatabase = async (
     );
     // Keep sync updates as leaf patches so legacy markers are not overwritten.
     database.appointmentSync = { users: {}, barbers: {} };
+    // Audit history is intentionally not loaded for every schedule mutation. An
+    // empty object makes the generated update target only the new operation id
+    // instead of replacing the complete appointmentAudit collection.
+    database.appointmentAudit ??= {};
     const before = structuredClone(database);
     const result = await mutation(database);
     if (result.error || result.idempotent) return { ...result, database: { ...database, partial: true } };
 
+    appendAppointmentAudit(database, before, result, actorUid);
     addRealtimeSyncMarkers(database, before, result, actorUid);
     const updates = {};
     collectPatch(before, database, "", updates);

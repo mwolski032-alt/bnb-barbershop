@@ -43,6 +43,9 @@ test("gallery is public to read but only the active owner may add, reorder and d
   await assertFails(set(ref(owner, "shopfront/gallery/19"), { ...photo, order: 19, barberId: 5 }));
   await assertSucceeds(set(ref(owner, "shopfront/gallery/19"), null));
   await assertSucceeds(set(ref(owner, path), photo));
+  await assertSucceeds(set(ref(owner, `${path}/barberId`), "mateusz"));
+  await assertFails(set(ref(owner, `${path}/barberId`), "unknown-barber"));
+  await assertSucceeds(set(ref(owner, `${path}/barberId`), null));
   await assertSucceeds(set(ref(owner, `${path}/order`), 1));
   await assertFails(set(ref(owner, `${path}/imageUrl`), "javascript:alert(1)"));
   await assertFails(set(ref(owner, `${path}/privateEmail`), "private"));

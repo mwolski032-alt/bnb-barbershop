@@ -169,14 +169,29 @@ const resolveServerValues = (value, previous) => {
 const applyQuery = (value, searchParams) => {
   const orderBy = JSON.parse(searchParams.get("orderBy") ?? "null");
   if (!orderBy || !value || typeof value !== "object") return value;
-  const equalTo = JSON.parse(searchParams.get("equalTo") ?? "null");
   const readChild = (record) =>
     String(orderBy)
       .split("/")
       .reduce((current, key) => current?.[key], record);
-  return Object.fromEntries(
-    Object.entries(value).filter(([, record]) => readChild(record) === equalTo),
-  );
+  let entries = Object.entries(value);
+  if (searchParams.has("equalTo")) {
+    const equalTo = JSON.parse(searchParams.get("equalTo"));
+    entries = entries.filter(([, record]) => readChild(record) === equalTo);
+  }
+  entries.sort((first, second) => {
+    const firstValue = readChild(first[1]);
+    const secondValue = readChild(second[1]);
+    return firstValue === secondValue ? first[0].localeCompare(second[0]) : firstValue < secondValue ? -1 : 1;
+  });
+  if (searchParams.has("limitToFirst")) {
+    const firstLimit = Number(JSON.parse(searchParams.get("limitToFirst")));
+    if (Number.isInteger(firstLimit) && firstLimit >= 0) entries = entries.slice(0, firstLimit);
+  }
+  if (searchParams.has("limitToLast")) {
+    const lastLimit = Number(JSON.parse(searchParams.get("limitToLast")));
+    if (Number.isInteger(lastLimit) && lastLimit >= 0) entries = entries.slice(-lastLimit);
+  }
+  return Object.fromEntries(entries);
 };
 
 const tokenUsers = {

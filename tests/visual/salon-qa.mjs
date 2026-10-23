@@ -36,6 +36,8 @@ try {
     await page.screenshot({path:`outputs/gallery-layout-${width}.png`,fullPage:true});
     await page.locator(".salon-gallery button").first().click();
     await page.locator(".salon-lightbox").waitFor();
+    assert.equal(await page.locator(".salon-work-credit").getAttribute("aria-label"),"Wykonawca: Mateusz Kowalski");
+    assert.equal(await page.locator(".salon-work-credit-avatar").count(),1);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.screenshot({path:`outputs/gallery-${width}.png`,fullPage:true});
     await page.keyboard.press("Escape");
@@ -45,8 +47,16 @@ try {
     await page.locator(".salon-gallery-all button").first().click();
     await page.locator(".salon-lightbox").waitFor();
     await page.keyboard.press("Escape");
+    await page.locator(".salon-gallery-thumbnails button").first().click();
+    await page.locator(".salon-lightbox").waitFor();
+    assert.equal(await page.locator(".salon-work-credit").count(),0);
+    await page.keyboard.press("Escape");
     await page.goto("http://127.0.0.1:4188/manager");
     await page.locator(".salon-manager-grid article").first().waitFor();
+    assert.equal(await page.getByLabel("Wykonawca zdjęcia 1").inputValue(),"mateusz");
+    await page.getByLabel("Wykonawca zdjęcia 2").selectOption("legacy");
+    await page.getByText("Zmiany zapisane.").waitFor();
+    assert.equal(await page.getByLabel("Wykonawca zdjęcia 2").inputValue(),"legacy");
     const first=await page.locator(".salon-manager-grid img").first().getAttribute("src");
     await page.getByRole("button",{name:"Przesuń zdjęcie dalej"}).first().click();
     assert.notEqual(await page.locator(".salon-manager-grid img").first().getAttribute("src"),first);

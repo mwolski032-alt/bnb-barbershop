@@ -60,8 +60,8 @@ const requireOwner = async (request, accessToken) => {
   return context.isOwner && context.active ? user : null;
 };
 
-const storeReport = async (report, accessToken) => {
-  const release = String(process.env.COMMIT_REF || process.env.DEPLOY_ID || "local").slice(0, 40);
+const storeReport = async (report, accessToken, deployId = "") => {
+  const release = String(deployId || process.env.COMMIT_REF || process.env.DEPLOY_ID || "local").slice(0, 40);
   const fingerprint = diagnosticFingerprint(report, release);
   const path = `${reportsPath}/${fingerprint}`;
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -87,7 +87,7 @@ const storeReport = async (report, accessToken) => {
   throw new Error("Concurrent monitoring update failed.");
 };
 
-export default async function handler(request) {
+export default async function handler(request, context = {}) {
   try {
     if (request.method === "POST") {
       if (!allowedOrigin(request)) return jsonResponse({ error: "Origin not allowed" }, 403);
@@ -108,7 +108,7 @@ export default async function handler(request) {
       const deviceKey = crypto.createHash("sha256").update(report.deviceId || "anonymous").digest("hex");
       if (!claimReportSlot(deviceKey)) return jsonResponse({ accepted: false, limited: true }, 429);
       const accessToken = await getAccessToken();
-      await storeReport(report, accessToken);
+      await storeReport(report, accessToken, context.deploy?.id);
       return jsonResponse({ accepted: true }, 202);
     }
 

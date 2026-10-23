@@ -1,9 +1,10 @@
-const CACHE_NAME = "bnb-barbershop-v15";
+const CACHE_NAME = "bnb-barbershop-v25";
 const APP_SHELL_URL = "/";
 const SHELL_NETWORK_TIMEOUT_MS = 3000;
+const ASSET_MANIFEST_URL = "/asset-manifest.json";
 const APP_SHELL = [
   APP_SHELL_URL,
-  "/manifest.webmanifest?v=9",
+  "/manifest.webmanifest?v=10",
   "/brand/bnb-logo.png",
   "/icons/icon-192.png?v=3",
 ];
@@ -14,6 +15,18 @@ const isAppShell = async (response) => response.ok && !response.redirected &&
   (await response.clone().text()).includes('data-bnb-app-shell="true"');
 const isExcludedPath = (path) => path.startsWith("/__/") || path.startsWith("/.netlify/") ||
   path.startsWith("/api/") || path.startsWith("/signin") || path.startsWith("/callback") || path.startsWith("/auth/");
+const readBuildAssets = async () => {
+  try {
+    const response = await fetch(ASSET_MANIFEST_URL, { cache: "reload" });
+    if (!response.ok || response.redirected) return [];
+    const manifest = await response.json();
+    return Array.isArray(manifest?.assets)
+      ? manifest.assets.filter((path) => typeof path === "string" && /^\/assets\/[A-Za-z0-9._-]+$/.test(path)).slice(0, 100)
+      : [];
+  } catch {
+    return [];
+  }
+};
 let firebaseMessagingReady = false;
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyATrBnGXzcxUR8r6Y-AeAeXDVPeKAjrymU",
@@ -30,6 +43,8 @@ const showPushNotification = (payload = {}) => {
   const notification = payload.notification ?? {};
   const data = payload.data ?? {};
   const title = notification.title ?? data.title ?? "BNB Barbershop";
+  const confirmActionToken = data.confirmActionToken ?? "";
+  const isSupportedAndroid = /Android/i.test(self.navigator?.userAgent ?? "");
   const options = {
     body: notification.body ?? data.body ?? "Masz nowe powiadomienie.",
     icon: notification.icon ?? data.icon ?? "/icons/icon-192.png",
@@ -37,10 +52,20 @@ const showPushNotification = (payload = {}) => {
     tag: notification.tag ?? data.tag ?? "bnb-barbershop",
     data: {
       url: payload.fcmOptions?.link ?? data.link ?? "/",
+      confirmActionToken,
     },
+    ...(confirmActionToken && isSupportedAndroid
+      ? {
+          actions: [
+            { action: "confirm", title: "Potwierdź" },
+            { action: "details", title: "Zobacz szczegóły" },
+          ],
+        }
+      : {}),
   };
   // The visit reminder asks a question, so it carries the answers as buttons.
   if (data.actions === "attend") {
+    options.data.answerButtons = true;
     options.actions = [
       { action: "confirm", title: "Potwierdzam" },
       { action: "cancel", title: "Odwołuję" },
@@ -68,15 +93,24 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => Promise.allSettled(APP_SHELL.map(async (path) => {
-        const response = await fetch(path, { cache: "reload" });
-        if (path === APP_SHELL_URL ? await isAppShell(response) : response.ok && !response.redirected &&
-          !(response.headers.get("content-type") || "").includes("text/html")) {
-          await cache.put(path, response);
-        }
-      })))
-      .then(() => self.skipWaiting()),
+      .then(async (cache) => {
+        const buildAssets = await readBuildAssets();
+        const paths = [...new Set([...APP_SHELL, ASSET_MANIFEST_URL, ...buildAssets])];
+        await Promise.allSettled(paths.map(async (path) => {
+          const response = await fetch(path, { cache: "reload" });
+          if (path === APP_SHELL_URL ? await isAppShell(response) : response.ok && !response.redirected &&
+            !(response.headers.get("content-type") || "").includes("text/html")) {
+            await cache.put(path, response);
+          }
+        }));
+      }),
   );
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener("activate", (event) => {
@@ -164,27 +198,70 @@ self.addEventListener("push", (event) => {
   event.waitUntil(showPushNotification(payload));
 });
 
+const openNotificationTarget = async (targetUrl) => {
+  const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const existingClient = clientList.find((client) => client.url.startsWith(self.location.origin));
+  if (existingClient) {
+    const navigatedClient = await existingClient.navigate(targetUrl);
+    return navigatedClient?.focus();
+  }
+  return self.clients.openWindow(targetUrl);
+};
+
+const confirmAppointmentFromNotification = async (notification, targetUrl) => {
+  try {
+    const response = await fetch("/.netlify/functions/notification-action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: notification.data?.confirmActionToken ?? "" }),
+      cache: "no-store",
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.ok !== true) {
+      await self.registration.showNotification("Sprawdź termin wizyty", {
+        body: result.error ?? "Nie udało się potwierdzić terminu. Otwórz szczegóły wizyty.",
+        icon: "/icons/icon-192.png",
+        badge: "/icons/notification-b-v4.png",
+        tag: notification.tag,
+        data: { url: targetUrl, confirmActionToken: "" },
+      });
+      return;
+    }
+    await self.registration.showNotification("Termin potwierdzony", {
+      body: result.message ?? "Nowy termin wizyty został potwierdzony.",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/notification-b-v4.png",
+      tag: notification.tag,
+      data: { url: targetUrl, confirmActionToken: "" },
+    });
+  } catch {
+    await self.registration.showNotification("Sprawdź termin wizyty", {
+      body: "Brak połączenia. Otwórz szczegóły i spróbuj ponownie.",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/notification-b-v4.png",
+      tag: notification.tag,
+      data: { url: targetUrl, confirmActionToken: "" },
+    });
+  }
+};
+
 self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
+  const notification = event.notification;
+  const targetUrl = new URL(notification.data?.url ?? "/", self.location.origin).href;
+  notification.close();
 
-  const target = new URL(event.notification.data?.url ?? "/", self.location.origin);
+  if (event.action === "confirm" && notification.data?.confirmActionToken) {
+    event.waitUntil(confirmAppointmentFromNotification(notification, targetUrl));
+    return;
+  }
+
   // A tap on a reminder button tells the app which answer to carry out once the visit is open.
-  if (event.action === "confirm" || event.action === "cancel") target.searchParams.set("reminder", event.action);
-  const targetUrl = target.href;
+  if (notification.data?.answerButtons && (event.action === "confirm" || event.action === "cancel")) {
+    const answerTarget = new URL(targetUrl);
+    answerTarget.searchParams.set("reminder", event.action);
+    event.waitUntil(openNotificationTarget(answerTarget.href));
+    return;
+  }
 
-  event.waitUntil(
-    self.clients
-      .matchAll({ type: "window", includeUncontrolled: true })
-      .then((clientList) => {
-        const existingClient = clientList.find((client) => client.url.startsWith(self.location.origin));
-
-        if (existingClient) {
-          return existingClient
-            .navigate(targetUrl)
-            .then((navigatedClient) => navigatedClient?.focus());
-        }
-
-        return self.clients.openWindow(targetUrl);
-      }),
-  );
+  event.waitUntil(openNotificationTarget(targetUrl));
 });

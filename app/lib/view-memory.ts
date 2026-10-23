@@ -2,7 +2,7 @@ import { type AdminSection, type AdminWorkspaceTab, type WorkWorkspaceTab, type 
 
 export const viewMemoryVersion = 1;
 
-export type OwnerPanelTab = "photos" | "barbers" | "errors";
+export type OwnerPanelTab = "photos" | "barbers" | "history" | "errors";
 
 export type ViewMemory = {
   version: typeof viewMemoryVersion;

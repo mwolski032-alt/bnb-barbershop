@@ -1,6 +1,4 @@
 "use client";
-import { ChevronRight, Compass, Smartphone } from "lucide-react";
-import { ChromeBrandIcon } from "../install-guide-dialog";
 
 function AuthBrand() {
   return (
@@ -31,11 +29,10 @@ type LoginScreenProps = {
   signingIn: boolean;
   error: string;
   onGoogleSignIn: () => void;
-  onOpenInstallGuide?: () => void;
   onBackToSalon: () => void;
 };
 
-export function LoginScreen({ signingIn, error, onGoogleSignIn, onOpenInstallGuide, onBackToSalon }: LoginScreenProps) {
+export function LoginScreen({ signingIn, error, onGoogleSignIn, onBackToSalon }: LoginScreenProps) {
   return (
     <main className="auth-shell" aria-label="Logowanie do aplikacji">
       <button type="button" className="salon-return" onClick={onBackToSalon}>‹ Strona salonu</button>
@@ -65,21 +62,6 @@ export function LoginScreen({ signingIn, error, onGoogleSignIn, onOpenInstallGui
           <span aria-hidden="true">G</span>
           {signingIn ? "Łączenie..." : "Kontynuuj z Google"}
         </button>
-
-        {onOpenInstallGuide ? <button className="install-guide-trigger" type="button" onClick={onOpenInstallGuide}>
-          <span className="install-guide-trigger-icon" aria-hidden="true">
-            <Smartphone />
-          </span>
-          <span className="install-guide-trigger-copy">
-            <strong>Zainstaluj aplikację</strong>
-            <small>Instrukcja dla iPhone&apos;a i Androida</small>
-          </span>
-          <span className="install-guide-trigger-browsers" aria-hidden="true">
-            <Compass />
-            <ChromeBrandIcon />
-          </span>
-          <ChevronRight className="install-guide-trigger-chevron" aria-hidden="true" />
-        </button> : null}
 
         {error ? <p className="auth-error">{error}</p> : null}
       </section>

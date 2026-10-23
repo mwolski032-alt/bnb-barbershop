@@ -58,7 +58,7 @@
           "blur": { ".validate": "newData.isString() && newData.val().length <= 3000 && newData.val().matches(/^data:image\\/webp;base64,[A-Za-z0-9+\\/=]+$/)" },
           "alt": { ".validate": "newData.isString() && newData.val().length <= 160" },
           "order": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 19" },
-          "barberId": { ".validate": "newData.isString() && newData.val().matches(/^[a-zA-Z0-9_-]{1,80}$/)" },
+          "barberId": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 80 && root.child('team/barbers').child(newData.val()).exists())" },
           "createdAt": { ".validate": "newData.isNumber()" },
           "updatedAt": { ".validate": "newData.isNumber()" },
           "$other": { ".validate": false }
@@ -122,6 +122,20 @@
     "appointmentOperations": {
       ".read": false,
       ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && ((auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now) || (auth.token.lockScope.matches(/^barber_[a-zA-Z0-9_-]+$/) && auth.token.lockOwner === root.child('systemLocks').child(auth.token.lockScope).child('owner').val() && root.child('systemLocks').child(auth.token.lockScope).child('expiresAt').val() > now && auth.token.globalEpoch > 0 && auth.token.globalEpoch === root.child('systemLocks/appointments/epoch').val() && (!root.child('systemLocks/appointments/owner').exists() || root.child('systemLocks/appointments/expiresAt').val() <= now) && !root.child('appointmentOperations').child(auth.token.operationId).exists()))"
+    },
+    "appointmentAudit": {
+      ".read": false,
+      ".write": "auth != null && auth.uid === 'bnb-schedule-writer' && auth.token.bnbScheduleWriter === true && ((auth.token.lockOwner === root.child('systemLocks/appointments/owner').val() && root.child('systemLocks/appointments/expiresAt').val() > now) || (auth.token.lockScope.matches(/^barber_[a-zA-Z0-9_-]+$/) && auth.token.lockOwner === root.child('systemLocks').child(auth.token.lockScope).child('owner').val() && root.child('systemLocks').child(auth.token.lockScope).child('expiresAt').val() > now && auth.token.globalEpoch > 0 && auth.token.globalEpoch === root.child('systemLocks/appointments/epoch').val() && (!root.child('systemLocks/appointments/owner').exists() || root.child('systemLocks/appointments/expiresAt').val() <= now) && !root.child('appointmentOperations').child(auth.token.operationId).exists()))",
+      ".indexOn": ["createdAt"]
+    },
+    "businessBackups": {
+      ".read": false,
+      ".write": false
+    },
+    "businessBackupIndex": {
+      ".read": false,
+      ".write": false,
+      ".indexOn": ["createdAt"]
     }
   }
 }

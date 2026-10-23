@@ -9,7 +9,10 @@ import { installAppointmentsFixture, tokens, clientAUid, mateuszUid, ownerUid } 
 const fixture = installAppointmentsFixture();
 const { default: appointments } = await import("../../netlify/functions/appointments.mjs");
 const { default: publicBarbers } = await import("../../netlify/functions/public-barbers.mjs");
+const { default: appointmentHistory } = await import("../../netlify/functions/appointment-history.mjs");
+const { default: dataBackup } = await import("../../netlify/functions/data-backup.mjs");
 const root = fileURLToPath(new URL("../../", import.meta.url));
+const qaPort = Number(process.env.QA_PORT) || 4191;
 let failNextAppointment = false;
 function reset() {
   fixture.reset();
@@ -22,6 +25,17 @@ function reset() {
   }
   fixture.database.appointments["mateusz-upcoming"].status = "rescheduled";
   fixture.database.appointments["mateusz-upcoming"].rescheduledBy = "admin";
+  const completedDate = new Date(); completedDate.setDate(completedDate.getDate()-28);
+  const completedKey = `${completedDate.getFullYear()}-${String(completedDate.getMonth()+1).padStart(2,"0")}-${String(completedDate.getDate()).padStart(2,"0")}`;
+  fixture.database.appointments["mateusz-completed"] = {
+    ...fixture.database.appointments["mateusz-upcoming"],
+    id: "mateusz-completed",
+    dateKey: completedKey,
+    startTime: "14:00",
+    status: "completed",
+    rescheduledBy: undefined,
+    settlement: { barberId: "mateusz", settledAt: completedDate.getTime(), amount: 50 },
+  };
   fixture.database.barbers.mateusz.profile = {displayName:"Mateusz",bio:"Klasyczne strzyżenia",instagram:"mateusz",specialties:"Broda, Fade"};
 }
 reset();
@@ -63,14 +77,18 @@ http.createServer(async(req,res)=>{
       const value=(url.searchParams.get("path") || "").split("/").filter(Boolean).reduce((v,k)=>v?.[k],fixture.database);
       res.setHeader("Content-Type","application/json");res.end(JSON.stringify(value??null));return;
     }
-    if(url.pathname.startsWith("/.netlify/functions/")){
+    if(url.pathname.startsWith("/.netlify/functions/") || url.pathname.startsWith("/api/")){
       const chunks=[];for await(const chunk of req)chunks.push(chunk);
       const requestBody=Buffer.concat(chunks).toString();
       const request=new Request(url,{method:req.method,headers:req.headers,...(req.method==="POST"?{body:requestBody}: {})});
       if(url.pathname.endsWith("/appointments") && String(req.headers.referer || "").includes("slow=1")) await new Promise(resolve=>setTimeout(resolve,900));
       const response=url.pathname.endsWith("/appointments") && failNextAppointment && requestBody.includes('"action":"cancel_client"')
         ? (failNextAppointment=false, Response.json({message:"Symulowany błąd zapisu."},{status:503}))
-        : url.pathname.endsWith("/appointments")?await appointments(request):url.pathname.endsWith("/public-barbers")?await publicBarbers(request):Response.json({ok:true});
+        : url.pathname.endsWith("/appointments")?await appointments(request)
+          :url.pathname.endsWith("/public-barbers")?await publicBarbers(request)
+          :url.pathname.endsWith("/appointment-history")?await appointmentHistory(request)
+          :url.pathname.endsWith("/data-backup")?await dataBackup(request)
+          :Response.json({ok:true});
       res.writeHead(response.status,Object.fromEntries(response.headers));res.end(await response.text());return;
     }
     if(url.pathname==="/qa.js"){res.setHeader("Content-Type","text/javascript");res.end(bundle.outputFiles[0].text);return;}
@@ -79,4 +97,4 @@ http.createServer(async(req,res)=>{
     }
     res.setHeader("Content-Type","text/html; charset=utf-8");res.end(`<!doctype html><html lang="pl"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${css}</style></head><body><div id="root"></div><script type="module" src="/qa.js"></script></body></html>`);
   }catch(e){res.statusCode=500;res.end(JSON.stringify({error:e.message}));}
-}).listen(4191,"127.0.0.1",()=>console.log("Isolated app + real API: http://127.0.0.1:4191/"));
+}).listen(qaPort,"127.0.0.1",()=>console.log(`Isolated app + real API: http://127.0.0.1:${qaPort}/`));

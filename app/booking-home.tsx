@@ -24,6 +24,8 @@ import {
   Mail,
   MessageSquare,
   Phone,
+  RefreshCw,
+  ChevronRight,
   Scissors,
   Users,
   X,
@@ -82,6 +84,7 @@ import {
   type BarberProfile,
   type TeamMemberDraft,
   type BarberDetails,
+  type InstallPlatform,
 } from "./lib/booking-types";
 import { firebaseApp, realtimeDb } from "./lib/firebase";
 import BookingHero from "./components/booking-hero";
@@ -91,6 +94,7 @@ import { instagramUrl } from "../shared/shopfront.mjs";
 import { withViewTransition } from "./lib/view-transition";
 import { confirmAction } from "./lib/confirm-action";
 import ProfileAvatar from "./components/profile-avatar";
+import ClientMergePanel from "./components/client-merge-panel";
 import ClientScreen from "./components/screens/client-screen";
 import { LoginScreen, SessionCheckScreen } from "./components/screens/auth-screen";
 import SuccessScreen from "./components/screens/success-screen";
@@ -184,7 +188,7 @@ import {
 } from "./lib/view-memory";
 import { clearPendingGoogleRedirect, shouldResolveGoogleRedirect, signInWithGoogleRedirect } from "./lib/google-redirect";
 import InstallGuideDialog from "./components/install-guide-dialog";
-import { usePwaInstall } from "./lib/use-pwa-install";
+import { detectInstallPlatform, isRunningAsInstalledApp, type DeferredInstallPromptEvent } from "./lib/pwa-install";
 
 const AdminCalendarScreen = lazy(() => import("./components/screens/admin-calendar-screen"));
 
@@ -197,14 +201,54 @@ const AdminSettingsScreen = lazy(() => import("./components/screens/admin-settin
 type AvailabilityDraft = { dates: string[]; startTime: string; endTime: string };
 const defaultAvailabilityTimes = { startTime: "09:00", endTime: "17:00" };
 
-const ClientMergePanel = lazy(() => import("./components/client-merge-panel"));
 
 const SalonManager = lazy(() => import("./components/salon-manager"));
 
 const ErrorMonitoringPanel = lazy(() => import("./components/error-monitoring-panel"));
+const AppointmentHistoryPanel = lazy(() => import("./components/appointment-history-panel"));
 
 /** How many visited sections the Back button remembers inside the admin area. */
 const ADMIN_BACK_LIMIT = 20;
+
+function PwaUpdateNotice({
+  visible,
+  refreshing,
+  onRefresh,
+  onDismiss,
+}: {
+  visible: boolean;
+  refreshing: boolean;
+  onRefresh: () => void;
+  onDismiss: () => void;
+}) {
+  if (!visible) return null;
+
+  return (
+    <aside className="pwa-update-notice" role="status" aria-live="polite" aria-label="Aktualizacja aplikacji">
+      <span className="pwa-update-notice-icon" aria-hidden="true">
+        <RefreshCw />
+      </span>
+      <div className="pwa-update-notice-copy">
+        <strong>Pojawiła się aktualizacja</strong>
+        <span>Odśwież, aby korzystać z najnowszej wersji.</span>
+      </div>
+      <div className="pwa-update-notice-actions">
+        <button type="button" className="pwa-update-later" onClick={onDismiss} disabled={refreshing}>
+          Później
+        </button>
+        <button
+          type="button"
+          className="pwa-update-refresh"
+          onClick={onRefresh}
+          disabled={refreshing}
+          aria-busy={refreshing}
+        >
+          {refreshing ? "Odświeżam…" : "Odśwież"}
+        </button>
+      </div>
+    </aside>
+  );
+}
 
 export function BookingHome() {
   const [currentDate, setCurrentDate] = useState(() => new Date());
@@ -215,15 +259,19 @@ export function BookingHome() {
   const [sessionReady, setSessionReady] = useState(false);
   const [authError, setAuthError] = useState("");
   const [installGuideOpen, setInstallGuideOpen] = useState(false);
-  const closeInstallGuide = useCallback(() => setInstallGuideOpen(false), []);
-  const pwaInstall = usePwaInstall();
-  const { promptInstall: promptPwaInstall } = pwaInstall;
-  const handleInstallClick = useCallback(async () => {
-    // Android/Chrome: install natively; iOS (or no native prompt): show instructions.
-    if (!pwaInstall.isIos && (await promptPwaInstall())) return;
-    setInstallGuideOpen(true);
-  }, [pwaInstall.isIos, promptPwaInstall]);
-  const installGuidePlatform = pwaInstall.isIos ? "ios" : /Android/i.test(typeof navigator === "undefined" ? "" : navigator.userAgent) ? "android" : null;
+  const [installGuidePlatform, setInstallGuidePlatform] = useState<InstallPlatform | null>(null);
+  const [deferredInstallPrompt, setDeferredInstallPrompt] =
+    useState<DeferredInstallPromptEvent | null>(null);
+  const [isPwaInstalled, setIsPwaInstalled] = useState(false);
+  const [isInstallPrompting, setIsInstallPrompting] = useState(false);
+  const closeInstallGuide = useCallback(() => {
+    setInstallGuideOpen(false);
+    setInstallGuidePlatform(null);
+  }, []);
+  const [isPwaUpdateReady, setIsPwaUpdateReady] = useState(false);
+  const [isPwaUpdateRefreshing, setIsPwaUpdateRefreshing] = useState(false);
+  const pwaRegistrationRef = useRef<ServiceWorkerRegistration | null>(null);
+  const pwaUpdateReloadingRef = useRef(false);
   const [bookingError, setBookingError] = useState("");
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
   const [pendingActionKeys, setPendingActionKeys] = useState<Set<string>>(() => new Set());
@@ -313,12 +361,24 @@ export function BookingHome() {
   );
   const [adminEditAppointmentId, setAdminEditAppointmentId] = useState<string | null>(null);
   const [reschedulingAppointmentId, setReschedulingAppointmentId] = useState<string | null>(null);
+  const [repeatBookingIntent, setRepeatBookingIntent] = useState<{
+    barberId: string;
+    serviceId: string;
+    serviceName: string;
+    durationMinutes: number;
+  } | null>(null);
   const [successReady, setSuccessReady] = useState(false);
   const [draggedAppointmentId, setDraggedAppointmentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [pendingNotificationAppointmentId, setPendingNotificationAppointmentId] = useState("");
   // The visits on screen come from this device's memory because the server could not be reached.
   const [showingSavedAppointments, setShowingSavedAppointments] = useState(false);
+  const [notificationConfirmationAppointmentId, setNotificationConfirmationAppointmentId] =
+    useState("");
+  const closeClientAppointmentDetails = () => {
+    setClientAppointmentId(null);
+    setNotificationConfirmationAppointmentId("");
+  };
   const [clientSearch, setClientSearch] = useState("");
   const [calendarClientSearch, setCalendarClientSearch] = useState("");
   const [calendarClientPickerOpen, setCalendarClientPickerOpen] = useState(false);
@@ -670,6 +730,28 @@ export function BookingHome() {
   const nearestClientAppointmentBarber = nearestClientAppointment
     ? clientBarberOptions.find((barber) => barber.id === nearestClientAppointment.barberId) ?? null
     : null;
+  const lastCompletedClientAppointment = useMemo(
+    () =>
+      activeUser
+        ? ownClientAppointments
+            .filter(
+              (appointment) =>
+                appointment.userId === activeUser.uid &&
+                normalizeAppointmentStatus(appointment.status) === "completed",
+            )
+            .sort(
+              (first, second) =>
+                getAppointmentEndDateTime(second).getTime() -
+                getAppointmentEndDateTime(first).getTime(),
+            )[0] ?? null
+        : null,
+    [activeUser, ownClientAppointments],
+  );
+  const lastCompletedClientAppointmentBarber = lastCompletedClientAppointment
+    ? clientBarberOptions.find(
+        (barber) => barber.id === lastCompletedClientAppointment.barberId,
+      ) ?? null
+    : null;
   const reschedulingClientBarber = reschedulingAppointment
     ? clientBarberOptions.find((barber) => barber.id === reschedulingAppointment.barberId) ?? null
     : null;
@@ -701,6 +783,10 @@ export function BookingHome() {
     selectedClientAppointment &&
       normalizeAppointmentStatus(selectedClientAppointment.status) === "confirmed" &&
       !selectedClientAppointment.attendanceConfirmedAt,
+  );
+  const selectedClientOpenedFromConfirmationNotification = Boolean(
+    selectedClientAppointment &&
+      selectedClientAppointment.id === notificationConfirmationAppointmentId,
   );
   const selectedClientAppointmentBarber = selectedClientAppointment
     ? clientBarberOptions.find((barber) => barber.id === selectedClientAppointment.barberId) ?? null
@@ -1363,11 +1449,88 @@ export function BookingHome() {
   const isActionPending = (key: string) => pendingActionKeys.has(key);
   const isDirectActionPending = (key: string) =>
     actionFeedback?.kind === "pending" && actionFeedback.key === key;
-  const showActionFeedback = (
+  const showActionFeedback = useCallback((
     key: string,
     kind: ActionFeedback["kind"],
     message: string,
-  ) => setActionFeedback({ key, kind, message });
+  ) => setActionFeedback({ key, kind, message }), []);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setDeferredInstallPrompt(event as DeferredInstallPromptEvent);
+    };
+    const handleAppInstalled = () => {
+      setDeferredInstallPrompt(null);
+      setIsPwaInstalled(true);
+      setIsInstallPrompting(false);
+      closeInstallGuide();
+      showActionFeedback("pwa_install", "success", "Aplikacja BNB została zainstalowana.");
+    };
+
+    setIsPwaInstalled(isRunningAsInstalledApp());
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, [closeInstallGuide, showActionFeedback]);
+
+  const handleInstallApp = useCallback(async () => {
+    if (isPwaInstalled) {
+      showActionFeedback("pwa_install", "success", "Aplikacja BNB jest już zainstalowana.");
+      return;
+    }
+    if (isInstallPrompting) return;
+
+    if (deferredInstallPrompt) {
+      const installPrompt = deferredInstallPrompt;
+      setDeferredInstallPrompt(null);
+      setIsInstallPrompting(true);
+      try {
+        await installPrompt.prompt();
+        const choice = await installPrompt.userChoice;
+        if (choice.outcome === "accepted") {
+          showActionFeedback(
+            "pwa_install",
+            "success",
+            "Instalacja została zaakceptowana. Za chwilę pojawi się ikona BNB.",
+          );
+        } else {
+          showActionFeedback("pwa_install", "error", "Instalacja nie została jeszcze potwierdzona.");
+        }
+        return;
+      } catch {
+        // Some Chromium-based browsers can withdraw the prompt between the
+        // click and prompt(). Give the user a clear, platform-specific route.
+        setInstallGuidePlatform(detectInstallPlatform());
+        setInstallGuideOpen(true);
+      } finally {
+        setIsInstallPrompting(false);
+      }
+      return;
+    }
+
+    setInstallGuidePlatform(detectInstallPlatform());
+    setInstallGuideOpen(true);
+  }, [deferredInstallPrompt, isInstallPrompting, isPwaInstalled, showActionFeedback]);
+
+  const refreshPwaUpdate = useCallback(() => {
+    const waitingWorker = pwaRegistrationRef.current?.waiting;
+    if (!waitingWorker || isPwaUpdateRefreshing) return;
+
+    pwaUpdateReloadingRef.current = true;
+    setIsPwaUpdateRefreshing(true);
+    waitingWorker.postMessage({ type: "SKIP_WAITING" });
+
+    window.setTimeout(() => {
+      if (!pwaUpdateReloadingRef.current) return;
+      pwaUpdateReloadingRef.current = false;
+      setIsPwaUpdateRefreshing(false);
+      setIsPwaUpdateReady(false);
+    }, 8_000);
+  }, [isPwaUpdateRefreshing]);
 
   const registerCurrentPushDevice = useCallback(async () => {
     if (!activeUser || isOwner) return null;
@@ -1507,10 +1670,57 @@ export function BookingHome() {
       return;
     }
 
+    let active = true;
+    let observedWorker: ServiceWorker | null = null;
+    let removeInstallingListener: () => void = () => {};
+    let removeUpdateFoundListener: () => void = () => {};
+
+    const revealUpdate = (currentRegistration: ServiceWorkerRegistration) => {
+      if (!active || !navigator.serviceWorker.controller || !currentRegistration.waiting) return;
+      pwaRegistrationRef.current = currentRegistration;
+      setIsPwaUpdateReady(true);
+    };
+    const observeInstallingWorker = (currentRegistration: ServiceWorkerRegistration) => {
+      const installingWorker = currentRegistration.installing;
+      if (!installingWorker || installingWorker === observedWorker) return;
+      removeInstallingListener();
+      observedWorker = installingWorker;
+      const handleStateChange = () => {
+        if (installingWorker.state === "installed") revealUpdate(currentRegistration);
+      };
+      installingWorker.addEventListener("statechange", handleStateChange);
+      removeInstallingListener = () => installingWorker.removeEventListener("statechange", handleStateChange);
+    };
+    const handleControllerChange = () => {
+      if (pwaUpdateReloadingRef.current) window.location.reload();
+    };
+    const checkForUpdateOnFocus = () => {
+      pwaRegistrationRef.current?.update().catch(() => undefined);
+    };
+
+    navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
+    window.addEventListener("focus", checkForUpdateOnFocus);
     navigator.serviceWorker
       .register("/sw.js", { updateViaCache: "none" })
-      .then((registration) => registration.update())
+      .then((currentRegistration) => {
+        if (!active) return;
+        pwaRegistrationRef.current = currentRegistration;
+        const handleUpdateFound = () => observeInstallingWorker(currentRegistration);
+        currentRegistration.addEventListener("updatefound", handleUpdateFound);
+        removeUpdateFoundListener = () => currentRegistration.removeEventListener("updatefound", handleUpdateFound);
+        observeInstallingWorker(currentRegistration);
+        revealUpdate(currentRegistration);
+        currentRegistration.update().catch(() => undefined);
+      })
       .catch(() => undefined);
+
+    return () => {
+      active = false;
+      removeInstallingListener();
+      removeUpdateFoundListener();
+      navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
+      window.removeEventListener("focus", checkForUpdateOnFocus);
+    };
   }, []);
 
   useEffect(() => {
@@ -1554,7 +1764,12 @@ export function BookingHome() {
     const url = new URL(window.location.href);
     const event = url.searchParams.get("event")?.trim() ?? "";
     const appointmentId = url.searchParams.get("appointment")?.trim();
-    if (appointmentId) setPendingNotificationAppointmentId(appointmentId);
+    if (appointmentId) {
+      setPendingNotificationAppointmentId(appointmentId);
+      if (event === "admin_rescheduled" || event === "admin_reschedule_reminder") {
+        setNotificationConfirmationAppointmentId(appointmentId);
+      }
+    }
     const waitlistId = url.searchParams.get("waitlist")?.trim() ?? "";
     const barberId = url.searchParams.get("barber")?.trim() ?? "";
     const serviceId = url.searchParams.get("service")?.trim() ?? "";
@@ -1629,7 +1844,7 @@ export function BookingHome() {
       if (isOneOf(memory.adminWorkspaceTab, ["upcoming", "schedule", "clients"])) {
         setAdminWorkspaceTab(memory.adminWorkspaceTab);
       }
-      if (isOneOf(memory.ownerPanelTab, ["photos", "barbers", "errors"])) {
+      if (isOneOf(memory.ownerPanelTab, ["photos", "barbers", "history", "errors"])) {
         setOwnerPanelTab(memory.ownerPanelTab);
       }
       if (isOneOf(memory.workWorkspaceTab, ["days", "services"])) {
@@ -2068,6 +2283,35 @@ export function BookingHome() {
       }));
     }
   }, [manualBookingDraft.serviceId, selectedServiceId, services, serviceCatalogReady]);
+
+  useEffect(() => {
+    if (
+      !repeatBookingIntent ||
+      activeBarberId !== repeatBookingIntent.barberId ||
+      !serviceCatalogReady
+    ) {
+      return;
+    }
+
+    const matchingService =
+      services.find((service) => service.id === repeatBookingIntent.serviceId) ??
+      services.find(
+        (service) =>
+          service.name.trim().toLocaleLowerCase("pl") ===
+            repeatBookingIntent.serviceName.trim().toLocaleLowerCase("pl") &&
+          service.durationMinutes === repeatBookingIntent.durationMinutes,
+      );
+    if (matchingService) {
+      setSelectedServiceId(matchingService.id);
+      setBookingWizardStep(2);
+      setBookingError("");
+    } else {
+      setSelectedServiceId("");
+      setBookingWizardStep(1);
+      setBookingError("Poprzednia usługa nie jest już dostępna. Wybierz usługę z aktualnej oferty.");
+    }
+    setRepeatBookingIntent(null);
+  }, [activeBarberId, repeatBookingIntent, serviceCatalogReady, services]);
 
   useEffect(() => {
     if (!reschedulingAppointment || reschedulingAppointment.barberId !== activeBarberId) return;
@@ -2712,6 +2956,16 @@ export function BookingHome() {
     setWorkFeedback(null);
   };
 
+  const returnFromAdminPanel = () => {
+    if (isOwner && selectedBarberId) {
+      setSelectedBarberId(null);
+      return;
+    }
+
+    setStep("booking");
+    setSalonOpen(true);
+  };
+
   const openTeamMemberEditDialog = (member: BarberProfile) => {
     setTeamMemberDraft({
       name: member.name,
@@ -3180,7 +3434,7 @@ export function BookingHome() {
     setSelectedKey(appointment.dateKey);
     setSelectedTime(appointment.startTime);
     setForm({ fullName: appointment.clientName, phone: appointment.phone ?? "" });
-    setClientAppointmentId(null);
+    closeClientAppointmentDetails();
     setClientAppointmentsListOpen(false);
     setReschedulingAppointmentId(appointment.id);
     setBookingWizardStep(2);
@@ -3194,7 +3448,7 @@ export function BookingHome() {
     const appointment = ownClientAppointments.find((item) => item.id === appointmentId);
 
     setPendingClientCancellationId(null);
-    setClientAppointmentId(null);
+    closeClientAppointmentDetails();
     setClientAppointmentsListOpen(false);
     if (reschedulingAppointmentId === appointmentId) {
       setReschedulingAppointmentId(null);
@@ -3275,6 +3529,47 @@ export function BookingHome() {
     onAttend: (appointmentId) => void confirmClientAttendance(appointmentId),
     onCancel: setPendingClientCancellationId,
   });
+
+  const repeatClientAppointment = (appointment: AdminAppointment) => {
+    const barberAvailable = clientBarberOptions.some(
+      (barber) => barber.id === appointment.barberId,
+    );
+    salonScrollPositionRef.current = window.scrollY;
+    viewScrollPositionsRef.current.salon = window.scrollY;
+    closeClientAppointmentDetails();
+    setClientAppointmentsListOpen(false);
+    setReschedulingAppointmentId(null);
+    setSelectedTime("");
+    setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    setSelectedKey(dayKey(today));
+    setForm({
+      fullName: appointment.clientName || activeUser?.displayName || "",
+      phone: appointment.phone ?? "",
+    });
+    setWizardOpen(true);
+    setSalonOpen(false);
+    setStep("booking");
+
+    if (!barberAvailable) {
+      setSelectedBarberId(null);
+      setSelectedServiceId("");
+      setRepeatBookingIntent(null);
+      setBookingWizardStep(0);
+      setBookingError("Poprzedni barber nie jest obecnie dostępny. Wybierz barbera z zespołu.");
+      return;
+    }
+
+    setSelectedBarberId(appointment.barberId);
+    setSelectedServiceId("");
+    setRepeatBookingIntent({
+      barberId: appointment.barberId,
+      serviceId: appointment.serviceId ?? "",
+      serviceName: appointment.serviceName,
+      durationMinutes: appointment.durationMinutes,
+    });
+    setBookingWizardStep(1);
+    setBookingError("");
+  };
 
   const saveClientReschedule = async () => {
     if (!reschedulingAppointment || !selectedTime || isSaving) return;
@@ -4206,7 +4501,16 @@ export function BookingHome() {
     },
     { active: authReady && !activeUser && !salonOpen, close: () => { setWizardOpen(false); setSalonOpen(true); } },
   ], wizardMounted);
+  const pwaUpdateNotice = (
+    <PwaUpdateNotice
+      visible={isPwaUpdateReady}
+      refreshing={isPwaUpdateRefreshing}
+      onRefresh={refreshPwaUpdate}
+      onDismiss={() => setIsPwaUpdateReady(false)}
+    />
+  );
   const salonHomeView = <>
+    {pwaUpdateNotice}
     <SalonHome
       busy={!authReady || isSigningIn || Boolean(activeUser && !sessionReady)}
       signedIn={Boolean(activeUser)} admin={isAdmin} error={authError}
@@ -4231,6 +4535,14 @@ export function BookingHome() {
       visitsBadge={clientVisitsBadgeCount}
       reviewPrompt={pendingReview}
       onReviewed={(barberId) => setReviewedBarberIds((ids) => (ids ? [...ids, barberId] : [barberId]))}
+      repeatVisit={
+        activeUser && !isAdmin && !nearestClientAppointment && lastCompletedClientAppointment
+          ? {
+              serviceName: lastCompletedClientAppointment.serviceName,
+              barberName: lastCompletedClientAppointmentBarber?.name ?? "barbera B'n'B",
+            }
+          : null
+      }
       onBook={(barberId) => {
         salonScrollPositionRef.current = window.scrollY;
         viewScrollPositionsRef.current.salon = window.scrollY;
@@ -4260,9 +4572,14 @@ export function BookingHome() {
       }}
       onPanel={() => withViewTransition(() => { setSalonOpen(false); setStep("admin"); })}
       onVisits={() => withViewTransition(() => { setWizardOpen(false); setSalonOpen(false); setClientAppointmentsListOpen(true); })}
+      onRepeatVisit={() => {
+        if (lastCompletedClientAppointment) repeatClientAppointment(lastCompletedClientAppointment);
+      }}
       onNotifications={() => void handlePushDeviceToggle()}
       onSignOut={() => void handleSignOut()}
-      onInstall={pwaInstall.canInstall ? () => void handleInstallClick() : undefined}
+      installed={isPwaInstalled}
+      installing={isInstallPrompting}
+      onInstall={() => void handleInstallApp()}
     />
     {installGuideOpen && <InstallGuideDialog onClose={closeInstallGuide} initialPlatform={installGuidePlatform} />}
   </>;
@@ -4276,17 +4593,17 @@ export function BookingHome() {
     if (!wizardOpen && step === "booking" && !pendingNotificationAppointmentId && !pendingAdminWaitlistSelection && !pendingWaitlistSelection && !clientAppointmentId && !adminEditAppointmentId) {
       return salonHomeView;
     }
-    return <SessionCheckScreen />;
+    return <>{pwaUpdateNotice}<SessionCheckScreen /></>;
   }
 
   if (!activeUser) {
     return (
       <>
+        {pwaUpdateNotice}
         <LoginScreen
           signingIn={isSigningIn}
           error={authError}
           onGoogleSignIn={() => { void handleGoogleSignIn(); }}
-          onOpenInstallGuide={pwaInstall.canInstall ? () => void handleInstallClick() : undefined}
           onBackToSalon={() => { setWizardOpen(false); setSalonOpen(true); }}
         />
         {installGuideOpen ? (
@@ -4297,6 +4614,8 @@ export function BookingHome() {
   }
 
   return (
+    <>
+      {pwaUpdateNotice}
       <main
         className={`app-shell ${
           visibleStep === "confirm" || visibleStep === "success" ? "confirm-page" : ""
@@ -4341,10 +4660,7 @@ export function BookingHome() {
             <button
               className="back-button"
               type="button"
-              onClick={() => withViewTransition(() => {
-                setStep("booking");
-                setSalonOpen(true);
-              })}
+              onClick={() => withViewTransition(returnFromAdminPanel)}
             >
               ‹ Wróć
             </button>
@@ -4375,6 +4691,14 @@ export function BookingHome() {
                   Barberzy
                 </button>
                 <button
+                  className={ownerPanelTab === "history" ? "active" : ""}
+                  type="button"
+                  aria-pressed={ownerPanelTab === "history"}
+                  onClick={() => setOwnerPanelTab("history")}
+                >
+                  Historia
+                </button>
+                <button
                   className={ownerPanelTab === "errors" ? "active" : ""}
                   type="button"
                   aria-pressed={ownerPanelTab === "errors"}
@@ -4391,6 +4715,10 @@ export function BookingHome() {
               ) : ownerPanelTab === "errors" ? (
                 <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie monitoringu błędów" />}>
                   <ErrorMonitoringPanel />
+                </Suspense>
+              ) : ownerPanelTab === "history" ? (
+                <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie historii działań" />}>
+                  <AppointmentHistoryPanel />
                 </Suspense>
               ) : (
                 <div className="owner-barber-select" aria-label="Wybór barbera">
@@ -4470,7 +4798,7 @@ export function BookingHome() {
                   <strong>{activeBarberName}</strong>
                 </span>
                 {isOwner ? (
-                  <button type="button" onClick={() => setSelectedBarberId(null)}>
+                  <button type="button" onClick={returnFromAdminPanel}>
                     Zmień
                   </button>
                 ) : null}
@@ -4702,6 +5030,7 @@ export function BookingHome() {
                   setWizardOpen(false);
                   setSalonOpen(true);
                   setReschedulingAppointmentId(null);
+                  setRepeatBookingIntent(null);
                   setBookingError("");
                 });
                 window.requestAnimationFrame(() => {
@@ -5779,7 +6108,9 @@ export function BookingHome() {
           }}
         >
           <section
-            className="client-appointment-modal admin-client-profile-modal"
+            className={`client-appointment-modal admin-client-profile-modal${
+              canAccessAdminClients && canAccessAdminSchedule ? " has-merge-panel" : ""
+            }`}
             role="dialog"
             aria-modal="true"
             aria-label={`Karta klienta ${selectedAdminClient.name}`}
@@ -5876,22 +6207,20 @@ export function BookingHome() {
             </div>
 
             {canAccessAdminClients && canAccessAdminSchedule ? (
-              <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie scalania klientów" />}>
-                <ClientMergePanel
-                  key={selectedAdminClient.id}
-                  current={selectedAdminClient}
-                  clients={adminClientProfiles.filter(profile => clientRecords.some(record => record.id === profile.id))}
-                  onMerge={async preview => {
-                    await runAppointmentOperation("merge_admin_clients", {
-                      sourceClientId: preview.source.id,
-                      targetClientId: preview.target.id,
-                      previewToken: preview.token,
-                      confirmed: true,
-                    }, { key: `merge_admin_clients:${preview.source.id}:${preview.target.id}:${preview.token}`, expectedVersion: 0 });
-                    setSelectedAdminClientId(preview.target.id);
-                  }}
-                />
-              </Suspense>
+              <ClientMergePanel
+                key={selectedAdminClient.id}
+                current={selectedAdminClient}
+                clients={adminClientProfiles.filter(profile => clientRecords.some(record => record.id === profile.id))}
+                onMerge={async preview => {
+                  await runAppointmentOperation("merge_admin_clients", {
+                    sourceClientId: preview.source.id,
+                    targetClientId: preview.target.id,
+                    previewToken: preview.token,
+                    confirmed: true,
+                  }, { key: `merge_admin_clients:${preview.source.id}:${preview.target.id}:${preview.token}`, expectedVersion: 0 });
+                  setSelectedAdminClientId(preview.target.id);
+                }}
+              />
             ) : null}
 
             <div className="client-history-heading">
@@ -6573,6 +6902,7 @@ export function BookingHome() {
                   type="button"
                   onClick={() => {
                     setClientAppointmentId(appointment.id);
+                    setNotificationConfirmationAppointmentId("");
                     setClientAppointmentsListOpen(false);
                   }}
                 >
@@ -6593,7 +6923,27 @@ export function BookingHome() {
                   <b>{appointment.price}</b>
                 </button>
               ))}
+              {!clientAppointments.length ? (
+                <p className="client-appointment-empty">Nie masz teraz zaplanowanej wizyty.</p>
+              ) : null}
             </div>
+            {lastCompletedClientAppointment ? (
+              <section className="client-repeat-visit" aria-labelledby="client-repeat-title">
+                <span className="eyebrow">Ostatnia wizyta</span>
+                <h3 id="client-repeat-title">{lastCompletedClientAppointment.serviceName}</h3>
+                <p>
+                  {dayFormatter.format(dateFromKey(lastCompletedClientAppointment.dateKey))} ·{" "}
+                  {lastCompletedClientAppointmentBarber?.name ?? "Barber B'n'B"}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => repeatClientAppointment(lastCompletedClientAppointment)}
+                >
+                  Umów ponownie
+                  <ChevronRight aria-hidden="true" />
+                </button>
+              </section>
+            ) : null}
           </section>
         </div>
       ) : null}
@@ -6602,23 +6952,36 @@ export function BookingHome() {
       <ModalPresence>
       {selectedClientAppointment && visibleStep !== "admin" ? (
         <div
-          className="client-modal-backdrop"
+          className={`client-modal-backdrop ${
+            selectedClientOpenedFromConfirmationNotification
+              ? "notification-confirmation-backdrop"
+              : ""
+          }`}
           role="presentation"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setClientAppointmentId(null);
+            if (event.target === event.currentTarget) closeClientAppointmentDetails();
           }}
         >
           <section
-            className="client-appointment-modal client-bottom-sheet appointment-detail-sheet"
-            role="dialog"
+            className={`client-appointment-modal client-bottom-sheet appointment-detail-sheet ${
+              selectedClientOpenedFromConfirmationNotification
+                ? "notification-confirmation-modal"
+                : ""
+            }`}
+            role={selectedClientNeedsConfirmation ? "alertdialog" : "dialog"}
             aria-modal="true"
             aria-labelledby="client-appointment-detail-title"
+            aria-describedby={
+              selectedClientOpenedFromConfirmationNotification
+                ? "notification-confirmation-description"
+                : undefined
+            }
           >
             <div
               className="sheet-grabber"
               aria-hidden="true"
               onPointerDown={beginSheetGesture}
-              onPointerUp={(event) => endSheetGesture(event, () => setClientAppointmentId(null))}
+              onPointerUp={(event) => endSheetGesture(event, closeClientAppointmentDetails)}
               onPointerCancel={() => {
                 sheetGestureRef.current = null;
               }}
@@ -6626,19 +6989,36 @@ export function BookingHome() {
             <button
               className="modal-close-button"
               type="button"
-              onClick={() => setClientAppointmentId(null)}
+              onClick={closeClientAppointmentDetails}
               aria-label="Zamknij szczegóły wizyty"
             >
               ×
             </button>
             <div className="modal-title">
               <p className="eyebrow">
-                {selectedClientAppointmentIsRescheduled
+                {selectedClientOpenedFromConfirmationNotification && selectedClientNeedsConfirmation
+                  ? "Odpowiedź wymagana"
+                  : selectedClientAppointmentIsRescheduled
                   ? "Zmiana terminu"
                   : "Twoja wizyta"}
               </p>
-              <h2 id="client-appointment-detail-title">{selectedClientAppointment.serviceName}</h2>
+              <h2 id="client-appointment-detail-title">
+                {selectedClientOpenedFromConfirmationNotification && selectedClientNeedsConfirmation
+                  ? "Potwierdź nowy termin"
+                  : selectedClientAppointment.serviceName}
+              </h2>
             </div>
+
+            {selectedClientOpenedFromConfirmationNotification ? (
+              <div className="notification-confirmation-intro">
+                <span aria-hidden="true">✓</span>
+                <p id="notification-confirmation-description">
+                  {selectedClientNeedsConfirmation
+                    ? "Barber zaproponował zmianę Twojej wizyty. Sprawdź nowy termin i wybierz jedną z dwóch odpowiedzi."
+                    : "Dziękujemy — odpowiedź została zapisana i barber już ją widzi."}
+                </p>
+              </div>
+            ) : null}
 
             {selectedClientAppointmentBarber ? (
               <div className="appointment-barber-row">
@@ -6740,12 +7120,13 @@ export function BookingHome() {
               <div
                 className={`modal-actions ${
                   selectedClientNeedsConfirmation || selectedClientCanConfirmAttendance ? "with-confirmation" : ""
-                }`}
+                } ${selectedClientOpenedFromConfirmationNotification ? "notification-confirmation-actions" : ""}`}
               >
                 {selectedClientNeedsConfirmation ? (
                   <button
                     className="confirm"
                     type="button"
+                    autoFocus={selectedClientOpenedFromConfirmationNotification}
                     disabled={isSaving || isActionPending(`confirm_client:${selectedClientAppointment.id}`)}
                     aria-busy={isActionPending(`confirm_client:${selectedClientAppointment.id}`)}
                     onClick={() => confirmClientRescheduledAppointment(selectedClientAppointment.id)}
@@ -6753,7 +7134,7 @@ export function BookingHome() {
                     {isSaving ? "Potwierdzanie..." : "Potwierdzam nowy termin"}
                   </button>
                 ) : null}
-                {selectedClientCanConfirmAttendance ? (
+                {selectedClientCanConfirmAttendance && !selectedClientOpenedFromConfirmationNotification ? (
                   <button
                     className="confirm"
                     type="button"
@@ -6764,21 +7145,34 @@ export function BookingHome() {
                     Będę na wizycie
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  disabled={isSaving}
-                  onClick={() => beginClientReschedule(selectedClientAppointment)}
-                >
-                  Zmień
-                </button>
-                <button
-                  className="danger"
-                  type="button"
-                  disabled={isSaving}
-                  onClick={() => setPendingClientCancellationId(selectedClientAppointment.id)}
-                >
-                  Odwołaj wizytę
-                </button>
+                {selectedClientOpenedFromConfirmationNotification && !selectedClientNeedsConfirmation ? (
+                  <button className="confirm" type="button" onClick={closeClientAppointmentDetails}>
+                    Gotowe — zamknij
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className={selectedClientOpenedFromConfirmationNotification ? "alternative" : ""}
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() => beginClientReschedule(selectedClientAppointment)}
+                    >
+                      {selectedClientOpenedFromConfirmationNotification
+                        ? "Termin mi nie pasuje"
+                        : "Zmień"}
+                    </button>
+                    {!selectedClientOpenedFromConfirmationNotification ? (
+                      <button
+                        className="danger"
+                        type="button"
+                        disabled={isSaving}
+                        onClick={() => setPendingClientCancellationId(selectedClientAppointment.id)}
+                      >
+                        Odwołaj wizytę
+                      </button>
+                    ) : null}
+                  </>
+                )}
               </div>
             ) : null}
           </section>
@@ -6896,6 +7290,7 @@ export function BookingHome() {
           </button>
         </footer>
       ) : null}
-    </main>
+      </main>
+    </>
   );
 }

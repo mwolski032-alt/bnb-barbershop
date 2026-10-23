@@ -7,6 +7,7 @@ import {
   readDatabaseWithEtag,
   writeDatabaseIfUnchanged,
 } from "./_firebase-admin.mjs";
+import { createNotificationActionToken } from "./lib/notification-action-token.mjs";
 
 export const notificationEventByAction = {
   create_client: "new_booking",
@@ -16,6 +17,7 @@ export const notificationEventByAction = {
   reschedule_client: "client_rescheduled",
   reschedule_admin: "admin_rescheduled",
   confirm_client: "client_confirmed",
+  confirm_client_notification: "client_confirmed",
   confirm_admin: "admin_confirmed",
   cancel_client: "client_cancelled",
   cancel_admin: "admin_cancelled",
@@ -23,6 +25,7 @@ export const notificationEventByAction = {
   notify_waitlist: "waitlist_slot_open",
   notify_waitlist_day: "waitlist_day_open",
   settle_admin: "visit_settled",
+  appointment_reminder: "appointment_reminder",
 };
 
 const MAX_ATTEMPTS = 6;
@@ -51,6 +54,27 @@ const waitlistDateRange = (appointment) =>
 
 const waitlistPreferenceLabel = (appointment) =>
   waitlistTimePreferenceLabels[appointment.timePreference] || waitlistTimePreferenceLabels.any;
+
+const appointmentIsStillAhead = (appointment, now = Date.now()) => {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "Europe/Warsaw",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date(now))
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+  const today = `${parts.year}-${parts.month}-${parts.day}`;
+  const currentTime = `${parts.hour}:${parts.minute}`;
+  return appointment.dateKey > today ||
+    (appointment.dateKey === today && appointment.startTime > currentTime);
+};
 
 const formatPrice = (value, fallback = "") => {
   const amount = Number(value);
@@ -124,8 +148,20 @@ const eventCopy = {
   },
   admin_rescheduled: {
     target: "client",
-    title: "Wizyta została przesunięta",
-    body: (appointment) => `Nowy termin: ${appointment.dateKey}, ${appointment.startTime}.`,
+    title: "Potwierdź nowy termin wizyty",
+    body: (appointment) =>
+      `${appointment.serviceName}: ${formatDateKey(appointment.dateKey)} o ${appointment.startTime}. Otwórz aplikację i daj znać, czy termin Ci odpowiada.`,
+  },
+  admin_reschedule_reminder: {
+    target: "client",
+    title: "Czekamy na potwierdzenie terminu",
+    body: (appointment) =>
+      `${appointment.serviceName}: ${formatDateKey(appointment.dateKey)} o ${appointment.startTime}. Potwierdź termin albo poproś o inną godzinę.`,
+  },
+  appointment_reminder: {
+    target: "client",
+    title: "Przypomnienie o wizycie",
+    body: (appointment) => `Twoja wizyta jest jutro o ${appointment.startTime}.`,
   },
   admin_confirmed: {
     target: "client",
@@ -238,6 +274,18 @@ const sendToDevice = async (accessToken, device, notification, appointment, even
   const projectId = process.env.FIREBASE_PROJECT_ID;
   if (!projectId) return { status: "failed", error: "Missing FIREBASE_PROJECT_ID.", errorCode: "" };
   const link = linkOverride ? new URL(linkOverride) : buildNotificationLink(siteUrl, appointment, event);
+  const isAdminRescheduleNotification =
+    ["admin_rescheduled", "admin_reschedule_reminder"].includes(event) ||
+    (event === "admin_appointment_updated" && appointment.scheduleChanged === true);
+  const confirmActionToken =
+    device.audience === "client" &&
+    isAdminRescheduleNotification &&
+    appointment.status === "rescheduled" &&
+    appointment.rescheduledBy === "admin"
+      ? createNotificationActionToken(appointment)
+      : "";
+  // The visit reminder asks a question, so it carries the answers as buttons ("Potwierdzam" / "Odwołuję").
+  const answerButtons = event === "appointment_reminder" && device.audience === "client" ? "attend" : "";
 
   try {
     const response = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
@@ -255,6 +303,8 @@ const sendToDevice = async (accessToken, device, notification, appointment, even
             link: link.href,
             tag: `appointment-${appointment.id}-${event}`,
             ...extraData,
+            confirmActionToken,
+            ...(answerButtons ? { actions: answerButtons } : {}),
           },
           webpush: {
             headers: { Urgency: "high", TTL: "86400" },
@@ -396,16 +446,78 @@ const finishJob = async (accessToken, job, update) => {
 };
 
 const processClaimedJob = async (accessToken, job, siteUrl) => {
-  const operation = await readDatabase(`appointmentOperations/${encodeURIComponent(job.operationId)}`, accessToken);
+  const sourceOperationId = job.sourceOperationId || job.operationId;
+  const operation = await readDatabase(`appointmentOperations/${encodeURIComponent(sourceOperationId)}`, accessToken);
   const expectedEvent = notificationEventByAction[operation?.action];
-  const appointment = operation?.notificationPayload ?? operation?.appointment;
-  if (!appointment || operation.appointmentId !== job.appointmentId || expectedEvent !== job.event) {
+  const reminderMatchesSource =
+    job.event === "admin_reschedule_reminder" &&
+    (operation?.action === "reschedule_admin" ||
+      (operation?.action === "update_admin" && operation?.appointment?.rescheduledBy === "admin"));
+  let appointment = operation?.notificationPayload ?? operation?.appointment;
+  if (
+    !appointment ||
+    operation.appointmentId !== job.appointmentId ||
+    (!reminderMatchesSource && expectedEvent !== job.event)
+  ) {
     return finishJob(accessToken, job, {
       status: "exhausted",
       lastError: "Notification operation is missing or does not match its outbox job.",
       deliveries: job.deliveries ?? {},
       history: { status: "invalid_operation", sent: 0, failed: 1, invalid: 0 },
     });
+  }
+
+  if (job.event === "admin_reschedule_reminder") {
+    const currentAppointment = await readDatabase(
+      `appointments/${encodeURIComponent(job.appointmentId)}`,
+      accessToken,
+    );
+    const stillAwaitsClient =
+      currentAppointment?.status === "rescheduled" &&
+      currentAppointment?.rescheduledBy === "admin" &&
+      currentAppointment?.lastOperationId === sourceOperationId &&
+      appointmentIsStillAhead(currentAppointment, job.nextAttemptAt);
+    if (!stillAwaitsClient) {
+      return finishJob(accessToken, job, {
+        status: "delivered",
+        deliveries: job.deliveries ?? {},
+        history: {
+          status: "skipped_answered_or_changed",
+          sent: 0,
+          failed: 0,
+          invalid: 0,
+        },
+      });
+    }
+    appointment = currentAppointment;
+  }
+
+  if (job.event === "appointment_reminder") {
+    const currentAppointment = await readDatabase(
+      `appointments/${encodeURIComponent(job.appointmentId)}`,
+      accessToken,
+    );
+    const status = currentAppointment?.status || "confirmed";
+    const stillCurrent =
+      ["confirmed", "rescheduled"].includes(status) &&
+      currentAppointment?.userId === appointment.userId &&
+      currentAppointment?.barberId === appointment.barberId &&
+      currentAppointment?.dateKey === appointment.dateKey &&
+      currentAppointment?.startTime === appointment.startTime &&
+      appointmentIsStillAhead(currentAppointment, job.updatedAt);
+    if (!stillCurrent) {
+      return finishJob(accessToken, job, {
+        status: "delivered",
+        deliveries: job.deliveries ?? {},
+        history: {
+          status: "skipped_cancelled_or_changed",
+          sent: 0,
+          failed: 0,
+          invalid: 0,
+        },
+      });
+    }
+    appointment = { ...currentAppointment, lastOperationId: sourceOperationId };
   }
 
   const copy = eventCopy[job.event];

@@ -22,11 +22,11 @@ test("the gallery holds at least twenty photos and the database rules agree with
 
 test("a photo may name the barber who did the haircut, and nothing else is accepted there", () => {
   const rule = rules.$imageId.barberId[".validate"];
-  assert.match(rule, /newData\.isString\(\)/);
-  const allowed = slashRegex(rule);
-  assert.equal(allowed.source, GALLERY_BARBER_PATTERN.source);
-  for (const good of ["mateusz", "kacper", "barber_2", "a-b"]) assert.ok(allowed.test(good), good);
-  for (const bad of ["", "has space", "a/b", "../x", "x".repeat(81), "$x"]) assert.ok(!allowed.test(bad), bad);
+  assert.ok(rule.includes("newData.isString()"));
+  // The barber must be a real member of the team and the id stays within the shared length limit.
+  assert.ok(rule.includes("newData.val().length <= 80"));
+  assert.ok(rule.includes("root.child('team/barbers').child(newData.val()).exists()"));
+  assert.ok(GALLERY_BARBER_PATTERN.test("mateusz") && !GALLERY_BARBER_PATTERN.test("x".repeat(81)));
   // The record still rejects unknown fields.
   assert.equal(rules.$imageId.$other[".validate"], false);
 });
