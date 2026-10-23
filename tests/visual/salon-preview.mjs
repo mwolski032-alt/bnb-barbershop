@@ -23,7 +23,7 @@ const bundle = await build({
     import Wizard from './tests/visual/booking-wizard-preview';
     const noop=()=>{};
     function Profile(){ const [draft,setDraft]=React.useState({displayName:'Mateusz Kowalski',phone:'',email:'',instagram:'https://instagram.com/mateusz/',bio:'Klasyczne strzyżenia i pielęgnacja brody.',photoUrl:'',specialties:'Fade, Broda'});return <div className="app-shell admin-page"><Settings mode="profile" barberName="Mateusz" barber={{accent:'mint',label:'Barber',name:'Mateusz'}} draft={draft} feedback={null} isSaving={false} isPhotoProcessing={false} isSaveActionPending={false} onPhotoChange={noop} onChange={(field,value)=>setDraft({...draft,[field]:value})} onSave={noop}/></div>}
-    function Landing(){ const [enabled,setEnabled]=React.useState(false);return <Home busy={false} signedIn={true} admin={true} error="" onBook={()=>document.body.dataset.book='clicked'} onPanel={()=>location.href='/manager'} onVisits={noop} onInstall={noop} account={{name:'Jan Testowy'}} notification={{label:enabled?'Powiadomienia włączone':'Powiadomienia wyłączone',enabled,status:enabled?'enabled':'disabled',busy:false}} onNotifications={()=>setEnabled(value=>!value)} onSignOut={noop}/> }
+    function Landing(){ const [enabled,setEnabled]=React.useState(false);return <Home busy={false} signedIn={true} admin={true} error="" onBook={(id)=>{document.body.dataset.book=id??'clicked'}} onPanel={()=>location.href='/manager'} onVisits={noop} onInstall={noop} account={{name:'Jan Testowy'}} notification={{label:enabled?'Powiadomienia włączone':'Powiadomienia wyłączone',enabled,status:enabled?'enabled':'disabled',busy:false}} onNotifications={()=>setEnabled(value=>!value)} onSignOut={noop}/> }
     const page=location.pathname;
     createRoot(document.getElementById('root')).render(page==='/wizard'?<React.StrictMode><Wizard/></React.StrictMode>:page==='/manager'?<div style={{maxWidth:700,margin:'auto'}}><Manager/></div>:page==='/profile'?<Profile/>:<Landing/>);
   ` },
@@ -31,8 +31,8 @@ const bundle = await build({
   define: { "process.env.NODE_ENV": '"production"' },
   plugins: [{ name: "isolated-data", setup(builder) {
     builder.onResolve({ filter: /^firebase\/database$/ }, () => ({ path: "database", namespace: "fake" }));
-    builder.onResolve({ filter: /lib\/firebase$/ }, () => ({ path: "app", namespace: "fake" }));
-    builder.onLoad({ filter: /.*/, namespace: "fake" }, args => ({ contents: args.path === "database" ? firebaseMock : "export const realtimeDb = {};", loader: "js" }));
+    builder.onResolve({ filter: /(lib\/|\.\/)firebase$/ }, () => ({ path: "app", namespace: "fake" }));
+    builder.onLoad({ filter: /.*/, namespace: "fake" }, args => ({ contents: args.path === "database" ? firebaseMock : "export const realtimeDb = {}; export const firebaseApp = {}; export const storageBucket = \"\";", loader: "js" }));
   } }],
 });
 const assets = path.join(root, "dist/client/assets");

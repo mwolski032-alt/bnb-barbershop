@@ -1,0 +1,94 @@
+/* A touch of Telegram: every tap gives a physical answer, and the floating panels let a little
+   of the page show through. Nothing changes layout or colour of the controls themselves.
+
+   Taps: see hooks/use-tap-feedback.ts. It sets --tap-scale (smaller for small controls, barely
+   there for big cards) and plays the spring on release; the icon inside hops and turns. */
+
+@media (prefers-reduced-motion: no-preference) {
+  :is(button, [role="button"], [role="tab"], [role="radio"], summary, a[class]):not(:disabled):active {
+    scale: var(--tap-scale, 0.96);
+  }
+  :is(button, [role="button"], [role="tab"], [role="radio"], summary, a[class]):not(:disabled):active :is(svg, .tap-icon) {
+    rotate: -12deg;
+    scale: 0.82;
+  }
+
+  @keyframes tap-spring {
+    0% { scale: var(--tap-scale, 0.96); }
+    45% { scale: 1.045; }
+    75% { scale: 0.99; }
+    100% { scale: 1; }
+  }
+  @keyframes tap-icon-spring {
+    0% { rotate: -12deg; scale: 0.82; }
+    40% { rotate: 10deg; scale: 1.22; }
+    70% { rotate: -3deg; scale: 0.95; }
+    100% { rotate: 0deg; scale: 1; }
+  }
+  @keyframes tap-ripple {
+    from { opacity: 0.32; transform: translate(-50%, -50%) scale(0.2); }
+    to { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+  }
+
+  .tap-release { animation: tap-spring 420ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)); }
+  .tap-release :is(svg, .tap-icon) { animation: tap-icon-spring 520ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)); }
+
+  /* A soft ring spreads from the finger and fades; it floats above the page and never clips a control. */
+  .tap-ripple {
+    position: fixed;
+    z-index: 2147483000;
+    width: var(--tap-size, 64px);
+    height: var(--tap-size, 64px);
+    border-radius: 50%;
+    background: radial-gradient(circle, transparent 38%, var(--tap-color, currentColor) 39%, transparent 70%);
+    pointer-events: none;
+    animation: tap-ripple 520ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
+  }
+}
+
+/* ---------- Glass panels: translucent, blurred, never see-through enough to hurt reading. ---------- */
+
+.admin-bottom-nav,
+.action-feedback-toast {
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  backdrop-filter: blur(20px) saturate(1.5);
+}
+/* Dialogs and sheets sit on a backdrop that is already blurred; blurring them again would cost a full-screen
+   pass on every frame of their entrance for no visible gain. */
+.admin-bottom-nav { background: color-mix(in srgb, var(--color-surface) 80%, transparent); }
+.agenda-sheet { background-color: color-mix(in srgb, var(--color-surface) 90%, transparent); }
+.action-feedback-toast { background-color: color-mix(in srgb, var(--color-surface) 86%, transparent); }
+.salon-dialog { background-color: color-mix(in srgb, var(--color-surface) 92%, transparent); }
+.appointment-detail-sheet, .appointment-list-modal { background-color: color-mix(in srgb, var(--color-surface) 92%, transparent); }
+.salon-dock { background: color-mix(in srgb, var(--color-text) 86%, transparent); -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4); }
+
+/* Slow devices keep flat, solid panels. */
+html.reduced-effects :is(.admin-bottom-nav, .action-feedback-toast, .salon-dock) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* ---------- Smoothness ---------- */
+
+/* Decorative loops rest while the page scrolls or two screens cross-fade. Nothing is removed: they resume at once. */
+html:is(.is-scrolling, .vt-running) :is(
+  .salon-aurora,
+  .salon-cover-photo img,
+  .salon-gallery-feature .gallery-photo img,
+  .salon-cover h1 em,
+  .salon-cta::after,
+  .salon-cta-wrap::before,
+  .salon-reviews-entry::after,
+  .salon-reviews-entry-icon,
+  .salon-reviews-entry-icon > i,
+  .salon-review-nudge::after,
+  .salon-review-nudge-stars svg,
+  .auth-shell::before,
+  .auth-logo
+) {
+  animation-play-state: paused !important;
+}
+
+/* The gradient text shimmer repaints every frame; two sweeps give the same hello, then it rests. */
+.salon-cover h1 em { animation-iteration-count: 2; animation-fill-mode: forwards; }
+

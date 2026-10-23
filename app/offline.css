@@ -1,0 +1,48 @@
+/* The strip shown while the phone has no connection or answers wait to be sent. */
+.offline-banner {
+  position: fixed;
+  z-index: 90;
+  top: calc(8px + env(safe-area-inset-top));
+  right: 16px;
+  left: 16px;
+  display: flex;
+  max-width: 520px;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 auto;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-warning-soft);
+  box-shadow: var(--shadow-floating);
+  color: var(--color-text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.offline-banner svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: 0 0 auto;
+}
+
+.offline-banner.syncing {
+  background: var(--color-primary-soft);
+}
+
+.offline-banner.notice {
+  justify-content: space-between;
+}
+
+.offline-banner button {
+  min-height: 2rem;
+  flex: 0 0 auto;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}

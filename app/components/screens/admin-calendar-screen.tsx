@@ -1,10 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { BellRing, CalendarPlus, MessageSquare, Phone, Trash2 } from "lucide-react";
 
 import { formatNearestAppointmentLabel } from "../../../shared/appointment-label.mjs";
 import ProfileAvatar from "../profile-avatar";
+import WaitlistDetailDialog from "../waitlist-detail-dialog";
+import AdminAgendaScreen, { type AgendaScreenProps } from "./admin-agenda-screen";
 
 type AppointmentStatus = "confirmed" | "rescheduled" | "cancelled" | "completed" | "no_show";
 type AppointmentColor = "blue" | "mint" | "pink" | "violet" | "amber" | "coral" | "sky" | "lime";
@@ -102,7 +104,7 @@ type UpcomingScreenProps = {
   onOpenClient: (clientId: string) => void;
   onOpenSms: (client: AdminClientProfile, appointment: AdminAppointment) => void;
   onCancelAppointment: (appointmentId: string) => void;
-  onBookWaitlist: (entry: WaitlistEntry) => void;
+  onBookWaitlist: (entry: WaitlistEntry, dateKey?: string) => void;
   onRemoveWaitlist: (entry: WaitlistEntry) => void;
 };
 
@@ -135,7 +137,7 @@ type CalendarScreenProps = {
   renderAppointmentActions: (appointment: AdminAppointment, mobile?: boolean) => ReactNode;
 };
 
-type AdminCalendarScreenProps = UpcomingScreenProps | CalendarScreenProps;
+type AdminCalendarScreenProps = UpcomingScreenProps | CalendarScreenProps | AgendaScreenProps;
 
 const clientDateFormatter = new Intl.DateTimeFormat("pl-PL", {
   weekday: "long",
@@ -148,8 +150,8 @@ const selectedDayFormatter = new Intl.DateTimeFormat("pl-PL", {
   month: "2-digit",
   year: "numeric",
 });
-const dayFormatter = new Intl.DateTimeFormat("pl-PL", { day: "numeric", month: "long" });
 const weekdayFormatter = new Intl.DateTimeFormat("pl-PL", { weekday: "short" });
+const dayFormatter = new Intl.DateTimeFormat("pl-PL", { day: "numeric", month: "long" });
 const monthFormatter = new Intl.DateTimeFormat("pl-PL", { month: "short" });
 
 const appointmentStatusLabels: Record<AppointmentStatus, string> = {
@@ -249,6 +251,8 @@ const getAppointmentDistanceLabel = (dateKeyValue: string, today: Date) => {
 };
 
 function UpcomingAppointmentsScreen(props: UpcomingScreenProps) {
+  const [waitlistDetailId, setWaitlistDetailId] = useState<string | null>(null);
+  const waitlistDetail = props.waitlistEntries.find((entry) => entry.id === waitlistDetailId) ?? null;
   return (
     <div className="admin-tab-panel admin-workspace-panel nearest-workspace-panel active">
       {props.workspaceTabs}
@@ -397,7 +401,19 @@ function UpcomingAppointmentsScreen(props: UpcomingScreenProps) {
               return (
                 <article className={`admin-waitlist-row ${entry.status}`} key={entry.id}>
                   <ProfileAvatar className="admin-waitlist-avatar" name={entry.clientName} />
-                  <div className="admin-waitlist-main">
+                  <div
+                    className="admin-waitlist-main is-openable"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Szczegóły: ${entry.clientName}`}
+                    onClick={() => setWaitlistDetailId(entry.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setWaitlistDetailId(entry.id);
+                      }
+                    }}
+                  >
                     <span>
                       <strong>{entry.clientName}</strong>
                       <em>{entry.status === "offered" ? "Oferta wysłana" : "Oczekuje"}</em>
@@ -453,6 +469,20 @@ function UpcomingAppointmentsScreen(props: UpcomingScreenProps) {
           </div>
         )}
       </section>
+      {waitlistDetail ? (
+        <WaitlistDetailDialog
+          entry={waitlistDetail}
+          today={props.currentDate}
+          canManageSchedule={props.canManageSchedule}
+          removing={props.isWaitlistSaving}
+          onBook={(entry, dateKey) => {
+            setWaitlistDetailId(null);
+            props.onBookWaitlist(entry, dateKey);
+          }}
+          onRemove={props.onRemoveWaitlist}
+          onClose={() => setWaitlistDetailId(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -680,5 +710,6 @@ function ScheduleCalendarScreen(props: CalendarScreenProps) {
 }
 
 export default function AdminCalendarScreen(props: AdminCalendarScreenProps) {
+  if (props.mode === "agenda") return <AdminAgendaScreen {...props} />;
   return props.mode === "upcoming" ? <UpcomingAppointmentsScreen {...props} /> : <ScheduleCalendarScreen {...props} />;
 }

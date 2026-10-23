@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 
 import ProfileAvatar from "../profile-avatar";
@@ -32,8 +33,7 @@ type Service = {
 };
 
 type AvailabilityDraft = {
-  start: string;
-  end: string;
+  dates: string[];
   startTime: string;
   endTime: string;
 };
@@ -94,14 +94,16 @@ type WorkScreenProps = {
   isActionPending: (key: string) => boolean;
   onResetAvailability: () => void;
   onSetAvailabilityPreset: (startTime: string, endTime: string) => void;
-  onUpdateAvailability: (field: keyof AvailabilityDraft, value: string) => void;
+  onChangeAvailabilityDates: (dates: string[]) => void;
+  onUpdateAvailability: (field: "startTime" | "endTime", value: string) => void;
   onSaveAvailability: () => void;
   onToggleAvailabilityMonth: (key: string | null) => void;
   onEditAvailability: (windowItem: AvailabilityWindow) => void;
   onRemoveAvailability: (dateKey: string) => void;
+  onRemoveAvailabilityMonth: (monthKey: string) => void;
   onResetService: () => void;
   onUpdateService: (field: keyof ServiceDraft, value: string) => void;
-  onSaveService: () => void;
+  onSaveService: () => Promise<boolean | void> | void;
   onEditService: (service: Service) => void;
   onDeleteService: (serviceId: string) => void;
 };
@@ -188,7 +190,168 @@ const formatServicePrice = (value: string) => {
   return `${numericValue % 1 === 0 ? numericValue.toFixed(0) : numericValue.toFixed(2)} zł`;
 };
 
+const WEEKDAY_SHORT = ["Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"];
+const WEEKDAY_PLURAL = ["poniedziałki", "wtorki", "środy", "czwartki", "piątki", "soboty", "niedziele"];
+
+const AVAILABILITY_PRESETS = [
+  { label: "Cały dzień", startTime: "09:00", endTime: "17:00" },
+  { label: "Rano", startTime: "08:00", endTime: "14:00" },
+  { label: "Po południu", startTime: "14:00", endTime: "20:00" },
+];
+
+const SERVICE_TEMPLATES = [
+  { name: "Strzyżenie", price: "70", durationMinutes: "45" },
+  { name: "Broda", price: "40", durationMinutes: "30" },
+  { name: "Włosy + broda", price: "100", durationMinutes: "60" },
+  { name: "Strzyżenie dziecka", price: "50", durationMinutes: "30" },
+];
+
+const SERVICE_DURATIONS = [15, 30, 45, 60, 90, 120];
+const TIME_STEP_MINUTES = 30;
+const MIN_WINDOW_MINUTES = 15;
+
+const monthLabelFormatter = new Intl.DateTimeFormat("pl-PL", { month: "long", year: "numeric" });
+const fullDateFormatter = new Intl.DateTimeFormat("pl-PL", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+});
+
+const mondayIndex = (date: Date) => (date.getDay() + 6) % 7;
+
+const clockToMinutes = (time: string) => {
+  const [hour, minute] = time.split(":").map(Number);
+  return hour * 60 + minute;
+};
+
+const minutesToClock = (minutes: number) =>
+  `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+
+const shortDateLabel = (key: string) => {
+  const date = dateFromKey(key);
+  return `${WEEKDAY_SHORT[mondayIndex(date)].toLowerCase()} ${date.getDate()}.${String(date.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const durationChipLabel = (minutes: number) => {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = minutes / 60;
+  return `${Number.isInteger(hours) ? hours : String(hours).replace(".", ",")} godz.`;
+};
+
+const dayCountLabel = (count: number) => `${count} ${count === 1 ? "dzień" : "dni"}`;
+
 function WorkSettingsScreen(props: WorkScreenProps) {
+  const todayKey = dayKey(props.today);
+  const draft = props.availabilityDraft;
+  const [viewMonth, setViewMonth] = useState(
+    () => new Date(props.today.getFullYear(), props.today.getMonth(), 1),
+  );
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [serviceFormOpen, setServiceFormOpen] = useState(false);
+  const serviceFormRef = useRef<HTMLElement | null>(null);
+
+  const selected = useMemo(() => new Set(draft.dates), [draft.dates]);
+  const sortedDates = useMemo(() => [...draft.dates].sort(), [draft.dates]);
+  const firstSelectedKey = sortedDates.length === 1 ? sortedDates[0] : null;
+
+  useEffect(() => {
+    if (!firstSelectedKey) return;
+    const date = dateFromKey(firstSelectedKey);
+    setViewMonth((current) =>
+      current.getFullYear() === date.getFullYear() && current.getMonth() === date.getMonth()
+        ? current
+        : new Date(date.getFullYear(), date.getMonth(), 1),
+    );
+  }, [firstSelectedKey]);
+
+  const monthDays = useMemo(() => {
+    const total = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate();
+    return Array.from(
+      { length: total },
+      (_, index) => new Date(viewMonth.getFullYear(), viewMonth.getMonth(), index + 1),
+    );
+  }, [viewMonth]);
+  const upcomingMonthDays = monthDays.filter((date) => dayKey(date) >= todayKey);
+  const monthPrefix = `${viewMonth.getFullYear()}-${String(viewMonth.getMonth() + 1).padStart(2, "0")}`;
+  const savedInMonth = Object.keys(props.availability).filter(
+    (key) => key.startsWith(monthPrefix) && key >= todayKey,
+  ).length;
+  const isCurrentMonth =
+    viewMonth.getFullYear() === props.today.getFullYear() &&
+    viewMonth.getMonth() === props.today.getMonth();
+
+  const tomorrow = new Date(props.today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowKey = dayKey(tomorrow);
+
+  const changeDates = (dates: string[]) =>
+    props.onChangeAvailabilityDates(Array.from(new Set(dates)).sort());
+  const toggleKeys = (keys: string[]) => {
+    if (keys.length === 0) return;
+    const allSelected = keys.every((key) => selected.has(key));
+    changeDates(allSelected ? draft.dates.filter((key) => !keys.includes(key)) : [...draft.dates, ...keys]);
+  };
+  const keysAllSelected = (keys: string[]) => keys.length > 0 && keys.every((key) => selected.has(key));
+
+  const monthKeys = upcomingMonthDays.map(dayKey);
+  const workdayKeys = upcomingMonthDays.filter((date) => mondayIndex(date) < 5).map(dayKey);
+  const weekdayKeys = (index: number) =>
+    upcomingMonthDays.filter((date) => mondayIndex(date) === index).map(dayKey);
+
+  const startMinutes = clockToMinutes(draft.startTime);
+  const endMinutes = clockToMinutes(draft.endTime);
+  const firstTime = clockToMinutes(props.timeOptions[0] ?? "06:00");
+  const lastTime = clockToMinutes(props.timeOptions[props.timeOptions.length - 1] ?? "22:00");
+  const setStart = (minutes: number) => props.onUpdateAvailability("startTime", minutesToClock(minutes));
+  const setEnd = (minutes: number) => props.onUpdateAvailability("endTime", minutesToClock(minutes));
+
+  const dayCount = draft.dates.length;
+  const isEditingDay = Boolean(props.editingAvailabilityKey);
+  const shownDates = sortedDates.slice(0, 4).map(shortDateLabel).join(", ");
+  const extraDates = dayCount > 4 ? ` i ${dayCount - 4} więcej` : "";
+
+  const firstDayOfMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1);
+  const leadingBlanks = mondayIndex(firstDayOfMonth);
+
+  const draftService = props.serviceDraft;
+  const serviceFormVisible = serviceFormOpen || Boolean(props.editingService);
+  const servicePrice = Number(draftService.price.replace(",", ".").replace(/[^\d.]/g, ""));
+  const serviceDuration = Number(draftService.durationMinutes) || 0;
+  const serviceHint =
+    draftService.name.trim().length < 2
+      ? "Wpisz nazwę usługi."
+      : !(servicePrice > 0)
+        ? "Wpisz cenę, na przykład 70."
+        : serviceDuration < 15
+          ? "Wybierz, ile trwa usługa."
+          : null;
+  const durationChoices = Array.from(
+    new Set(serviceDuration > 0 ? [...SERVICE_DURATIONS, serviceDuration] : SERVICE_DURATIONS),
+  ).sort((first, second) => first - second);
+
+  useEffect(() => {
+    if (!serviceFormVisible) return;
+    serviceFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [serviceFormVisible, props.editingService?.id]);
+
+  const openNewServiceForm = () => {
+    props.onResetService();
+    setServiceFormOpen(true);
+  };
+  const closeServiceForm = () => {
+    props.onResetService();
+    setServiceFormOpen(false);
+  };
+  const saveServiceAndClose = async () => {
+    const saved = await props.onSaveService();
+    if (saved) setServiceFormOpen(false);
+  };
+  const applyServiceTemplate = (template: (typeof SERVICE_TEMPLATES)[number]) => {
+    props.onUpdateService("name", template.name);
+    props.onUpdateService("price", template.price);
+    props.onUpdateService("durationMinutes", template.durationMinutes);
+  };
+
   return (
     <div className="admin-tab-panel work-workspace-panel active">
       {props.workspaceTabs}
@@ -196,8 +359,8 @@ function WorkSettingsScreen(props: WorkScreenProps) {
         <>
           <div className="admin-section-header">
             <div>
-              <p className="eyebrow">Dorywczo</p>
-              <h2>Dni dostępne dla klientów</h2>
+              <p className="eyebrow">Dostępność</p>
+              <h2>Dni pracy</h2>
             </div>
             <div className="admin-section-stats" aria-label="Podsumowanie dostępności">
               <span>
@@ -205,7 +368,7 @@ function WorkSettingsScreen(props: WorkScreenProps) {
                 dni
               </span>
               <span>
-                <strong>{props.nearestAvailability?.startTime ?? "—"}</strong>
+                <strong>{props.nearestAvailability ? shortDateLabel(props.nearestAvailability.dateKey) : "—"}</strong>
                 najbliżej
               </span>
             </div>
@@ -215,122 +378,281 @@ function WorkSettingsScreen(props: WorkScreenProps) {
             <section className="work-editor-card availability-maker" id="availability-maker">
               <div className="work-editor-top">
                 <div>
-                  <p className="eyebrow">
-                    {props.editingAvailabilityKey ? "Edycja dostępności" : "Nowa dostępność"}
-                  </p>
-                  <h2>{props.editingAvailabilityKey ? "Zmień dzień pracy" : "Okienko w kalendarzu"}</h2>
+                  <p className="eyebrow">{isEditingDay ? "Zmieniasz istniejący dzień" : "Nowe dni pracy"}</p>
+                  <h2>{isEditingDay ? "Zmień dzień pracy" : "Kiedy pracujesz?"}</h2>
                 </div>
-                {props.editingAvailabilityKey ? (
+                {isEditingDay ? (
                   <button className="work-editor-cancel" type="button" onClick={props.onResetAvailability}>
-                    Anuluj
+                    Anuluj zmianę
                   </button>
                 ) : null}
               </div>
 
-              <div className="work-preset-grid">
-                {[
-                  { label: "Po pracy", startTime: "17:00", endTime: "20:00" },
-                  { label: "Wolne rano", startTime: "10:00", endTime: "13:00" },
-                  { label: "Krótko", startTime: "18:00", endTime: "19:30" },
-                ].map((preset) => (
+              <div className="wk-block">
+                <h3 className="wk-step-title"><b>1</b>Wybierz dni</h3>
+                <p className="wk-help">
+                  Dotknij przycisku, żeby zaznaczyć. Dotknij jeszcze raz, żeby odznaczyć.
+                </p>
+
+                <div className="wk-month-nav">
                   <button
-                    className={
-                      props.availabilityDraft.startTime === preset.startTime &&
-                      props.availabilityDraft.endTime === preset.endTime
-                        ? "active"
-                        : ""
-                    }
-                    key={preset.label}
                     type="button"
-                    onClick={() => props.onSetAvailabilityPreset(preset.startTime, preset.endTime)}
-                    aria-pressed={
-                      props.availabilityDraft.startTime === preset.startTime &&
-                      props.availabilityDraft.endTime === preset.endTime
-                    }
+                    aria-label="Poprzedni miesiąc"
+                    disabled={isCurrentMonth}
+                    onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))}
                   >
-                    <strong>{preset.label}</strong>
-                    <span>{preset.startTime} - {preset.endTime}</span>
+                    ‹
                   </button>
-                ))}
-              </div>
-
-              <div className="work-time-controls pro">
-                <label>
-                  Od daty
-                  <input
-                    type="date"
-                    min={dayKey(props.today)}
-                    value={props.availabilityDraft.start}
-                    onChange={(event) => props.onUpdateAvailability("start", event.target.value)}
-                  />
-                </label>
-                <label>
-                  Do daty
-                  <input
-                    type="date"
-                    min={props.availabilityDraft.start}
-                    value={props.availabilityDraft.end}
-                    onChange={(event) => props.onUpdateAvailability("end", event.target.value)}
-                  />
-                </label>
-                <label>
-                  Od godziny
-                  <select
-                    value={props.availabilityDraft.startTime}
-                    onChange={(event) => props.onUpdateAvailability("startTime", event.target.value)}
+                  <strong>{monthLabelFormatter.format(viewMonth)}</strong>
+                  <button
+                    type="button"
+                    aria-label="Następny miesiąc"
+                    onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1))}
                   >
-                    {props.timeOptions.slice(0, -1).map((time) => <option key={time} value={time}>{time}</option>)}
-                  </select>
-                </label>
-                <label>
-                  Do godziny
-                  <select
-                    value={props.availabilityDraft.endTime}
-                    onChange={(event) => props.onUpdateAvailability("endTime", event.target.value)}
-                  >
-                    {props.timeOptions.slice(1).map((time) => <option key={time} value={time}>{time}</option>)}
-                  </select>
-                </label>
-              </div>
-
-              <div className="availability-summary-panel">
-                <div>
-                  <strong>{props.editingAvailabilityKey ? "Zapiszesz zmianę" : "Dodasz dostępność"}</strong>
-                  <span>
-                    {props.availabilityDraftDays} {props.availabilityDraftDays === 1 ? "dzień" : "dni"} ·{" "}
-                    {formatDuration(Math.max(0, props.availabilityDraftDuration))} dziennie
-                  </span>
-                  {props.availabilityOverwriteCount > 0 ? (
-                    <small>
-                      {props.availabilityOverwriteCount === 1
-                        ? "1 istniejący dzień zostanie zaktualizowany"
-                        : `${props.availabilityOverwriteCount} istniejące dni zostaną zaktualizowane`}
-                    </small>
-                  ) : null}
+                    ›
+                  </button>
                 </div>
+
+                <div className="wk-chips" role="group" aria-label="Szybki wybór dni w tym miesiącu">
+                  <button
+                    type="button"
+                    className={keysAllSelected(monthKeys) ? "active" : ""}
+                    aria-pressed={keysAllSelected(monthKeys)}
+                    disabled={monthKeys.length === 0}
+                    onClick={() => toggleKeys(monthKeys)}
+                  >
+                    Cały miesiąc
+                  </button>
+                  <button
+                    type="button"
+                    className={keysAllSelected(workdayKeys) ? "active" : ""}
+                    aria-pressed={keysAllSelected(workdayKeys)}
+                    disabled={workdayKeys.length === 0}
+                    onClick={() => toggleKeys(workdayKeys)}
+                  >
+                    Poniedziałek–piątek
+                  </button>
+                </div>
+
+                <p className="wk-label">Tylko wybrane dni tygodnia</p>
+                <div className="wk-weekdays" role="group" aria-label="Dni tygodnia w tym miesiącu">
+                  {WEEKDAY_SHORT.map((label, index) => {
+                    const keys = weekdayKeys(index);
+                    const active = keysAllSelected(keys);
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        className={active ? "active" : ""}
+                        aria-pressed={active}
+                        aria-label={`Wszystkie ${WEEKDAY_PLURAL[index]} w tym miesiącu`}
+                        disabled={keys.length === 0}
+                        onClick={() => toggleKeys(keys)}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <p className="wk-label">Pojedyncze dni</p>
+                <div className="wk-chips" role="group" aria-label="Pojedyncze dni">
+                  <button
+                    type="button"
+                    className={selected.has(todayKey) ? "active" : ""}
+                    aria-pressed={selected.has(todayKey)}
+                    onClick={() => toggleKeys([todayKey])}
+                  >
+                    Dziś
+                  </button>
+                  <button
+                    type="button"
+                    className={selected.has(tomorrowKey) ? "active" : ""}
+                    aria-pressed={selected.has(tomorrowKey)}
+                    onClick={() => toggleKeys([tomorrowKey])}
+                  >
+                    Jutro
+                  </button>
+                  <button
+                    type="button"
+                    className="wk-clear"
+                    disabled={dayCount === 0}
+                    onClick={() => changeDates([])}
+                  >
+                    Wyczyść wybór
+                  </button>
+                </div>
+
                 <button
+                  className="wk-calendar-toggle"
                   type="button"
-                  onClick={props.onSaveAvailability}
-                  disabled={!props.canSaveAvailability || props.isWorkSaving}
-                  aria-busy={props.isActionPending("save_availability")}
+                  aria-expanded={calendarOpen}
+                  aria-controls="wk-calendar"
+                  onClick={() => setCalendarOpen((open) => !open)}
                 >
-                  {props.isWorkSaving
-                    ? "Zapisywanie..."
-                    : props.editingAvailabilityKey
-                      ? "Zapisz zmiany"
-                      : "Dodaj dostępność"}
+                  <span>
+                    <strong>{calendarOpen ? "Ukryj kalendarz" : "Pokaż kalendarz"}</strong>
+                    <small>
+                      {savedInMonth > 0
+                        ? `W tym miesiącu masz już ${dayCountLabel(savedInMonth)} dostępnych`
+                        : "W tym miesiącu nie masz jeszcze dostępnych dni"}
+                    </small>
+                  </span>
+                  <b aria-hidden="true">⌄</b>
                 </button>
+
+                {calendarOpen ? (
+                  <div className="wk-calendar" id="wk-calendar">
+                    <div className="wk-calendar-head" aria-hidden="true">
+                      {WEEKDAY_SHORT.map((label) => <span key={label}>{label}</span>)}
+                    </div>
+                    <div className="wk-calendar-grid">
+                      {Array.from({ length: leadingBlanks }, (_, index) => (
+                        <span key={`blank-${index}`} aria-hidden="true" />
+                      ))}
+                      {monthDays.map((date) => {
+                        const key = dayKey(date);
+                        const isPast = key < todayKey;
+                        const isSelected = selected.has(key);
+                        const isSaved = Boolean(props.availability[key]) && !isPast;
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            className={`wk-day${isSelected ? " selected" : ""}${isSaved ? " saved" : ""}`}
+                            disabled={isPast}
+                            aria-pressed={isSelected}
+                            aria-label={`${fullDateFormatter.format(date)}${isSaved ? ", już dostępny" : ""}`}
+                            onClick={() => toggleKeys([key])}
+                          >
+                            {date.getDate()}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="wk-legend">
+                      <span><i className="selected" aria-hidden="true" />Wybrane teraz</span>
+                      <span><i className="saved" aria-hidden="true" />Już dostępne dla klientów</span>
+                    </div>
+                  </div>
+                ) : null}
               </div>
-              {props.feedback ? (
-                <p className={`work-feedback ${props.feedback.kind}`} role="status">{props.feedback.message}</p>
-              ) : null}
+
+              <div className="wk-block">
+                <h3 className="wk-step-title"><b>2</b>Wybierz godziny</h3>
+                <div className="work-preset-grid">
+                  {AVAILABILITY_PRESETS.map((preset) => {
+                    const active = draft.startTime === preset.startTime && draft.endTime === preset.endTime;
+                    return (
+                      <button
+                        className={active ? "active" : ""}
+                        key={preset.label}
+                        type="button"
+                        onClick={() => props.onSetAvailabilityPreset(preset.startTime, preset.endTime)}
+                        aria-pressed={active}
+                      >
+                        <strong>{preset.label}</strong>
+                        <span>{preset.startTime}–{preset.endTime}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="wk-time-stepper">
+                  <span>Od</span>
+                  <button
+                    type="button"
+                    aria-label="Zacznij 30 minut wcześniej"
+                    disabled={startMinutes - TIME_STEP_MINUTES < firstTime}
+                    onClick={() => setStart(startMinutes - TIME_STEP_MINUTES)}
+                  >
+                    −
+                  </button>
+                  <strong>{draft.startTime}</strong>
+                  <button
+                    type="button"
+                    aria-label="Zacznij 30 minut później"
+                    disabled={startMinutes + TIME_STEP_MINUTES > endMinutes - MIN_WINDOW_MINUTES}
+                    onClick={() => setStart(startMinutes + TIME_STEP_MINUTES)}
+                  >
+                    +
+                  </button>
+                </div>
+                <div className="wk-time-stepper">
+                  <span>Do</span>
+                  <button
+                    type="button"
+                    aria-label="Skończ 30 minut wcześniej"
+                    disabled={endMinutes - TIME_STEP_MINUTES < startMinutes + MIN_WINDOW_MINUTES}
+                    onClick={() => setEnd(endMinutes - TIME_STEP_MINUTES)}
+                  >
+                    −
+                  </button>
+                  <strong>{draft.endTime}</strong>
+                  <button
+                    type="button"
+                    aria-label="Skończ 30 minut później"
+                    disabled={endMinutes + TIME_STEP_MINUTES > lastTime}
+                    onClick={() => setEnd(endMinutes + TIME_STEP_MINUTES)}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              <div className="wk-block">
+                <h3 className="wk-step-title"><b>3</b>Sprawdź i zapisz</h3>
+                <div className="availability-summary-panel">
+                  <div>
+                    {dayCount === 0 ? (
+                      <>
+                        <strong>Nie wybrano jeszcze żadnego dnia</strong>
+                        <span>Wróć do kroku 1 i dotknij dni, w które pracujesz.</span>
+                      </>
+                    ) : (
+                      <>
+                        <strong>{isEditingDay ? "Zapiszesz zmianę" : "Dodasz do kalendarza"}</strong>
+                        <span>
+                          {dayCountLabel(dayCount)} · {draft.startTime} - {draft.endTime} ·{" "}
+                          {formatDuration(Math.max(0, props.availabilityDraftDuration))} dziennie
+                        </span>
+                        <span>{shownDates}{extraDates}</span>
+                        {props.availabilityOverwriteCount > 0 ? (
+                          <small>
+                            {props.availabilityOverwriteCount === 1
+                              ? "1 zapisany dzień dostanie nowe godziny"
+                              : `${props.availabilityOverwriteCount} zapisane dni dostaną nowe godziny`}
+                          </small>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={props.onSaveAvailability}
+                    disabled={!props.canSaveAvailability || props.isWorkSaving}
+                    aria-busy={props.isActionPending("save_availability")}
+                  >
+                    {props.isWorkSaving
+                      ? "Zapisywanie..."
+                      : dayCount === 0
+                        ? "Najpierw wybierz dni"
+                        : isEditingDay
+                          ? "Zapisz zmianę"
+                          : `Zapisz ${dayCountLabel(dayCount)}`}
+                  </button>
+                </div>
+                {props.feedback ? (
+                  <p className={`work-feedback ${props.feedback.kind}`} role="status">{props.feedback.message}</p>
+                ) : null}
+              </div>
             </section>
 
             <section className="availability-list-card">
               <div className="work-card-heading">
                 <div>
                   <p className="eyebrow">Widoczne dla klientów</p>
-                  <h2>Aktywne dni</h2>
+                  <h2>Twoje dostępne dni</h2>
                 </div>
               </div>
               <div className="availability-month-list">
@@ -348,8 +670,7 @@ function WorkSettingsScreen(props: WorkScreenProps) {
                           <span>
                             <strong>{monthGroup.label}</strong>
                             <small>
-                              {monthGroup.items.length} {monthGroup.items.length === 1 ? "dzień" : "dni"} ·{" "}
-                              {formatDuration(monthGroup.totalMinutes)}
+                              {dayCountLabel(monthGroup.items.length)} · {formatDuration(monthGroup.totalMinutes)}
                             </small>
                           </span>
                           <b aria-hidden="true">⌄</b>
@@ -362,7 +683,7 @@ function WorkSettingsScreen(props: WorkScreenProps) {
                                 <span>{windowItem.startTime} - {windowItem.endTime}</span>
                               </div>
                               <div className="availability-window-actions">
-                                <button type="button" onClick={() => props.onEditAvailability(windowItem)}>Edytuj</button>
+                                <button type="button" onClick={() => props.onEditAvailability(windowItem)}>Zmień</button>
                                 <button
                                   className={
                                     props.pendingAvailabilityRemovalKey === windowItem.dateKey
@@ -374,17 +695,25 @@ function WorkSettingsScreen(props: WorkScreenProps) {
                                   aria-busy={props.isActionPending("remove_availability")}
                                   onClick={() => props.onRemoveAvailability(windowItem.dateKey)}
                                 >
-                                  {props.pendingAvailabilityRemovalKey === windowItem.dateKey ? "Potwierdź" : "Usuń"}
+                                  {props.pendingAvailabilityRemovalKey === windowItem.dateKey ? "Na pewno?" : "Usuń"}
                                 </button>
                               </div>
                             </article>
                           ))}
+                          <button
+                            className="wk-remove-month"
+                            type="button"
+                            disabled={props.isWorkSaving}
+                            onClick={() => props.onRemoveAvailabilityMonth(monthGroup.key)}
+                          >
+                            Usuń wszystkie dni z tego miesiąca
+                          </button>
                         </div>
                       </section>
                     );
                   })
                 ) : (
-                  <p>Nie masz jeszcze żadnego dostępnego dnia.</p>
+                  <p>Nie masz jeszcze żadnego dostępnego dnia. Wybierz dni powyżej i zapisz.</p>
                 )}
               </div>
             </section>
@@ -397,7 +726,7 @@ function WorkSettingsScreen(props: WorkScreenProps) {
           <div className="admin-section-header">
             <div>
               <p className="eyebrow">Oferta</p>
-              <h2>Usługi w aplikacji</h2>
+              <h2>Usługi</h2>
             </div>
             <div className="admin-section-stats" aria-label="Podsumowanie usług">
               <span><strong>{props.services.length}</strong>usług</span>
@@ -416,74 +745,137 @@ function WorkSettingsScreen(props: WorkScreenProps) {
           </div>
 
           <div className="services-admin-view" aria-label="Zarządzanie usługami">
-            <section className="service-editor-panel">
-              <div className="work-editor-top">
-                <div>
-                  <p className="eyebrow">{props.editingService ? "Edycja" : "Nowa usługa"}</p>
-                  <h2>{props.editingService ? props.editingService.name : "Dodaj usługę"}</h2>
+            {serviceFormVisible ? (
+              <section className="service-editor-panel wk-step" ref={serviceFormRef}>
+                <div className="work-editor-top">
+                  <div>
+                    <p className="eyebrow">{props.editingService ? "Zmieniasz usługę" : "Nowa usługa"}</p>
+                    <h2>{props.editingService ? props.editingService.name : "Dodaj usługę"}</h2>
+                  </div>
+                  <button className="service-cancel-button" type="button" onClick={closeServiceForm}>
+                    Anuluj
+                  </button>
                 </div>
-                {props.editingService ? (
-                  <button className="service-cancel-button" type="button" onClick={props.onResetService}>Anuluj</button>
-                ) : null}
-              </div>
 
-              <div className="service-form-grid">
-                <label>
-                  Nazwa usługi
-                  <input
-                    type="text"
-                    value={props.serviceDraft.name}
-                    onChange={(event) => props.onUpdateService("name", event.target.value)}
-                  />
-                </label>
-                <label>
-                  Cena
-                  <input
-                    inputMode="decimal"
-                    type="text"
-                    value={props.serviceDraft.price}
-                    onChange={(event) => props.onUpdateService("price", event.target.value)}
-                  />
-                </label>
-                <label>
-                  Czas trwania
-                  <input
-                    inputMode="numeric"
-                    min="15"
-                    step="15"
-                    type="number"
-                    value={props.serviceDraft.durationMinutes}
-                    onChange={(event) => props.onUpdateService("durationMinutes", event.target.value)}
-                  />
-                </label>
-              </div>
+                <div className="wk-block">
+                  <h3 className="wk-step-title"><b>1</b>Jaka to usługa?</h3>
+                  {!props.editingService ? (
+                    <>
+                      <p className="wk-help">Dotknij gotowca albo wpisz własną nazwę.</p>
+                      <div className="wk-chips" role="group" aria-label="Gotowe usługi">
+                        {SERVICE_TEMPLATES.map((template) => (
+                          <button
+                            key={template.name}
+                            type="button"
+                            className={draftService.name === template.name ? "active" : ""}
+                            onClick={() => applyServiceTemplate(template)}
+                          >
+                            {template.name}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
+                  <div className="service-form-grid">
+                    <label>
+                      Nazwa usługi
+                      <input
+                        type="text"
+                        maxLength={60}
+                        placeholder="Na przykład: Strzyżenie klasyczne"
+                        value={draftService.name}
+                        onChange={(event) => props.onUpdateService("name", event.target.value)}
+                      />
+                    </label>
+                  </div>
+                </div>
 
-              <div className="service-editor-summary">
-                <span>
-                  {props.serviceDraft.name.trim() || "Nazwa usługi"} ·{" "}
-                  {props.serviceDraft.price.trim() ? formatServicePrice(props.serviceDraft.price) : "0 zł"} ·{" "}
-                  {formatDuration(Number(props.serviceDraft.durationMinutes) || 0) || "0min"}
-                </span>
-                <button
-                  type="button"
-                  disabled={!props.canSaveService || props.isSavingService}
-                  aria-busy={props.isActionPending("save_service")}
-                  onClick={props.onSaveService}
-                >
-                  {props.editingService ? "Zapisz zmiany" : "Dodaj usługę"}
+                <div className="wk-block">
+                  <h3 className="wk-step-title"><b>2</b>Ile kosztuje i ile trwa?</h3>
+                  <div className="service-form-grid">
+                    <label>
+                      Cena
+                      <span className="wk-price-field">
+                        <input
+                          inputMode="decimal"
+                          type="text"
+                          maxLength={7}
+                          placeholder="70"
+                          value={draftService.price}
+                          onChange={(event) =>
+                            props.onUpdateService("price", event.target.value.replace(/[^\d.,]/g, ""))
+                          }
+                        />
+                        <b aria-hidden="true">zł</b>
+                      </span>
+                    </label>
+                  </div>
+                  <p className="wk-label">Czas trwania</p>
+                  <div className="wk-chips" role="group" aria-label="Czas trwania usługi">
+                    {durationChoices.map((minutes) => (
+                      <button
+                        key={minutes}
+                        type="button"
+                        className={serviceDuration === minutes ? "active" : ""}
+                        aria-pressed={serviceDuration === minutes}
+                        onClick={() => props.onUpdateService("durationMinutes", String(minutes))}
+                      >
+                        {durationChipLabel(minutes)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="wk-block">
+                  <h3 className="wk-step-title"><b>3</b>Sprawdź i zapisz</h3>
+                  <div className="service-editor-summary">
+                    <span>
+                      Klient zobaczy: {draftService.name.trim() || "Nazwa usługi"} ·{" "}
+                      {servicePrice > 0 ? formatServicePrice(draftService.price) : "cena"} ·{" "}
+                      {serviceDuration >= 15 ? durationChipLabel(serviceDuration) : "czas"}
+                    </span>
+                    {serviceHint ? <small className="wk-hint">{serviceHint}</small> : null}
+                    <button
+                      type="button"
+                      disabled={!props.canSaveService || props.isSavingService}
+                      aria-busy={props.isActionPending("save_service")}
+                      onClick={() => void saveServiceAndClose()}
+                    >
+                      {props.isSavingService
+                        ? "Zapisywanie..."
+                        : props.editingService
+                          ? "Zapisz zmiany"
+                          : "Zapisz usługę"}
+                    </button>
+                  </div>
+                  {props.feedback ? (
+                    <p className={`work-feedback ${props.feedback.kind}`} role="status">{props.feedback.message}</p>
+                  ) : null}
+                </div>
+              </section>
+            ) : (
+              <>
+                <button className="wk-add-button" type="button" onClick={openNewServiceForm}>
+                  + Dodaj usługę
                 </button>
-              </div>
-            </section>
+                {props.feedback ? (
+                  <p className={`work-feedback ${props.feedback.kind}`} role="status">{props.feedback.message}</p>
+                ) : null}
+              </>
+            )}
 
-            <section className="service-management-list">
+            <section className="service-management-list" aria-label="Lista usług">
               {props.services.map((service) => (
-                <article className="service-management-card" key={service.id}>
+                <article
+                  className={`service-management-card${props.editingService?.id === service.id ? " editing" : ""}`}
+                  key={service.id}
+                >
                   <div>
                     <strong>{service.name}</strong>
                     <span>{service.price} · {formatDuration(service.durationMinutes)}</span>
                   </div>
                   <div className="service-management-actions">
-                    <button type="button" onClick={() => props.onEditService(service)}>Edytuj</button>
+                    <button type="button" onClick={() => props.onEditService(service)}>Zmień</button>
                     <button
                       className="danger"
                       type="button"
@@ -496,6 +888,9 @@ function WorkSettingsScreen(props: WorkScreenProps) {
                   </div>
                 </article>
               ))}
+              {props.services.length <= 1 ? (
+                <p className="wk-help">Musi zostać przynajmniej jedna usługa, więc tej nie da się usunąć.</p>
+              ) : null}
             </section>
           </div>
         </>

@@ -1,4 +1,4 @@
-/assets/*
+﻿/assets/*
   Cache-Control: public, max-age=31536000, immutable
 
 /brand/*
@@ -9,3 +9,6 @@
 
 /sw.js
   Cache-Control: no-cache, no-store, must-revalidate
+
+/fonts/*
+  Cache-Control: public, max-age=2592000

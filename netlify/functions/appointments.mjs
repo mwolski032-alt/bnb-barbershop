@@ -33,6 +33,7 @@ const allowedActions = new Set([
   "reschedule_client",
   "confirm_client",
   "confirm_admin",
+  "attend_client",
   "cancel_client",
   "create_admin",
   "update_admin",
@@ -118,6 +119,18 @@ const applyServicePrice = (appointment, service) => {
   }
 };
 
+// The client picks days (`dates`); `dateFrom`/`dateTo` always span them, so older code keeps working.
+const MAX_WAITLIST_DAYS = 61;
+const normalizeWaitlistDays = (value) => {
+  const dates = Array.isArray(value.dates)
+    ? [...new Set(value.dates.map((date) => cleanText(date, 10)).filter((date) => datePattern.test(date)))]
+        .sort()
+        .slice(0, MAX_WAITLIST_DAYS)
+    : [];
+  if (dates.length === 0) return { dateFrom: cleanText(value.dateFrom, 10), dateTo: cleanText(value.dateTo, 10) };
+  return { dates, dateFrom: dates[0], dateTo: dates[dates.length - 1] };
+};
+
 const normalizeWaitlistEntry = (id, value = {}) => ({
   id: cleanText(value.id || id, 120),
   userId: cleanText(value.userId, 128),
@@ -128,8 +141,7 @@ const normalizeWaitlistEntry = (id, value = {}) => ({
   serviceId: cleanText(value.serviceId, 120),
   serviceName: cleanText(value.serviceName, 120),
   durationMinutes: Math.max(15, Number(value.durationMinutes) || 15),
-  dateFrom: cleanText(value.dateFrom, 10),
-  dateTo: cleanText(value.dateTo, 10),
+  ...normalizeWaitlistDays(value),
   timePreference: waitlistTimePreferences.has(value.timePreference)
     ? value.timePreference
     : "any",
@@ -273,6 +285,8 @@ const readAdminBookingConfiguration = async (appointment, accessToken) => {
   appointment.serviceName = cleanText(service.name, 120);
   applyServicePrice(appointment, service);
   appointment.durationMinutes = Number(service.durationMinutes);
+  // The barber may book any day and hour, also outside the working schedule: only clients are held to it.
+  // Overlaps with other visits are still refused by `hasConflict`.
 };
 
 const mutateDatabaseRoot = (accessToken, mutation, actorUid = "", readPlan = {}) =>
@@ -637,7 +651,6 @@ const getAppointmentData = async (
     if (
       (!database.occupancyBarberId || appointment.barberId === database.occupancyBarberId) &&
       appointment.status !== "cancelled" &&
-      appointment.status !== "completed" &&
       appointment.status !== "no_show" &&
       appointment.dateKey >= todayKey
     ) {
@@ -828,13 +841,22 @@ const upsertAdminClient = async (body, admin, user, accessToken, operation) => {
     if (existingClient && !admin.isOwner && existingClient.barberIds?.[barberId] !== true) {
       return { error: "Brak dostępu do tej karty klienta.", status: 403 };
     }
-    if (clientValue.userId && clientValue.userId !== existingClient?.userId) {
+    // A person waiting for a slot at this barber has an account the barber may link to their new card:
+    // the waiting-list entry proves they asked this barber for a visit.
+    const joinedWaitlistOfBarber =
+      Boolean(clientValue.userId) &&
+      Object.values(database.waitlistEntries ?? {}).some(
+        (entry) => entry && entry.userId === clientValue.userId && entry.barberId === barberId,
+      );
+    // Only a brand-new card: attaching an account to an existing card still goes through the approved merge.
+    const linksWaitlistAccount = joinedWaitlistOfBarber && !existingClient;
+    if (clientValue.userId && clientValue.userId !== existingClient?.userId && !linksWaitlistAccount) {
       return { error: "Przypisanie konta wymaga zatwierdzonego scalenia.", status: 403 };
     }
     if (existingClient?.userId) {
       clientValue.userId = existingClient.userId;
       clientValue.email = existingClient.email;
-    } else {
+    } else if (!linksWaitlistAccount) {
       delete clientValue.userId;
     }
     for (const appointmentId of appointmentIds) {
@@ -1079,6 +1101,7 @@ const joinWaitlist = async (body, admin, user, accessToken, operation) => {
         serviceName: waitlistEntry.serviceName,
         dateFrom: waitlistEntry.dateFrom,
         dateTo: waitlistEntry.dateTo,
+        ...(waitlistEntry.dates ? { dates: waitlistEntry.dates } : {}),
         timePreference: waitlistEntry.timePreference,
         lastOperationId: operation.operationId,
       };
@@ -1465,6 +1488,15 @@ const handler = async (request, timings = {}) => {
         next.status = "confirmed";
         next.confirmedAt = Date.now();
         next.confirmedBy = action === "confirm_client" ? "client" : "admin";
+      } else if (action === "attend_client") {
+        // "I'll be there": the answer to the reminder. Only a visit that stands as booked can be vouched for.
+        if (current.status !== "confirmed") {
+          return { error: "Najpierw potwierdź nowy termin wizyty.", status: 409 };
+        }
+        if (current.attendanceConfirmedAt) {
+          return { error: "Obecność na tej wizycie jest już potwierdzona.", status: 409 };
+        }
+        next.attendanceConfirmedAt = Date.now();
       } else if (action === "cancel_client" || action === "cancel_admin") {
         next.status = "cancelled";
         next.cancelledAt = Date.now();

@@ -107,6 +107,8 @@ export type AdminAppointment = Appointment & {
   rescheduledBy?: "client" | "admin";
   confirmedAt?: number;
   confirmedBy?: "client" | "admin";
+  /** The client answered the reminder with "I'll be there". */
+  attendanceConfirmedAt?: number;
   noShowAt?: number;
   noShowBy?: "admin";
   settlement?: {
@@ -240,6 +242,8 @@ export type WaitlistEntry = {
   durationMinutes: number;
   dateFrom: string;
   dateTo: string;
+  /** The specific days the client picked; older entries only have the range above. */
+  dates?: string[];
   timePreference: WaitlistTimePreference;
   status: "waiting" | "offered";
   offer?: WaitlistOffer | null;
@@ -250,8 +254,8 @@ export type WaitlistEntry = {
 };
 
 export type WaitlistDraft = {
-  dateFrom: string;
-  dateTo: string;
+  /** The days the client can come, sorted ("YYYY-MM-DD"). */
+  dates: string[];
   timePreference: WaitlistTimePreference;
   clientName: string;
   phone: string;

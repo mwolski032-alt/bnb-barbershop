@@ -1,7 +1,7 @@
 import { readDatabase, readDatabaseQuery } from "../_firebase-admin.mjs";
 import { isFirebaseKeySafe } from "../../../shared/data-model.mjs";
 
-const isolatedActions = new Set(["reschedule_client", "reschedule_admin", "confirm_client", "confirm_admin", "update_admin", "settle_admin"]);
+const isolatedActions = new Set(["reschedule_client", "reschedule_admin", "confirm_client", "confirm_admin", "attend_client", "update_admin", "settle_admin"]);
 const scopedActions = new Set([...isolatedActions, "create_client", "create_admin", "cancel_client", "cancel_admin", "mark_no_show_admin", "join_waitlist", "leave_waitlist", "remove_waitlist_admin"]);
 const merge = (...records) => Object.assign({}, ...records.filter(Boolean));
 const safe = value => typeof value === "string" && isFirebaseKeySafe(value) ? value : "";

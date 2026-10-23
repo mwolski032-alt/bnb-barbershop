@@ -1434,38 +1434,6 @@ input:focus-visible {
   font-weight: 700;
 }
 
-.avatar-icon {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 1.72rem;
-  height: 1.72rem;
-}
-
-.avatar-icon::before,
-.avatar-icon span {
-  content: "";
-  display: block;
-  background: var(--color-border-strong);
-  box-shadow: var(--shadow-card);
-}
-
-.avatar-icon::before {
-  width: 0.78rem;
-  height: 0.78rem;
-  border-radius: 50%;
-  transform: translateY(-0.22rem);
-}
-
-.avatar-icon span {
-  position: absolute;
-  right: 0.14rem;
-  bottom: 0.02rem;
-  left: 0.14rem;
-  height: 0.7rem;
-  border-radius: 999px 999px 0.48rem 0.48rem;
-}
-
 .summary-heading {
   align-items: flex-start;
   flex-direction: column;
@@ -1509,7 +1477,6 @@ h2 {
   font-weight: 700;
 }
 
-.primary-action,
 .time-list button {
   border: 0;
   color: var(--color-text);
@@ -1521,20 +1488,6 @@ h2 {
     opacity 160ms ease;
 }
 
-.primary-action {
-  min-height: 2.75rem;
-  padding: 0 1rem;
-  border-radius: var(--radius-control);
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.primary-action:disabled {
-  cursor: not-allowed;
-  opacity: 0.42;
-}
-
-.primary-action:hover,
 .time-list button:hover,
 .month-controls button:hover,
 .day-tile:not(:disabled):hover {
@@ -2618,28 +2571,6 @@ h2 {
   border-color: var(--color-primary);
 }
 
-.confirm-button {
-  width: 100%;
-  min-height: 3.1rem;
-  margin-top: 1rem;
-  border: 0;
-  border-radius: var(--radius-card);
-  background: var(--color-success);
-  color: var(--color-text);
-  cursor: pointer;
-  font-weight: 700;
-  transition:
-    background 160ms ease,
-    color 160ms ease,
-    opacity 160ms ease;
-}
-
-.confirm-button:disabled {
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: not-allowed;
-}
-
 .client-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -2829,26 +2760,10 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   line-height: 1;
 }
 
-.client-appointment-modal .modal-calendar-button {
-  position: absolute;
-  top: 0.9rem;
-  right: 4rem;
-  width: 2.75rem;
-  height: 2.75rem;
-  background:
-    var(--color-surface);
-  box-shadow: var(--shadow-card);
-}
-
-.client-appointment-modal .modal-calendar-button span {
-  width: 1rem;
-  height: 0.95rem;
-}
-
 .modal-title {
   display: grid;
   gap: 0.35rem;
-  padding-right: 7.35rem;
+  padding-right: 3.6rem;
 }
 
 .modal-title h2 {
@@ -4049,6 +3964,9 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   font-size: .8125rem;
   font-weight: 650;
 }
+
+.admin-waitlist-main.is-openable { cursor: pointer; border-radius: 0.6rem; }
+.admin-waitlist-main.is-openable:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
 
 .admin-waitlist-main b {
   color: var(--color-success);
@@ -7236,109 +7154,21 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   gap: 0.85rem;
 }
 
-.work-hero,
 .work-editor-card,
-.vacation-card,
 .availability-list-card {
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   box-shadow: var(--shadow-card);
 }
 
-.work-hero {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem;
-  border-radius: 1.35rem;
-}
-
-.work-hero.casual {
-  align-items: flex-start;
-  flex-direction: column;
-}
-
-.work-hero h2,
 .work-editor-top h2,
-.vacation-card h2,
 .availability-list-card h2 {
   color: var(--color-text);
   font-size: 1.06rem;
   line-height: 1.12;
 }
 
-.work-metrics {
-  display: flex;
-  gap: 0.45rem;
-}
-
-.work-metrics span {
-  display: grid;
-  place-items: center;
-  min-width: 3.2rem;
-  min-height: 3.2rem;
-  border-radius: 1.1rem;
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  font-size: .8125rem;
-  font-weight: 700;
-}
-
-.work-metrics strong {
-  color: var(--color-text);
-  font-size: 0.95rem;
-}
-
-.work-week-strip {
-  display: flex;
-  gap: 0.5rem;
-  overflow-x: auto;
-  padding-bottom: 0.08rem;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-
-.work-week-strip::-webkit-scrollbar {
-  display: none;
-}
-
-.work-week-strip button {
-  flex: 0 0 6.35rem;
-  display: grid;
-  gap: 0.25rem;
-  min-height: 4.35rem;
-  padding: 0.78rem;
-  border: 1px solid var(--color-border);
-  border-radius: 1.25rem;
-  background: var(--color-surface);
-  color: var(--color-text);
-  text-align: left;
-  cursor: pointer;
-}
-
-.work-week-strip button.active {
-  border-color: var(--color-success);
-  background: var(--color-success-soft);
-}
-
-.work-week-strip button.closed {
-  color: var(--color-text-secondary);
-  background: var(--color-surface);
-}
-
-.work-week-strip strong {
-  font-size: 0.82rem;
-}
-
-.work-week-strip span {
-  color: var(--color-text-secondary);
-  font-size: .8125rem;
-  font-weight: 700;
-}
-
 .work-editor-card,
-.vacation-card,
 .availability-list-card {
   display: grid;
   gap: 0.9rem;
@@ -7367,12 +7197,6 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   cursor: pointer;
   font-size: .8125rem;
   font-weight: 700;
-}
-
-.work-toggle.large {
-  min-height: 2.55rem;
-  padding: 0 0.95rem;
-  font-size: 0.82rem;
 }
 
 .work-preset-grid {
@@ -7413,16 +7237,14 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   gap: 0.7rem;
 }
 
-.work-time-controls.pro label,
-.vacation-range label {
+.work-time-controls.pro label {
   color: var(--color-text-secondary);
   font-size: .75rem;
   font-weight: 700;
 }
 
 .work-time-controls.pro select,
-.work-time-controls.pro input,
-.vacation-range input {
+.work-time-controls.pro input {
   background: var(--color-surface);
   color: var(--color-text);
 }
@@ -7838,108 +7660,6 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   opacity: 0.34;
 }
 
-.work-duplicate-panel {
-  display: grid;
-  gap: 0.45rem;
-  padding: 0.72rem;
-  border-radius: 1.15rem;
-  background: var(--color-surface);
-}
-
-.work-duplicate-panel > span {
-  color: var(--color-text-secondary);
-  font-size: .8125rem;
-  font-weight: 700;
-}
-
-.work-duplicate-panel div,
-.vacation-chip-list {
-  display: flex;
-  gap: 0.48rem;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.work-duplicate-panel div::-webkit-scrollbar,
-.vacation-chip-list::-webkit-scrollbar {
-  display: none;
-}
-
-.work-duplicate-panel button,
-.vacation-range button,
-.vacation-chip-list button {
-  flex: 0 0 auto;
-  min-height: 2.25rem;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
-  padding: 0 0.82rem;
-  font-size: .8125rem;
-  font-weight: 700;
-}
-
-.vacation-range {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.6rem;
-}
-
-.vacation-range label {
-  display: grid;
-  gap: 0.3rem;
-}
-
-.vacation-range input {
-  width: 100%;
-  min-height: 2.55rem;
-  border: 0;
-  border-radius: 999px;
-  color: var(--color-text);
-  padding: 0 0.75rem;
-  font: inherit;
-  font-weight: 700;
-}
-
-.vacation-range button {
-  grid-column: 1 / -1;
-  min-height: 2.65rem;
-}
-
-.vacation-chip-list {
-  padding-bottom: 0.05rem;
-}
-
-.vacation-chip-list button {
-  display: grid;
-  gap: 0.05rem;
-  min-height: 3.1rem;
-  background: var(--color-error-soft);
-  color: var(--color-warning);
-  text-align: left;
-}
-
-.vacation-chip-list span {
-  color: var(--color-warning);
-  font-size: .8125rem;
-  font-weight: 700;
-}
-
-.vacation-chip-list strong {
-  font-size: .8125rem;
-}
-
-.vacation-chip-list p {
-  margin: 0;
-  padding: 0.82rem;
-  border-radius: 1rem;
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
 .work-card {
   padding: 0.85rem;
   border: 1px solid var(--color-border);
@@ -7973,11 +7693,6 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   font-weight: 700;
 }
 
-.work-days-list {
-  display: grid;
-  gap: 0.72rem;
-}
-
 .work-day-row {
   display: grid;
   gap: 0.65rem;
@@ -7986,43 +7701,10 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   background: var(--color-surface);
 }
 
-.work-day-header,
-.work-time-controls,
-.work-copy-actions {
+.work-time-controls {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-}
-
-.work-day-header {
-  justify-content: space-between;
-}
-
-.work-day-header strong {
-  color: var(--color-text);
-  font-size: 0.94rem;
-}
-
-.work-toggle,
-.work-copy-actions button,
-.vacation-list button {
-  border: 0;
-  border-radius: var(--radius-control);
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.work-toggle {
-  min-height: 2.15rem;
-  padding: 0 0.75rem;
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  font-size: .8125rem;
-}
-
-.work-toggle.active {
-  background: var(--color-success-soft);
-  color: var(--color-success);
 }
 
 .work-time-controls {
@@ -8053,64 +7735,6 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
 
 .work-time-controls select:disabled {
   opacity: 0.42;
-}
-
-.work-copy-actions {
-  overflow-x: auto;
-  padding-bottom: 0.05rem;
-  scrollbar-width: none;
-}
-
-.work-copy-actions::-webkit-scrollbar {
-  display: none;
-}
-
-.work-copy-actions button {
-  flex: 0 0 auto;
-  min-height: 2rem;
-  padding: 0 0.65rem;
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-size: .8125rem;
-}
-
-.vacation-list {
-  display: flex;
-  gap: 0.52rem;
-  overflow-x: auto;
-  padding-bottom: 0.1rem;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-
-.vacation-list::-webkit-scrollbar {
-  display: none;
-}
-
-.vacation-list button {
-  flex: 0 0 7.4rem;
-  display: grid;
-  gap: 0.2rem;
-  min-height: 4.4rem;
-  padding: 0.75rem;
-  background: var(--color-surface);
-  color: var(--color-text);
-  text-align: left;
-}
-
-.vacation-list button.active {
-  background: var(--color-error-soft);
-  color: var(--color-warning);
-}
-
-.vacation-list span {
-  color: var(--color-text-secondary);
-  font-size: .8125rem;
-  font-weight: 700;
-}
-
-.vacation-list strong {
-  font-size: 0.9rem;
 }
 
 .analytics-section-header {
@@ -8951,59 +8575,6 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
   height: 2.5rem;
   object-fit: contain;
   opacity: 0.94;
-}
-
-.calendar-save-button {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: 50%;
-  background: var(--color-surface-secondary);
-  cursor: pointer;
-}
-
-.calendar-save-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.42;
-}
-
-.calendar-save-button span,
-.calendar-save-button span::before,
-.calendar-save-button span::after {
-  display: block;
-  box-sizing: border-box;
-}
-
-.calendar-save-button span {
-  position: relative;
-  width: 1.18rem;
-  height: 1.1rem;
-  border: 2px solid var(--color-border);
-  border-radius: 0.22rem;
-}
-
-.calendar-save-button span::before {
-  content: "";
-  position: absolute;
-  top: 0.25rem;
-  right: -2px;
-  left: -2px;
-  height: 2px;
-  background: var(--color-border-strong);
-}
-
-.calendar-save-button span::after {
-  content: "";
-  position: absolute;
-  top: -0.28rem;
-  left: 0.18rem;
-  width: 0.62rem;
-  height: 0.28rem;
-  border-right: 2px solid var(--color-border);
-  border-left: 2px solid var(--color-border);
 }
 
 .success-loader {
@@ -10243,18 +9814,6 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
     font-size: 1.25rem;
   }
 
-  .primary-action {
-    position: fixed;
-    right: 0.75rem;
-    bottom: calc(0.75rem + env(safe-area-inset-bottom));
-    left: 0.75rem;
-    z-index: 15;
-    width: auto;
-    min-height: 3.35rem;
-    border-radius: var(--radius-card);
-    box-shadow: var(--shadow-card);
-  }
-
   .calendar-header {
     margin-top: 1.25rem;
     border-radius: var(--radius-card);
@@ -10509,8 +10068,7 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
     transform: translateX(-50%);
   }
 
-  .client-bottom-sheet .modal-close-button,
-  .client-bottom-sheet .modal-calendar-button {
+  .client-bottom-sheet .modal-close-button {
     top: 1.15rem;
   }
 
@@ -10557,10 +10115,6 @@ button[aria-busy="true"]:not(.push-toggle-button)::before {
 
   .confirm-form input {
     min-height: 3.5rem;
-  }
-
-  .confirm-button {
-    min-height: 3.25rem;
   }
 }
 

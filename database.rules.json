@@ -49,11 +49,16 @@
       "gallery": {
         ".write": "auth != null && root.child('team/owner/userId').val() === auth.uid && root.child('team/owner/active').val() === true",
         "$imageId": {
-          ".validate": "$imageId.matches(/^[0-5]$/) && newData.hasChildren(['id', 'imageUrl', 'alt', 'order'])",
+          ".validate": "$imageId.matches(/^([0-9]|1[0-9])$/) && newData.hasChildren(['id', 'imageUrl', 'alt', 'order'])",
           "id": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 36" },
-          "imageUrl": { ".validate": "newData.isString() && newData.val().length <= 350000 && newData.val().matches(/^data:image\\/(webp|png|jpeg);base64,[A-Za-z0-9+\\/=]+$/)" },
+          "imageUrl": { ".validate": "newData.isString() && ((newData.val().length <= 350000 && newData.val().matches(/^data:image\\/(webp|png|jpeg);base64,[A-Za-z0-9+\\/=]+$/)) || (newData.val().length <= 80 && newData.val().matches(/^\\/api\\/gallery-image\\/[0-9a-f-]{36}\\/1600\\.webp$/)))" },
+          "storage": { ".validate": "newData.isBoolean()" },
+          "width": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 8000" },
+          "height": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 8000" },
+          "blur": { ".validate": "newData.isString() && newData.val().length <= 3000 && newData.val().matches(/^data:image\\/webp;base64,[A-Za-z0-9+\\/=]+$/)" },
           "alt": { ".validate": "newData.isString() && newData.val().length <= 160" },
-          "order": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 5" },
+          "order": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 19" },
+          "barberId": { ".validate": "newData.isString() && newData.val().matches(/^[a-zA-Z0-9_-]{1,80}$/)" },
           "createdAt": { ".validate": "newData.isNumber()" },
           "updatedAt": { ".validate": "newData.isNumber()" },
           "$other": { ".validate": false }

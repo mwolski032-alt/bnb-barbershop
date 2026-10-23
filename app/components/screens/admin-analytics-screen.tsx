@@ -44,6 +44,7 @@ export default function AdminAnalyticsScreen({
         <div>
           <p className="eyebrow">Wyniki biznesu</p>
           <h2>{analytics.periodLabel}</h2>
+          <p className="analytics-note">Liczymy tylko wizyty, które rozliczyłeś w kalendarzu.</p>
         </div>
         <div className="analytics-period-control" aria-label="Zakres analizy">
           {(Object.keys(periodLabels) as AnalyticsPeriod[]).map((option) => (
@@ -180,7 +181,11 @@ export default function AdminAnalyticsScreen({
           <article className={analytics.potentialNoShows > 0 ? "attention" : ""}>
             <span>Potencjalne nieobecności</span>
             <strong>{analytics.potentialNoShows}</strong>
-            <small>{formatCurrency(analytics.potentialNoShowValue)} bez rozliczenia</small>
+            <small>
+              {analytics.potentialNoShows > 0
+                ? `${formatCurrency(analytics.potentialNoShowValue)} bez rozliczenia · rozlicz je w kalendarzu`
+                : "Wszystkie minione wizyty są rozliczone"}
+            </small>
           </article>
         </div>
       </div>

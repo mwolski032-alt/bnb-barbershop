@@ -14,12 +14,18 @@ const palette = {
 
 test("paper palette and global serif typography have a single source of truth", () => {
   for (const [name, hex] of Object.entries(palette)) assert.ok(theme.includes(`--color-${name}: #${hex};`), name);
-  assert.match(theme, /--font-app: "Sitka Heading", Sitka, Georgia, serif;/);
+  assert.match(theme, /--font-display: "Fraunces", "Sitka Heading", Georgia, serif;/);
+  assert.match(theme, /--font-ui: "Geist", system-ui,/);
+  assert.match(theme, /--font-app: var\(--font-ui\);/);
+  for (const file of ["fraunces-latin", "fraunces-latin-ext", "geist-latin", "geist-latin-ext"]) {
+    assert.ok(theme.includes(`/fonts/${file}.woff2`), file);
+    assert.ok(readFileSync(new URL(`../public/fonts/${file}.woff2`, import.meta.url)).length > 5000, file);
+  }
   for (const file of ["app/globals.css", "app/paper-components.css"]) {
     const css = read(file);
     assert.doesNotMatch(css, /#[\da-f]{3,8}\b|\brgba?\(|\bhsla?\(/i, file);
     assert.doesNotMatch(css, /color-scheme:\s*dark|backdrop-filter:\s*blur/);
-    for (const match of css.matchAll(/font-family:\s*([^;]+);/g)) assert.match(match[1], /^(?:var\(--font-app\)|inherit)$/);
+    for (const match of css.matchAll(/font-family:\s*([^;]+);/g)) assert.match(match[1], /^(?:var\(--font-(?:app|ui|display)\)|inherit)$/);
   }
 });
 

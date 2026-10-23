@@ -313,6 +313,33 @@ test("background dispatch processes only jobs created by the signed-in user", as
   assert.equal(sentPushes.length > 0, true);
 });
 
+test("a waitlist entry keeps the days the client picked and spans them with its range", async () => {
+  reset();
+  const body = (id, dates) => ({
+    action: "join_waitlist",
+    operationId: `join-${id}`,
+    expectedVersion: 0,
+    waitlistEntry: {
+      id, barberId: "mateusz", serviceId: "cut", clientName: "Jan Kowalski", phone: "500600700",
+      dates, dateFrom: "1999-01-01", dateTo: "1999-01-02", timePreference: "any",
+    },
+  });
+  const response = await appointmentRequest("client-token", body("waitlist-days", ["2099-01-15", "2099-01-12", "2099-01-12", "bad", "2099-01-20"]));
+  assert.equal(response.status, 200, JSON.stringify(await response.json()));
+  const stored = database.waitlistEntries["waitlist-days"];
+  // Sorted, without duplicates or invalid values; the range is derived from the days, never trusted from the client.
+  assert.deepEqual(stored.dates, ["2099-01-12", "2099-01-15", "2099-01-20"]);
+  assert.equal(stored.dateFrom, "2099-01-12");
+  assert.equal(stored.dateTo, "2099-01-20");
+
+  // A past day, or days more than 60 days apart, are refused.
+  reset();
+  const past = await appointmentRequest("client-token", body("waitlist-past", ["2020-01-01", "2099-01-12"]));
+  assert.equal(past.status, 400);
+  reset();
+  const wide = await appointmentRequest("client-token", body("waitlist-wide", ["2099-01-10", "2099-04-10"]));
+  assert.equal(wide.status, 400);
+});
 test("joining the waitlist notifies only the selected barber and opens that waitlist", async () => {
   reset();
   const requestBody = {
@@ -359,10 +386,7 @@ test("joining the waitlist notifies only the selected barber and opens that wait
   assert.equal(link.searchParams.get("barber"), "mateusz");
   assert.equal(link.searchParams.get("appointment"), null);
 
-  assert.deepEqual(sentEmails.map(({ to }) => to), ["mateusz@example.com"]);
-  assert.match(sentEmails[0].html, /Jan Kowalski/);
-  assert.match(sentEmails[0].html, /10\.01\.2099–20\.01\.2099/);
-  assert.match(sentEmails[0].html, /po południu/);
+  assert.deepEqual(sentEmails, [], "e-mail notifications are no longer sent");
 
   const pushCount = sentPushes.length;
   const emailCount = sentEmails.length;
@@ -483,8 +507,7 @@ test("individual discount notifies the client with the old and new price", async
     "Cena usługi „Strzyżenie” została obniżona z 70 zł do 45 zł. Termin: 10.01.2099 o 10:00.",
   );
   assert.equal(new URL(push.data.link).searchParams.get("event"), "admin_appointment_updated");
-  assert.deepEqual(sentEmails.map(({ to }) => to), ["client@example.com"]);
-  assert.equal(sentEmails[0].subject, "BNB Barbershop: Masz rabat na wizytę 🎉");
+  assert.deepEqual(sentEmails, [], "e-mail notifications are no longer sent");
 });
 
 test("a free visit sends a special notification and keeps zero as a real price", async () => {
@@ -514,7 +537,7 @@ test("a free visit sends a special notification and keeps zero as a real price",
     push.data.body,
     "Usługa „Strzyżenie” będzie bezpłatna — za tę wizytę nic nie płacisz. Termin: 10.01.2099 o 10:00.",
   );
-  assert.deepEqual(sentEmails.map(({ to }) => to), ["client@example.com"]);
+  assert.deepEqual(sentEmails, [], "e-mail notifications are no longer sent");
 });
 
 test("a completed visit correction uses past-tense notification copy", async () => {
@@ -576,7 +599,7 @@ test("waitlist notification links directly to the offered barber, service, date 
   assert.equal(link.searchParams.get("date"), "2099-01-10");
   assert.equal(link.searchParams.get("time"), "15:00");
   assert.equal(link.searchParams.get("appointment"), null);
-  assert.equal(sentEmails.some(({ html }) => html.includes("Zarezerwuj termin")), true);
+  assert.deepEqual(sentEmails, [], "e-mail notifications are no longer sent");
 });
 
 test("cancellation immediately delivers the waitlist offer created in the same request", async () => {
@@ -630,10 +653,10 @@ test("cancellation immediately delivers the waitlist offer created in the same r
     sentPushes.some(({ message }) => message.token === "waitlist-client-token"),
     true,
   );
-  assert.equal(sentEmails.some(({ to }) => to === "waitlist@example.com"), true);
+  assert.deepEqual(sentEmails, [], "e-mail notifications are no longer sent");
 });
 
-test("scheduled worker discovers a newly available slot and notifies the waiting client", async () => {
+test("scheduled worker tells a waiting client about a day the barber adds, and holds nothing", async () => {
   reset();
   database.waitlistEntries = {
     waiting: {
@@ -647,7 +670,8 @@ test("scheduled worker discovers a newly available slot and notifies the waiting
       serviceName: "Strzyżenie",
       durationMinutes: 60,
       dateFrom: "2099-01-10",
-      dateTo: "2099-01-10",
+      dateTo: "2099-01-12",
+      dates: ["2099-01-10", "2099-01-12"],
       timePreference: "morning",
       status: "waiting",
       version: 1,
@@ -656,20 +680,46 @@ test("scheduled worker discovers a newly available slot and notifies the waiting
     },
   };
 
+  // The first pass only records the days that are already free: nothing to announce.
+  const baseline = await (await notificationWorker.default()).json();
+  assert.equal(baseline.waitlist.notifiedCount, 0);
+  assert.deepEqual(database.waitlistEntries.waiting.notifiedDates, ["2099-01-10"]);
+  assert.equal(sentPushes.length, 0);
+
+  // The 11th is not one of the chosen days, so adding it says nothing. The 12th is.
+  for (const day of ["2099-01-11", "2099-01-12"]) {
+    database.barbers.mateusz.workSettings.availability[day] = {
+      id: day, barberId: "mateusz", dateKey: day, startTime: "08:00", endTime: "18:00",
+    };
+  }
   const response = await notificationWorker.default();
   const result = await response.json();
   assert.equal(response.status, 200, JSON.stringify(result));
-  assert.equal(database.waitlistEntries.waiting.status, "offered");
-  assert.equal(result.waitlist.offeredCount, 1);
+  assert.equal(result.waitlist.notifiedCount, 1);
+  // Nothing is held: the entry still waits and every day stays bookable by anyone.
+  assert.equal(database.waitlistEntries.waiting.status, "waiting");
+  assert.equal(database.waitlistEntries.waiting.offer ?? null, null);
+  assert.deepEqual(database.waitlistEntries.waiting.notifiedDates, ["2099-01-10", "2099-01-12"]);
 
   const waitlistJob = Object.values(database.notificationOutbox).find(
-    (job) => job.event === "waitlist_slot_open",
+    (job) => job.event === "waitlist_day_open",
   );
   assert.equal(waitlistJob.status, "delivered");
-  assert.equal(
-    sentPushes.some(({ message }) => message.token === "waitlist-client-token"),
-    true,
-  );
+  const push = sentPushes.find(({ message }) => message.token === "waitlist-client-token");
+  assert.ok(push);
+  // The tap opens the booking on that very day, with the barber and service chosen.
+  const link = new URL(push.message.data.link);
+  assert.equal(link.searchParams.get("event"), "waitlist_day_open");
+  assert.equal(link.searchParams.get("barber"), "mateusz");
+  assert.equal(link.searchParams.get("service"), "cut");
+  assert.equal(link.searchParams.get("date"), "2099-01-12");
+  assert.equal(link.searchParams.get("time"), null);
+  assert.match(push.message.data.body, /Termin czeka na Ciebie/);
+
+  // A third pass has nothing new to say.
+  sentPushes = [];
+  assert.equal((await (await notificationWorker.default()).json()).waitlist.notifiedCount, 0);
+  assert.equal(sentPushes.length, 0);
 });
 
 test("confirmation actions have distinct backend events for the proper audience", async () => {
@@ -758,7 +808,7 @@ test("inactive barber and owner never receive appointment notifications", async 
     "client-phone-token",
     "client-tablet-token",
   ]);
-  assert.deepEqual(sentEmails.map(({ to }) => to), ["client@example.com"]);
+  assert.deepEqual(sentEmails, [], "e-mail notifications are no longer sent");
   assert.equal(sentPushes.some(({ message }) => message.token === "owner-token"), false);
 });
 

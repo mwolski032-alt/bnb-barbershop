@@ -1,0 +1,443 @@
+/* Client-facing screens (home, booking wizard, confirmation) in the same modern language as the admin
+   panel: soft borderless surfaces, pill controls, dark ink accents and spring motion. It loads last and
+   only restyles; colours, fonts, radii and easing all come from theme.css tokens. */
+
+/* ---------- Motion vocabulary ---------- */
+@keyframes cm-aurora { from { transform: translate3d(-3%, -2%, 0) scale(1); } to { transform: translate3d(3%, 3%, 0) scale(1.1); } }
+@keyframes cm-title-in { from { opacity: 0; transform: translateY(26px); filter: blur(12px); letter-spacing: .04em; } }
+@keyframes cm-shimmer { to { background-position: -200% 0; } }
+@keyframes cm-kenburns { from { transform: scale(1.02); } to { transform: scale(1.1) translate(-1.2%, -1%); } }
+@keyframes cm-shine { 0%, 62% { transform: translateX(-140%) skewX(-20deg); } 100% { transform: translateX(340%) skewX(-20deg); } }
+@keyframes cm-ring-pulse { 0% { transform: scale(1); opacity: .5; } 70%, 100% { transform: scale(1.1, 1.35); opacity: 0; } }
+@keyframes cm-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 38%, transparent); } 70%, 100% { box-shadow: 0 0 0 16px transparent; } }
+@keyframes cm-card-in { from { opacity: 0; transform: translateY(26px) scale(.95); } }
+@keyframes cm-check-in { 0% { opacity: 0; transform: scale(0) rotate(-90deg); } 70% { transform: scale(1.2) rotate(8deg); } 100% { opacity: 1; transform: scale(1) rotate(0); } }
+@keyframes cm-glow { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 45%, transparent); } 50% { box-shadow: 0 0 14px 2px color-mix(in srgb, var(--color-primary) 45%, transparent); } }
+@keyframes cm-burst { 0% { opacity: 1; transform: scale(.1) rotate(0); } 100% { opacity: 0; transform: scale(1) rotate(80deg); } }
+@keyframes cm-scroll-bar { to { transform: scaleX(1); } }
+@keyframes cm-parallax { to { transform: translateY(60px); } }
+@keyframes cm-ring { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   HOME
+   ============================================================ */
+.salon-home { position: relative; isolation: isolate; }
+.salon-aurora {
+  position: fixed; inset: -12%; z-index: -1; pointer-events: none; will-change: transform;
+  background:
+    radial-gradient(42% 38% at 12% 8%, color-mix(in srgb, var(--color-primary-soft) 95%, transparent), transparent 70%),
+    radial-gradient(36% 34% at 92% 14%, color-mix(in srgb, var(--color-secondary-soft) 80%, transparent), transparent 72%),
+    radial-gradient(46% 40% at 50% 100%, color-mix(in srgb, var(--color-primary-soft) 70%, transparent), transparent 72%);
+  animation: cm-aurora 22s ease-in-out infinite alternate;
+}
+
+/* Scroll progress line (progressive enhancement). */
+@supports (animation-timeline: scroll()) {
+  .salon-home::before {
+    content: ""; position: fixed; top: 0; left: 0; right: 0; z-index: 50; height: 3px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+    transform: scaleX(0); transform-origin: left center;
+    animation: cm-scroll-bar linear both; animation-timeline: scroll(root);
+  }
+}
+
+/* Header: a floating glass pill. */
+.salon-header {
+  position: relative; z-index: 30; margin-bottom: 14px; padding: 8px 10px 8px 8px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow: var(--shadow-rest), 0 0 0 1px color-mix(in srgb, var(--color-border) 70%, transparent);
+}
+@media (min-width: 701px) { .salon-header { position: sticky; top: max(10px, env(safe-area-inset-top)); } }
+.salon-brand img { border-radius: var(--radius-pill); padding: 6px 12px; }
+.salon-header nav { gap: 6px; }
+.salon-header nav button:not(:disabled), .salon-footer button:not(:disabled) {
+  background-image: none; padding: 10px 16px; min-height: 44px; border-radius: var(--radius-pill); font-weight: 600;
+}
+.salon-header nav button:not(:disabled):hover, .salon-footer button:not(:disabled):hover { background-color: var(--color-primary-soft); }
+.salon-header nav button:active:not(:disabled), .salon-footer button:active:not(:disabled) { transform: scale(.95); }
+.salon-account-pill { border: 0; background: var(--color-surface-secondary); }
+.salon-header .salon-notification { border: 0; background: var(--color-surface-secondary); }
+.salon-header .salon-account-pill button { border-left: 0; border-radius: var(--radius-pill); }
+
+/* Hero. */
+.salon-cover { border-block: 0; }
+.salon-cover-photo img, .salon-gallery-stage { border-radius: 28px; }
+.salon-cover-photo { overflow: hidden; border-radius: 28px; box-shadow: var(--shadow-floating); }
+.salon-cover-photo img { will-change: transform; animation: cm-kenburns 26s ease-in-out infinite alternate; }
+.salon-gallery-stage { box-shadow: var(--shadow-floating); }
+.salon-gallery-feature .gallery-photo img { animation: cm-kenburns 30s ease-in-out infinite alternate; }
+@supports (animation-timeline: view()) {
+  .salon-cover-media { animation: cm-parallax linear both; animation-timeline: scroll(root); animation-range: 0 70vh; }
+}
+.salon-cover h1 { animation: cm-title-in var(--duration-slow) var(--ease-out) 120ms backwards; letter-spacing: -.045em; }
+.salon-cover h1 em {
+  font-style: italic; font-weight: 500;
+  background: linear-gradient(100deg, var(--color-secondary) 20%, var(--color-primary) 45%, var(--color-secondary) 70%);
+  background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: var(--color-secondary);
+  animation: cm-shimmer 6s linear infinite;
+}
+.salon-overline { display: inline-flex; align-items: center; gap: 8px; width: fit-content; padding: 6px 12px; border-radius: var(--radius-pill); background: var(--color-primary-soft); color: var(--color-primary); font-weight: 700; }
+
+/* Buttons: pill with a shine that crosses it now and then. */
+.salon-home .salon-cta, .salon-dialog .salon-cta, .booking-story .salon-cta {
+  position: relative; overflow: hidden; border: 0; border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-active));
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--color-primary) 32%, transparent);
+  font-weight: 600;
+}
+.salon-cta::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 38%; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 28%), transparent);
+  transform: translateX(-140%) skewX(-20deg); animation: cm-shine 5.5s var(--ease-in-out) infinite;
+}
+.salon-cta:disabled::after { display: none; }
+.salon-cta-wrap { position: relative; display: flex; width: 100%; max-width: 360px; border-radius: var(--radius-pill); }
+.salon-cta-wrap::before { content: ""; position: absolute; inset: 0; border-radius: inherit; border: 2px solid var(--color-primary); pointer-events: none; opacity: 0; animation: cm-ring-pulse 2.8s ease-out 1.4s infinite; }
+.salon-cta-wrap .salon-cta { width: 100%; }
+.salon-home .salon-cta:hover:not(:disabled), .booking-story .salon-cta:hover:not(:disabled) { background: linear-gradient(135deg, var(--color-primary-hover), var(--color-primary-active)); transform: translateY(-2px); }
+
+/* Team. */
+.salon-section-heading h2 { font-size: clamp(2rem, 1.5rem + 2vw, 2.8rem); }
+.salon-person, .salon-person-skeleton {
+  position: relative; overflow: hidden; border: 0; border-radius: 28px; background: var(--color-surface);
+  box-shadow: var(--shadow-rest), 0 0 0 1px color-mix(in srgb, var(--color-border) 60%, transparent);
+}
+.salon-person > * { position: relative; z-index: 1; }
+.salon-person::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; opacity: 0; transition: opacity var(--duration-base) var(--ease-out);
+  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), color-mix(in srgb, var(--color-primary-soft) 100%, transparent), transparent 70%);
+}
+.salon-person:hover { border: 0; transform: translateY(-4px); box-shadow: var(--shadow-raised), 0 0 0 1px var(--color-primary); }
+.salon-person:hover::before { opacity: 1; }
+.salon-person-photo { box-shadow: 0 0 0 3px var(--color-surface), 0 0 0 5px var(--color-primary-soft); }
+.salon-person:hover .salon-person-photo { box-shadow: 0 0 0 3px var(--color-surface), 0 0 0 5px var(--color-primary); }
+.salon-person > svg { width: 38px; height: 38px; padding: 9px; border-radius: 50%; background: var(--color-primary); color: var(--color-on-primary); }
+.salon-person-copy strong { font-family: var(--font-display); }
+
+/* Gallery, address, footer. */
+.salon-gallery-thumbnails button, .salon-gallery-all button { border-radius: 18px; }
+.salon-gallery .salon-gallery-show-all { border: 0; background: color-mix(in srgb, var(--color-text) 78%, transparent); transition: var(--transition-interactive); }
+.salon-gallery .salon-gallery-show-all:hover { transform: translateY(-2px); background: var(--color-text); }
+.salon-address { gap: 10px; }
+.salon-address p { align-items: center; margin: 0; padding: 12px 18px; border-radius: var(--radius-pill); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border); }
+.salon-footer { border-top: 0; margin-top: 40px; padding: 10px 10px 10px 22px; border-radius: var(--radius-pill); background: var(--color-surface-secondary); }
+.salon-empty { border-radius: 28px; }
+.salon-feedback { border-radius: 20px; animation: cm-card-in var(--duration-base) var(--ease-out) backwards; }
+
+/* Dialogs. */
+.salon-dialog { border: 0; border-radius: 28px; }
+.salon-dialog[open]::backdrop { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.salon-close { border: 0; background: var(--color-surface-secondary); }
+.salon-profile-photo { box-shadow: 0 0 0 4px var(--color-surface), 0 0 0 7px var(--color-primary-soft); }
+.salon-specialties span { border: 0; border-radius: var(--radius-pill); background: var(--color-primary-soft); color: var(--color-primary); font-weight: 600; padding: 7px 14px; }
+
+/* Floating booking button: appears once the hero button has scrolled away. */
+.salon-dock {
+  position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 40;
+  display: flex; padding: 6px; border-radius: var(--radius-pill); background: var(--color-text); box-shadow: var(--shadow-floating);
+  transform: translate(-50%, 160%); opacity: 0; pointer-events: none;
+  transition: transform var(--duration-slow) var(--ease-spring), opacity var(--duration-base) var(--ease-out);
+}
+.salon-dock.is-visible { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+.salon-home .salon-dock button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 12px; min-height: 52px; padding: 12px 28px;
+  border: 0; border-radius: var(--radius-pill); background: var(--color-brand-white); color: var(--color-text); font-size: 16px; font-weight: 700; transition: var(--transition-interactive);
+}
+.salon-home .salon-dock button:hover:not(:disabled) { background: var(--color-primary-soft); }
+.salon-home .salon-dock button:active:not(:disabled) { transform: scale(.96); }
+.salon-home .salon-dock button:disabled { background: var(--color-disabled-bg); color: var(--color-disabled-text); }
+
+@media (max-width: 700px) {
+  .salon-header { border-radius: 28px; padding: 10px 12px; }
+  .salon-header nav { border-top-color: var(--color-border); }
+  .salon-cta-wrap { max-width: none; }
+  .salon-dock { width: calc(100% - 32px); max-width: 420px; }
+  .salon-home .salon-dock button { width: 100%; }
+}
+
+/* ============================================================
+   BOOKING WIZARD
+   ============================================================ */
+.booking-story {
+  position: relative; background-color: var(--color-background);
+  background-image:
+    radial-gradient(40% 30% at 10% 0%, color-mix(in srgb, var(--color-primary-soft) 90%, transparent), transparent 70%),
+    radial-gradient(34% 28% at 100% 20%, color-mix(in srgb, var(--color-secondary-soft) 70%, transparent), transparent 72%);
+  background-repeat: no-repeat;
+}
+.story-header {
+  position: sticky; top: 0; z-index: 30; border-bottom: 0;
+  background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--color-border) 80%, transparent);
+}
+.story-toolbar > span { font-family: var(--font-display); font-weight: 600; }
+.story-toolbar button, .story-month button { border: 0; border-radius: 50%; background: var(--color-surface-secondary); }
+.booking-story .story-toolbar button:hover:not(:disabled), .booking-story .story-month button:hover:not(:disabled) { background: var(--color-primary-soft); }
+
+/* Progress: thick pills that fill with a glowing head. */
+.story-progress { gap: 6px; }
+.story-segment { height: 6px; border-radius: var(--radius-pill); }
+.story-segment::after { background: linear-gradient(90deg, var(--color-primary), color-mix(in srgb, var(--color-primary) 70%, var(--color-secondary))); transition: transform var(--duration-slow) var(--ease-spring); }
+.story-progress .current .story-segment { animation: cm-glow 2.2s ease-in-out infinite; box-shadow: none; }
+.story-progress .current .story-step-label { font-weight: 700; }
+
+/* Selections so far, pinned above the step as chips. */
+.story-body { display: flex; flex-direction: column; }
+.story-recap { order: -1; justify-content: flex-start; gap: 8px; margin: 0 0 20px; padding: 0; border-top: 0; }
+.story-recap span { padding: 7px 14px; border-radius: var(--radius-pill); background: var(--color-primary-soft); color: var(--color-primary); font-size: 13px; font-weight: 600; animation: cm-card-in var(--duration-base) var(--ease-spring) backwards; }
+
+.story-heading .salon-overline { padding: 0; background: none; color: var(--color-text-secondary); font-weight: 600; }
+.story-heading h1 { font-family: var(--font-display); animation: cm-title-in var(--duration-slow) var(--ease-out) backwards; }
+
+/* Option cards. */
+.story-options > * { animation: cm-card-in var(--duration-slow) var(--ease-spring) backwards; }
+.story-options > :nth-child(2) { animation-delay: 70ms; }
+.story-options > :nth-child(3) { animation-delay: 140ms; }
+.story-options > :nth-child(4) { animation-delay: 210ms; }
+.story-options > :nth-child(n+5) { animation-delay: 280ms; }
+.booking-story .story-barber, .booking-story .story-service {
+  position: relative; border: 0; border-radius: 28px; background: var(--color-surface);
+  box-shadow: var(--shadow-rest), 0 0 0 1px color-mix(in srgb, var(--color-border) 60%, transparent);
+}
+.booking-story .story-barber.selected, .booking-story .story-service.selected {
+  background: var(--color-primary-soft); box-shadow: 0 0 0 2px var(--color-primary);
+}
+.booking-story .story-barber.selected::after, .booking-story .story-service.selected::after {
+  content: "✓"; position: absolute; top: -8px; right: 16px; display: grid; place-items: center; width: 28px; height: 28px;
+  border-radius: 50%; background: var(--color-primary); color: var(--color-on-primary); font-size: 15px; font-weight: 700;
+  animation: cm-check-in var(--duration-slow) var(--ease-spring) both;
+}
+.booking-story .story-avatar { box-shadow: 0 0 0 3px var(--color-surface), 0 0 0 5px var(--color-primary-soft); }
+.story-barber strong, .story-service strong { font-family: var(--font-display); font-weight: 600; }
+.story-barber > svg { box-sizing: content-box; width: 20px; height: 20px; padding: 9px; border-radius: 50%; background: var(--color-primary); color: var(--color-on-primary); }
+.story-service b { padding: 7px 14px; border-radius: var(--radius-pill); background: var(--color-primary-soft); color: var(--color-primary); }
+.booking-story .story-service.selected b { background: var(--color-surface); }
+@media (hover: hover) {
+  .booking-story .story-barber:hover:not(:disabled), .booking-story .story-service:hover:not(:disabled) { transform: translateY(-3px); box-shadow: var(--shadow-raised), 0 0 0 2px var(--color-primary); }
+  .booking-story .story-barber:hover:not(:disabled) .story-avatar { animation: cm-ring 12s linear infinite; }
+}
+
+/* Calendar. */
+.story-calendar { border: 0; border-radius: 28px; box-shadow: var(--shadow-rest), 0 0 0 1px color-mix(in srgb, var(--color-border) 60%, transparent); animation: cm-card-in var(--duration-slow) var(--ease-out) backwards; }
+.story-month h2 { font-family: var(--font-display); text-transform: capitalize; }
+.story-days { gap: 6px; }
+.story-days button { aspect-ratio: 1; min-height: 0; border-radius: 50%; font-weight: 600; }
+.booking-story .story-days button:not(:disabled):not(.selected) { background: var(--color-primary-soft); color: var(--color-primary); }
+.booking-story .story-days button:not(:disabled) i { display: none; }
+.story-days button.outside { opacity: .55; }
+.booking-story .story-days button.selected:not(:disabled) { background: var(--color-primary); color: var(--color-on-primary); box-shadow: 0 8px 18px color-mix(in srgb, var(--color-primary) 38%, transparent); transform: scale(1.06); }
+@media (hover: hover) { .booking-story .story-days button:hover:not(:disabled):not(.selected) { background: var(--color-primary); color: var(--color-on-primary); transform: scale(1.08); } }
+.story-days button { animation: cm-card-in var(--duration-base) var(--ease-out) backwards; }
+.story-days button:nth-child(7n+2) { animation-delay: 15ms; } .story-days button:nth-child(7n+3) { animation-delay: 30ms; } .story-days button:nth-child(7n+4) { animation-delay: 45ms; }
+.story-days button:nth-child(7n+5) { animation-delay: 60ms; } .story-days button:nth-child(7n+6) { animation-delay: 75ms; } .story-days button:nth-child(7n) { animation-delay: 90ms; }
+
+/* Nearest free slot: a dark banner, the fastest path through the form. */
+.story-nearest {
+  position: relative; overflow: hidden; border: 0; border-radius: 28px; padding: 20px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-active)); color: var(--color-on-primary);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+.story-nearest::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 38%; pointer-events: none; background: linear-gradient(90deg, transparent, rgb(255 255 255 / 20%), transparent); transform: translateX(-140%) skewX(-20deg); animation: cm-shine 5s var(--ease-in-out) infinite; }
+.story-nearest:disabled::after { display: none; }
+.story-nearest small { opacity: .8; }
+.story-nearest strong { font-family: var(--font-display); font-size: 1.15rem; }
+.booking-story .story-nearest:hover:not(:disabled) { background: linear-gradient(135deg, var(--color-primary-hover), var(--color-primary-active)); border-color: transparent; }
+
+/* Hours as pills. */
+.story-date-label { font-family: var(--font-display); }
+.story-times { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
+.story-times button { border: 0; border-radius: var(--radius-pill); background: var(--color-surface); color: var(--color-primary); font-weight: 600; box-shadow: var(--shadow-rest), 0 0 0 1px var(--color-border); }
+.story-times > * { animation: cm-card-in var(--duration-slow) var(--ease-spring) backwards; }
+.booking-story .story-times button.selected { background: var(--color-primary); color: var(--color-on-primary); box-shadow: 0 8px 18px color-mix(in srgb, var(--color-primary) 38%, transparent); transform: scale(1.05); }
+@media (hover: hover) { .booking-story .story-times button:hover:not(:disabled):not(.selected) { background: var(--color-primary); color: var(--color-on-primary); transform: translateY(-2px); } }
+
+/* Form. */
+.story-form label { font-weight: 600; font-size: 15px; }
+.story-form input {
+  border: 2px solid transparent; border-radius: 20px; background-color: var(--color-surface);
+  box-shadow: var(--shadow-rest), 0 0 0 1px var(--color-border); transition: var(--transition-interactive);
+}
+.story-form input:focus { outline: 0; border-color: var(--color-primary); box-shadow: 0 0 0 5px var(--color-focus); }
+.story-form input:valid {
+  padding-right: 48px; border-color: color-mix(in srgb, var(--color-success) 55%, transparent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23245C42' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 16px center; background-size: 20px;
+}
+.story-form input:focus:valid { border-color: var(--color-primary); }
+.story-form > * { animation: cm-card-in var(--duration-slow) var(--ease-out) backwards; }
+.story-form > :nth-child(2) { animation-delay: 80ms; } .story-form > :nth-child(3) { animation-delay: 140ms; } .story-form > :nth-child(4) { animation-delay: 200ms; }
+.story-phone > span { font-weight: 700; padding: 16px 14px; border-radius: 20px; background: var(--color-primary-soft); color: var(--color-primary); }
+
+/* Summary ticket with perforation notches. */
+.story-ticket { --ticket-pad: 28px; position: relative; overflow: hidden; border: 0; border-radius: 28px; box-shadow: var(--shadow-raised), 0 0 0 1px var(--color-border); }
+.story-ticket h2 { font-family: var(--font-display); }
+.story-ticket-barber { padding: 10px; border-radius: 20px; background: var(--color-primary-soft); }
+.story-price { position: relative; }
+.story-price::before, .story-price::after { content: ""; position: absolute; top: -11px; width: 22px; height: 22px; border-radius: 50%; background: var(--color-background); box-shadow: inset 0 2px 4px rgb(72 49 21 / 10%); }
+.story-price::before { left: calc(var(--ticket-pad) * -1 - 11px); }
+.story-price::after { right: calc(var(--ticket-pad) * -1 - 11px); }
+.story-price strong { font-family: var(--font-display); font-size: 2rem; }
+.story-confirm { min-height: 60px; font-size: 18px; }
+.story-confirm[aria-busy="true"] { animation: cm-pulse 1.4s ease-out infinite; }
+.story-notice { border: 0; border-radius: 20px; box-shadow: 0 0 0 1px var(--color-warning); }
+.booking-story .story-text-button { font-weight: 600; }
+
+@media (max-width: 480px) {
+  .story-ticket { --ticket-pad: 20px; }
+  .story-times { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .booking-story .story-barber.selected::after, .booking-story .story-service.selected::after { right: 12px; }
+}
+
+/* ============================================================
+   CONFIRMATION
+   ============================================================ */
+.success-view { position: relative; overflow: hidden; border: 0; border-radius: 28px; box-shadow: var(--shadow-raised); }
+.success-loader.done .loader-ring { border-width: .5rem; box-shadow: 0 0 0 10px var(--color-success-soft), 0 0 40px color-mix(in srgb, var(--color-success) 35%, transparent); }
+/* Confetti: two bursts of dots and squares fired from the check mark. */
+.success-loader.done::before, .success-loader.done::after { content: ""; position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; pointer-events: none; }
+.success-loader.done::before {
+  background: var(--color-secondary);
+  box-shadow: 0 -110px 0 var(--color-primary), 78px -78px 0 var(--color-secondary), 110px 0 0 var(--color-warning), 78px 78px 0 var(--color-primary), 0 110px 0 var(--color-secondary), -78px 78px 0 var(--color-warning), -110px 0 0 var(--color-primary), -78px -78px 0 var(--color-secondary);
+  animation: cm-burst 1.1s var(--ease-out) 120ms both;
+}
+.success-loader.done::after {
+  border-radius: 2px; background: var(--color-warning);
+  box-shadow: 0 -150px 0 var(--color-secondary), 106px -106px 0 var(--color-primary), 150px 0 0 var(--color-secondary), 106px 106px 0 var(--color-warning), 0 150px 0 var(--color-primary), -106px 106px 0 var(--color-secondary), -150px 0 0 var(--color-warning), -106px -106px 0 var(--color-primary);
+  animation: cm-burst 1.4s var(--ease-out) 220ms both;
+}
+.success-summary { border: 0; border-radius: 28px; box-shadow: 0 0 0 1px var(--color-border); }
+.success-summary h1 { font-family: var(--font-display); }
+.success-details span, .client-summary span { background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border); }
+
+/* ============================================================
+   SIGN-IN
+   ============================================================ */
+@keyframes cm-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes cm-spin { to { transform: rotate(360deg); } }
+@keyframes cm-ripple { 0% { transform: scale(.6); opacity: .55; } 100% { transform: scale(1.7); opacity: 0; } }
+
+.auth-shell { position: relative; isolation: isolate; }
+.auth-shell::before {
+  content: ""; position: fixed; inset: -12%; z-index: -1; pointer-events: none; will-change: transform;
+  background:
+    radial-gradient(42% 38% at 14% 10%, color-mix(in srgb, var(--color-primary-soft) 95%, transparent), transparent 70%),
+    radial-gradient(36% 34% at 90% 16%, color-mix(in srgb, var(--color-secondary-soft) 80%, transparent), transparent 72%),
+    radial-gradient(46% 40% at 50% 100%, color-mix(in srgb, var(--color-primary-soft) 70%, transparent), transparent 72%);
+  animation: cm-aurora 22s ease-in-out infinite alternate;
+}
+.auth-card {
+  border: 0; border-radius: 32px; background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+  box-shadow: var(--shadow-floating), 0 0 0 1px color-mix(in srgb, var(--color-border) 70%, transparent);
+  animation: cm-card-in var(--duration-slow) var(--ease-spring) backwards;
+}
+.auth-card::before { display: none; }
+.auth-logo { border: 0; border-radius: var(--radius-pill); background: var(--color-brand-black); box-shadow: var(--shadow-raised); animation: cm-float 5s ease-in-out infinite; }
+.auth-logo img { filter: none; opacity: 1; }
+.auth-brand p { font-family: var(--font-display); font-size: 1.05rem; }
+.auth-card h1 { font-family: var(--font-display); animation: cm-title-in var(--duration-slow) var(--ease-out) 120ms backwards; }
+.auth-hero .eyebrow { display: inline-flex; padding: 6px 12px; border-radius: var(--radius-pill); background: var(--color-primary-soft); color: var(--color-primary); font-weight: 700; animation: cm-card-in var(--duration-base) var(--ease-out) 60ms backwards; }
+.auth-copy { animation: cm-card-in var(--duration-slow) var(--ease-out) 220ms backwards; }
+.auth-benefits span {
+  border: 0; border-radius: var(--radius-pill); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border);
+  animation: cm-card-in var(--duration-slow) var(--ease-spring) backwards;
+}
+.auth-benefits span:nth-child(1) { animation-delay: 320ms; }
+.auth-benefits span:nth-child(2) { animation-delay: 420ms; }
+.auth-benefits span::before { content: "✓"; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--color-primary); color: var(--color-on-primary); font-size: 12px; font-weight: 700; box-shadow: none; }
+.google-login-button {
+  position: relative; overflow: hidden; min-height: 3.6rem; border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-active)); color: var(--color-on-primary); font-size: 1.02rem;
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--color-primary) 32%, transparent);
+  animation: cm-card-in var(--duration-slow) var(--ease-spring) 520ms backwards;
+  transition: var(--transition-interactive);
+}
+.google-login-button::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 38%; pointer-events: none; background: linear-gradient(90deg, transparent, rgb(255 255 255 / 26%), transparent); transform: translateX(-140%) skewX(-20deg); animation: cm-shine 5s var(--ease-in-out) infinite; }
+.google-login-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 16px 34px color-mix(in srgb, var(--color-primary) 40%, transparent); }
+.google-login-button:active:not(:disabled) { transform: scale(.97); }
+.google-login-button span { background: var(--color-surface); font-family: var(--font-ui); }
+.google-login-button[aria-busy="true"] { opacity: 1; cursor: wait; }
+.google-login-button[aria-busy="true"]::before { content: ""; position: absolute; inset: 0; border-radius: inherit; border: 3px solid rgb(255 255 255 / 55%); animation: cm-ripple 1.2s ease-out infinite; }
+.google-login-button:disabled::after { display: none; }
+.install-guide-trigger { border: 0; border-radius: 24px; box-shadow: 0 0 0 1px var(--color-border); animation: cm-card-in var(--duration-slow) var(--ease-out) 620ms backwards; }
+.install-guide-trigger:hover { box-shadow: 0 0 0 2px var(--color-primary); }
+.auth-error { padding: 12px 16px; border-radius: 20px; background: var(--color-error-soft); animation: cm-card-in var(--duration-base) var(--ease-out) backwards; }
+.salon-return { border: 0; border-radius: var(--radius-pill); box-shadow: 0 0 0 1px var(--color-border); font-weight: 600; transition: var(--transition-interactive); animation: cm-card-in var(--duration-base) var(--ease-out) backwards; }
+.salon-return:hover { background: var(--color-primary-soft); }
+/* Session check: a ring that spins around the logo mark. */
+.auth-loader { position: relative; border: 0; background: conic-gradient(from 0deg, var(--color-primary), color-mix(in srgb, var(--color-primary) 10%, transparent) 70%, var(--color-primary)); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px)); mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px)); animation: cm-spin 1s linear infinite; }
+
+/* ============================================================
+   MY VISITS
+   ============================================================ */
+.client-dashboard-heading h2 { font-family: var(--font-display); }
+.client-dashboard-heading > button { border: 0; border-radius: var(--radius-pill); background: var(--color-surface-secondary); transition: var(--transition-interactive); }
+.client-dashboard-heading > button:hover { background: var(--color-primary-soft); }
+.client-dashboard-heading > button:active { transform: scale(.95); }
+.client-visit-card, .client-visit-empty {
+  border: 0; border-radius: 28px; background: var(--color-surface);
+  box-shadow: var(--shadow-rest), 0 0 0 1px color-mix(in srgb, var(--color-border) 60%, transparent);
+  animation: cm-card-in var(--duration-slow) var(--ease-spring) backwards;
+}
+.client-visit-card { padding: 14px 16px 14px 14px; transition: var(--transition-interactive); }
+.client-visit-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-raised), 0 0 0 2px var(--color-primary); border-color: transparent; }
+.client-visit-card:active { transform: scale(.985); }
+.client-visit-date { border: 0; border-radius: 20px; background: linear-gradient(160deg, var(--color-primary), var(--color-primary-active)); color: var(--color-on-primary); box-shadow: 0 8px 18px color-mix(in srgb, var(--color-primary) 30%, transparent); }
+.client-visit-date strong { font-family: var(--font-display); }
+.client-visit-date span { color: color-mix(in srgb, var(--color-on-primary) 80%, transparent); letter-spacing: .06em; }
+.client-visit-content > em { display: inline-flex; width: fit-content; padding: 4px 10px; border-radius: var(--radius-pill); background: var(--color-primary-soft); }
+.client-visit-content strong { font-family: var(--font-display); font-size: 1.12rem; font-weight: 600; }
+.client-visit-meta i { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--color-primary); color: var(--color-on-primary); font-size: 1.3rem; transition: transform var(--duration-base) var(--ease-spring); }
+.client-visit-card:hover .client-visit-meta i { transform: translateX(4px); }
+.client-visit-barber-avatar { box-shadow: 0 0 0 2px var(--color-primary-soft); }
+.client-empty-icon { border: 0; border-radius: 20px; animation: cm-float 4.5s ease-in-out infinite; }
+.client-visit-card.editing { box-shadow: 0 0 0 2px var(--color-warning); }
+.client-visit-card.editing:hover { transform: none; box-shadow: 0 0 0 2px var(--color-warning); }
+.client-visit-card.editing button { border-radius: var(--radius-pill); background: var(--color-surface-secondary); }
+
+@media (max-width: 560px) {
+  .client-visit-card:not(.editing) .client-visit-meta { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: 2px; }
+}/* Status chips get a small dot. */
+.appointment-status { display: inline-flex; align-items: center; gap: 6px; }
+.appointment-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.appointment-status.rescheduled::before { animation: cm-glow 1.8s ease-in-out infinite; }
+
+/* Visit list and detail sheets (client only; the admin panel shares the base classes). */
+.client-modal-backdrop:has(.appointment-list-modal), .client-modal-backdrop:has(.appointment-detail-sheet) { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.appointment-list-modal, .appointment-detail-sheet { border-top: 0; border-radius: 32px 32px 0 0; }
+@media (min-width: 720px) { .appointment-list-modal, .appointment-detail-sheet { border-radius: 32px; } }
+.appointment-list-modal::before, .appointment-detail-sheet::before { width: 3rem; height: .3rem; background: var(--color-border-strong); }
+.appointment-list-modal .modal-title h2, .appointment-detail-sheet .modal-title h2 { font-family: var(--font-display); }
+.appointment-list-modal .modal-title .eyebrow, .appointment-detail-sheet .modal-title .eyebrow { display: inline-flex; width: fit-content; padding: 5px 12px; border-radius: var(--radius-pill); background: var(--color-primary-soft); color: var(--color-primary); font-weight: 700; }
+.client-appointment-option {
+  position: relative; border: 0; border-radius: 24px; padding: 14px 16px; background: var(--color-surface);
+  box-shadow: var(--shadow-rest), 0 0 0 1px color-mix(in srgb, var(--color-border) 60%, transparent);
+  animation: cm-card-in var(--duration-slow) var(--ease-spring) backwards;
+}
+.client-appointment-option:nth-child(2) { animation-delay: 60ms; } .client-appointment-option:nth-child(3) { animation-delay: 120ms; }
+.client-appointment-option:nth-child(4) { animation-delay: 180ms; } .client-appointment-option:nth-child(n+5) { animation-delay: 240ms; }
+.client-appointment-option:hover { border: 0; background: var(--color-primary-soft); box-shadow: var(--shadow-raised), 0 0 0 2px var(--color-primary); }
+.client-appointment-option strong { font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; }
+.client-appointment-option b { padding: 7px 14px; border-radius: var(--radius-pill); background: var(--color-primary-soft); color: var(--color-primary); }
+.client-appointment-option:hover b { background: var(--color-surface); }
+.appointment-detail-sheet .appointment-barber-row { border: 0; border-radius: 24px; background: var(--color-primary-soft); }
+.appointment-detail-sheet .appointment-barber-avatar { box-shadow: 0 0 0 3px var(--color-surface); }
+.appointment-detail-sheet .modal-details { gap: 8px; overflow: visible; border: 0; background: transparent; }
+.appointment-detail-sheet .modal-details span, .appointment-detail-sheet .modal-details span:nth-child(2n), .appointment-detail-sheet .modal-details span:nth-last-child(-n + 2) {
+  border: 0; border-radius: 20px; background: var(--color-surface-secondary); animation: cm-card-in var(--duration-slow) var(--ease-spring) backwards;
+}
+.appointment-detail-sheet .modal-details span:nth-child(1) { animation-delay: 80ms; } .appointment-detail-sheet .modal-details span:nth-child(2) { animation-delay: 130ms; }
+.appointment-detail-sheet .modal-details span:nth-child(3) { animation-delay: 180ms; } .appointment-detail-sheet .modal-details span:nth-child(4) { animation-delay: 230ms; }
+.appointment-detail-sheet .modal-details span:nth-child(5) { animation-delay: 280ms; grid-column: 1 / -1; }
+.appointment-detail-sheet .modal-details strong { font-family: var(--font-display); font-weight: 600; }
+.appointment-detail-sheet .modal-client-note { border-radius: 24px; }
+/* ---------- Less motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .salon-aurora, .salon-cover-photo img, .salon-gallery-feature .gallery-photo img, .salon-cta::after, .story-nearest::after,
+  .salon-cta-wrap::before, .salon-cover h1 em, .salon-home::before, .auth-shell::before, .auth-logo, .google-login-button::after, .google-login-button::before, .client-empty-icon, .appointment-status::before { animation: none !important; }
+  .salon-home::before { display: none; }
+  .salon-dock { transition: none; }
+  .success-loader.done::before, .success-loader.done::after { display: none; }
+}

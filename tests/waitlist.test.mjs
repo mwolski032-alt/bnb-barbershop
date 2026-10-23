@@ -7,8 +7,9 @@ import {
   advanceExpiredWaitlistOffers,
   consumeMatchingWaitlistEntry,
   hasBlockingWaitlistOffer,
-  offerAvailableWaitlistSlots,
+  notifyNewWaitlistDays,
   offerWaitlistSlot,
+  waitlistCoversDate,
   waitlistEntryMatchesSlot,
 } from "../shared/waitlist.mjs";
 
@@ -112,86 +113,109 @@ test("booking the offered slot consumes the matching waitlist entry", () => {
   assert.equal(database.waitlistEntries.offered, undefined);
 });
 
-test("worker discovers a free slot created by a new availability window", () => {
-  const database = {
-    team: { barbers: { mateusz: { userId: "barber-user", active: true } } },
-    barbers: {
-      mateusz: {
-        services: {
-          cut: {
-            id: "cut",
-            barberId: "mateusz",
-            name: "Strzyżenie",
-            price: "70 zł",
-            durationMinutes: 60,
-          },
-        },
-        workSettings: { availability: {} },
+const teamWithCut = (availability = {}) => ({
+  team: { barbers: { mateusz: { userId: "barber-user", active: true } } },
+  barbers: {
+    mateusz: {
+      services: {
+        cut: { id: "cut", barberId: "mateusz", name: "Strzyżenie", price: "70 zł", durationMinutes: 60 },
       },
+      workSettings: { availability },
     },
-    appointments: {},
-    waitlistEntries: { waiting: entry("waiting") },
-  };
-
-  const beforeAvailability = offerAvailableWaitlistSlots(database, { now });
-  assert.equal(beforeAvailability.offeredCount, 0);
-
-  database.barbers.mateusz.workSettings.availability["2026-08-24"] = {
-    id: "2026-08-24",
-    barberId: "mateusz",
-    dateKey: "2026-08-24",
-    startTime: "12:00",
-    endTime: "17:00",
-  };
-  const afterAvailability = offerAvailableWaitlistSlots(database, { now });
-
-  assert.equal(afterAvailability.offeredCount, 1);
-  assert.equal(database.waitlistEntries.waiting.status, "offered");
-  assert.equal(database.waitlistEntries.waiting.offer.startTime, "12:00");
-  assert.equal(
-    database.notificationOutbox[afterAvailability.notificationOperationIds[0]].event,
-    "waitlist_slot_open",
-  );
+  },
+  appointments: {},
+});
+const window = (dateKey, startTime = "12:00", endTime = "17:00") => ({
+  id: dateKey, barberId: "mateusz", dateKey, startTime, endTime,
 });
 
-test("availability scanner skips occupied and already offered time ranges", () => {
+test("chosen days narrow the wishes; an old entry with only a range still covers all its days", () => {
+  const picked = entry("picked", { dates: ["2026-08-25", "2026-08-27"] });
+  assert.equal(waitlistCoversDate(picked, "2026-08-25"), true);
+  assert.equal(waitlistCoversDate(picked, "2026-08-26"), false);
+  assert.equal(waitlistCoversDate(entry("range"), "2026-08-26"), true);
+  assert.equal(waitlistEntryMatchesSlot(picked, { ...slot, dateKey: "2026-08-26" }), false);
+  assert.equal(waitlistEntryMatchesSlot(picked, { ...slot, dateKey: "2026-08-27" }), true);
+  const database = { waitlistEntries: { picked } };
+  assert.deepEqual(consumeMatchingWaitlistEntry(database, { ...slot, dateKey: "2026-08-26" }, "user-picked"), []);
+  assert.deepEqual(consumeMatchingWaitlistEntry(database, { ...slot, dateKey: "2026-08-27" }, "user-picked"), ["picked"]);
+});
+
+test("a day the barber adds is announced once, to the waiting client, and nothing is held", () => {
   const database = {
-    team: { barbers: { mateusz: { userId: "barber-user", active: true } } },
-    barbers: {
-      mateusz: {
-        services: {
-          cut: {
-            id: "cut",
-            barberId: "mateusz",
-            name: "Strzyżenie",
-            price: "70 zł",
-            durationMinutes: 60,
-          },
-        },
-        workSettings: {
-          availability: {
-            "2026-08-24": {
-              id: "2026-08-24",
-              barberId: "mateusz",
-              dateKey: "2026-08-24",
-              startTime: "12:00",
-              endTime: "16:00",
-            },
-          },
-        },
-      },
-    },
-    appointments: {
-      occupied: { ...slot, startTime: "12:00", status: "confirmed" },
-    },
+    ...teamWithCut(),
+    waitlistEntries: { waiting: entry("waiting") },
+  };
+  // First pass: nothing is free, so there is nothing to record or announce.
+  assert.equal(notifyNewWaitlistDays(database, { now }).notifiedCount, 0);
+  assert.deepEqual(database.waitlistEntries.waiting.notifiedDates, []);
+
+  database.barbers.mateusz.workSettings.availability["2026-08-24"] = window("2026-08-24");
+  const result = notifyNewWaitlistDays(database, { now });
+
+  assert.equal(result.notifiedCount, 1);
+  const stored = database.waitlistEntries.waiting;
+  assert.equal(stored.status, "waiting");
+  assert.equal(stored.offer, undefined);
+  assert.equal(stored.version, 1);
+  assert.deepEqual(stored.notifiedDates, ["2026-08-24"]);
+  const job = database.notificationOutbox[result.notificationOperationIds[0]];
+  assert.equal(job.event, "waitlist_day_open");
+  const operation = database.appointmentOperations[result.notificationOperationIds[0]];
+  assert.equal(operation.action, "notify_waitlist_day");
+  assert.deepEqual(operation.appointment.newDates, ["2026-08-24"]);
+  assert.equal(operation.appointment.offerExpiresAt, undefined);
+  // Nobody else is blocked from booking it.
+  assert.equal(hasBlockingWaitlistOffer(database, { ...slot, startTime: "13:00" }, "someone-else", now), false);
+  // The same day is not announced again.
+  assert.equal(notifyNewWaitlistDays(database, { now }).notifiedCount, 0);
+});
+
+test("days that are free when the client signs up are recorded silently, not announced", () => {
+  const database = {
+    ...teamWithCut({ "2026-08-24": window("2026-08-24") }),
+    waitlistEntries: { fresh: entry("fresh") },
+  };
+  const first = notifyNewWaitlistDays(database, { now });
+  assert.equal(first.notifiedCount, 0);
+  assert.equal(first.changed, true);
+  assert.deepEqual(database.waitlistEntries.fresh.notifiedDates, ["2026-08-24"]);
+  database.barbers.mateusz.workSettings.availability["2026-08-26"] = window("2026-08-26");
+  assert.equal(notifyNewWaitlistDays(database, { now }).notifiedCount, 1);
+});
+
+test("several new days make one notification, and a day that filled up and reopens counts as new", () => {
+  const database = {
+    ...teamWithCut({ "2026-08-24": window("2026-08-24", "12:00", "13:00") }),
+    waitlistEntries: { waiting: entry("waiting", { dates: ["2026-08-24", "2026-08-25", "2026-08-26"], timePreference: "any" }) },
+  };
+  notifyNewWaitlistDays(database, { now });
+  database.barbers.mateusz.workSettings.availability["2026-08-25"] = window("2026-08-25");
+  database.barbers.mateusz.workSettings.availability["2026-08-26"] = window("2026-08-26");
+  const result = notifyNewWaitlistDays(database, { now });
+  assert.equal(result.notifiedCount, 1);
+  assert.deepEqual(
+    database.appointmentOperations[result.notificationOperationIds[0]].appointment.newDates,
+    ["2026-08-25", "2026-08-26"],
+  );
+
+  // The 25th fills up completely, then the barber widens the window: it is new again.
+  database.appointments.full = { ...slot, dateKey: "2026-08-25", startTime: "12:00", durationMinutes: 300, status: "confirmed" };
+  assert.equal(notifyNewWaitlistDays(database, { now }).notifiedCount, 0);
+  assert.deepEqual(database.waitlistEntries.waiting.notifiedDates, ["2026-08-24", "2026-08-26"]);
+  database.barbers.mateusz.workSettings.availability["2026-08-25"] = window("2026-08-25", "12:00", "20:00");
+  assert.equal(notifyNewWaitlistDays(database, { now }).notifiedCount, 1);
+});
+
+test("an entry that already holds an offer, or cools down after one, is left alone", () => {
+  const database = {
+    ...teamWithCut({ "2026-08-24": window("2026-08-24") }),
     waitlistEntries: {
-      first: entry("first", { createdAt: now - 1_000 }),
-      second: entry("second", { createdAt: now }),
+      offered: entry("offered", { status: "offered", offer: { ...slot, offeredAt: now, expiresAt: now + 1000 } }),
+      cooling: entry("cooling", { nextOfferAt: now + 60_000 }),
     },
   };
-  const result = offerAvailableWaitlistSlots(database, { now });
-
-  assert.equal(result.offeredCount, 2);
-  assert.equal(database.waitlistEntries.first.offer.startTime, "13:00");
-  assert.equal(database.waitlistEntries.second.offer.startTime, "14:00");
+  const result = notifyNewWaitlistDays(database, { now });
+  assert.equal(result.notifiedCount, 0);
+  assert.equal(result.changed, false);
 });

@@ -6,7 +6,7 @@ import { mutateScopedDatabase } from "./_scoped-database.mjs";
 import { processDueNotificationJobs } from "./_notification-service.mjs";
 import {
   advanceExpiredWaitlistOffers,
-  offerAvailableWaitlistSlots,
+  notifyNewWaitlistDays,
 } from "../../shared/waitlist.mjs";
 
 const advanceWaitlist = async (accessToken, now) => {
@@ -14,7 +14,8 @@ const advanceWaitlist = async (accessToken, now) => {
     accessToken,
     (database) => {
     const expired = advanceExpiredWaitlistOffers(database, now);
-    const available = offerAvailableWaitlistSlots(database, {
+    // Expired offers pass the held slot on (a cancellation). New availability only notifies: it holds nothing.
+    const available = notifyNewWaitlistDays(database, {
       now,
       excludedEntryIds: expired.expiredEntryIds,
     });
@@ -22,7 +23,7 @@ const advanceWaitlist = async (accessToken, now) => {
     const result = {
       changed,
       expiredCount: expired.expiredCount,
-      offeredCount: available.offeredCount,
+      notifiedCount: available.notifiedCount,
       notificationOperationIds: [
         ...expired.notificationOperationIds,
         ...available.notificationOperationIds,

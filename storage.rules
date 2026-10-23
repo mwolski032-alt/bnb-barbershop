@@ -1,0 +1,16 @@
+rules_version = '2';
+
+// Salon gallery photos are public to read. Browsers can never write: uploads and deletions
+// go through the owner-only Netlify function (/api/gallery-images) using the service account,
+// because Storage rules cannot look up the owner in the Realtime Database.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /shopfront/gallery/{imageId}/{file} {
+      allow read: if file.matches('(480|960|1600)\\.webp');
+      allow write: if false;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

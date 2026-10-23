@@ -5,9 +5,10 @@ export const databaseUrl =
   process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL ??
   "https://bnbbarber-9a7bd-default-rtdb.europe-west1.firebasedatabase.app";
 
-let cachedAccessToken = "";
-let cachedAccessTokenExpiresAt = 0;
-
+const databaseScope =
+  "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/firebase.messaging";
+// Tokens are cached per scope set.
+const cachedTokens = new Map();
 const adminSections = ["schedule", "clients", "analytics", "work", "services", "profile"];
 const noAdminAccess = Object.fromEntries(adminSections.map((section) => [section, false]));
 const fullAdminAccess = Object.fromEntries(adminSections.map((section) => [section, true]));
@@ -24,10 +25,9 @@ const base64Url = (value) =>
 
 const normalizePrivateKey = () => process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
 
-export const getAccessToken = async () => {
-  if (cachedAccessToken && Date.now() < cachedAccessTokenExpiresAt) {
-    return cachedAccessToken;
-  }
+const requestAccessToken = async (scope) => {
+  const cached = cachedTokens.get(scope);
+  if (cached && Date.now() < cached.expiresAt) return cached.token;
 
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = normalizePrivateKey();
@@ -40,8 +40,7 @@ export const getAccessToken = async () => {
   const claimSet = base64Url(
     JSON.stringify({
       iss: clientEmail,
-      scope:
-        "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/firebase.messaging",
+      scope,
       aud: "https://oauth2.googleapis.com/token",
       exp: now + 3600,
       iat: now,
@@ -68,12 +67,13 @@ export const getAccessToken = async () => {
   if (!response.ok) throw new Error(`OAuth token request failed: ${response.status}`);
 
   const value = await response.json();
-  cachedAccessToken = String(value.access_token ?? "");
-  cachedAccessTokenExpiresAt = Date.now() + 50 * 60 * 1000;
-  if (!cachedAccessToken) throw new Error("OAuth token response is empty.");
-  return cachedAccessToken;
+  const token = String(value.access_token ?? "");
+  if (!token) throw new Error("OAuth token response is empty.");
+  cachedTokens.set(scope, { token, expiresAt: Date.now() + 50 * 60 * 1000 });
+  return token;
 };
 
+export const getAccessToken = () => requestAccessToken(databaseScope);
 export const verifyRequestUser = async (request) => {
   const authorization = request.headers.get("authorization") ?? "";
   const idToken = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";

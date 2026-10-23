@@ -1,4 +1,40 @@
 /* B'n'B — paper, ink and traditional craft. The visual source of truth. */
+
+/* Self-hosted fonts (SIL Open Font License): Fraunces for headings, Geist for the interface.
+   Latin covers English text; latin-ext carries Polish letters (ą ć ę ł ń ó ś ź ż). */
+@font-face {
+  font-family: "Fraunces";
+  src: url("/fonts/fraunces-latin-ext.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Fraunces";
+  src: url("/fonts/fraunces-latin.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/geist-latin-ext.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/geist-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
   color-scheme: light;
   --color-background: #F6EBD7;
@@ -26,6 +62,10 @@
   --color-warning-soft: #F3E6CC;
   --color-error: #923C32;
   --color-error-soft: #F4E0D9;
+  /* Review stars and their celebration. Decorative: ratings are always also given as text. */
+  --color-star: #C8932A;
+  --color-star-bright: #E9B949;
+  --color-star-glow: rgb(233 185 73 / 48%);
   --color-category-mint: #35685A;
   --color-category-violet: #725271;
   --color-category-coral: #985642;
@@ -35,12 +75,76 @@
   --color-focus: rgb(1 66 65 / 24%);
   --color-shadow: rgb(72 49 21 / 8%);
   --color-on-primary: var(--color-surface);
-  --font-app: "Sitka Heading", Sitka, Georgia, serif;
+  --font-display: "Fraunces", "Sitka Heading", Georgia, serif;
+  --font-ui: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-app: var(--font-ui);
   --radius-control: 0.625rem;
   --radius-card: 1rem;
   --shadow-card: 0 4px 18px var(--color-shadow);
   --shadow-dialog: 0 12px 40px var(--color-shadow);
+
+  /* Radius scale: controls and small chips, cards and panels, dialogs and sheets, pills. */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius-pill: 999px;
+
+  /* Spacing scale (4px base). */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4.5rem;
+
+  /* Type scale. Sizes are fluid so headings breathe on desktop and stay compact on phones. */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: clamp(1.25rem, 1.1rem + 0.6vw, 1.5rem);
+  --text-2xl: clamp(1.5rem, 1.2rem + 1.2vw, 2rem);
+  --text-3xl: clamp(2rem, 1.4rem + 2.4vw, 3rem);
+  --leading-tight: 1.15;
+  --leading-snug: 1.35;
+  --leading-body: 1.55;
+  --tracking-overline: 0.08em;
+
+  /* Elevation: rest, raised (hover) and floating (dialogs, sheets). */
+  --shadow-rest: 0 1px 2px var(--color-shadow);
+  --shadow-raised: 0 8px 24px rgb(72 49 21 / 14%);
+  --shadow-floating: 0 20px 60px rgb(72 49 21 / 22%);
+
+  /* Motion: one vocabulary for every transition and animation. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --duration-instant: 90ms;
+  --duration-fast: 150ms;
+  --duration-base: 240ms;
+  --duration-slow: 420ms;
+  --transition-interactive: background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+
+  /* Layers. */
+  --z-sticky: 20;
+  --z-overlay: 60;
+  --z-toast: 80;
 }
 
-/* Local Sitka webfont integration instructions: public/fonts/README.md.
-   No unavailable URL is requested; installed Sitka and the serif fallback work now. */
+/* One switch for motion: durations collapse to zero for people who ask for less movement. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0ms;
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+  }
+}
+

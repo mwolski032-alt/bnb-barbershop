@@ -80,7 +80,7 @@ test("ships a static lightweight startup with an offline app shell", async () =>
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(
     serviceWorker,
-    /try \{[\s\S]*const networkResponse = await fetch\(request\)[\s\S]*catch \(error\)[\s\S]*cache\.match\(APP_SHELL_URL\)/,
+    /try \{[\s\S]*fetch\(request\)[\s\S]*SHELL_NETWORK_TIMEOUT_MS[\s\S]*catch \(error\)[\s\S]*cache\.match\(APP_SHELL_URL\)/,
   );
   assert.equal((await stat(new URL("../dist/client/index.html", import.meta.url))).size > 0, true);
 });
@@ -261,7 +261,7 @@ test("keeps the professional admin client directory and SMS workflow", async () 
 
   assert.match(bookingHome, /const getAdminClientId/);
   assert.match(bookingHome, /const adminClientProfiles = useMemo/);
-  assert.match(clientsScreen, /className="client-search"/);
+  assert.match(clientsScreen, /className="clients-base-search"/);
   assert.match(bookingHome, /Historia wizyt/);
   assert.match(bookingHome, /sms-composer-modal/);
   assert.match(bookingHome, /Otwórz aplikację SMS/);
@@ -292,7 +292,7 @@ test("keeps the client and admin waitlist workflow visible and actionable", asyn
   assert.match(appointmentsApi, /hasBlockingWaitlistOffer/);
   assert.match(notificationService, /waitlist_slot_open/);
   assert.match(worker, /advanceExpiredWaitlistOffers/);
-  assert.match(worker, /offerAvailableWaitlistSlots/);
+  assert.match(worker, /notifyNewWaitlistDays/);
   assert.match(styles, /\.waitlist-callout/);
   assert.match(styles, /\.admin-waitlist-row/);
   assert.match(styles, /\.admin-waitlist-book/);
@@ -366,7 +366,7 @@ test("keeps the scoped barber profile and centered client action", async () => {
   assert.match(bookingHome, /step === "admin"/);
   assert.match(bookingHome, /barbers\/\$\{activeBarberId\}\/profile/);
   assert.match(bookingHome, /adminSection === "profile"/);
-  assert.match(bookingHome, /resizeProfilePhoto/);
+  assert.match(bookingHome, /PhotoCropDialog/);
   assert.match(styles, /\.barber-profile-view/);
   assert.match(styles, /\.add-client-button span::before/);
   assert.match(styles, /translate\(-50%, -50%\)/);
@@ -386,7 +386,7 @@ test("keeps the mastered admin schedule and availability editor", async () => {
   assert.match(bookingHome, /openSelectedDayInWorkEditor/);
   assert.match(bookingHome, /beginAvailabilityEdit/);
   assert.match(bookingHome, /pendingAvailabilityRemovalKey/);
-  assert.match(settingsScreen, /istniejące dni zostaną zaktualizowane/);
+  assert.match(settingsScreen, /zapisane dni dostaną nowe godziny/);
   assert.match(styles, /@media \(max-width: 767px\)/);
   assert.match(styles, /\.mobile-agenda-actions/);
   assert.match(styles, /\.work-feedback\.success/);
@@ -439,14 +439,13 @@ test("moves the complete client directory into the shared appointments workspace
     /type AdminSection = Exclude<BarberAdminSection, "clients" \| "services"> \| "team"/,
   );
   assert.match(bookingHome, /<span>Klienci<\/span>/);
-  assert.match(clientsScreen, /className="client-search"/);
-  assert.match(clientsScreen, /className="client-filters"/);
-  assert.match(clientsScreen, /Aktywne wizyty/);
+  assert.match(clientsScreen, /className="clients-base-search"/);
+  assert.match(clientsScreen, /className="clients-base-filters"/);
   assert.match(bookingHome, /Historia wizyt/);
-  assert.match(clientsScreen, /Dodaj klienta/);
-  assert.match(clientsScreen, /canManageSchedule \? \([\s\S]*onBookClient/);
-  assert.match(clientsScreen, /href=\{`tel:\+48\$\{phoneDigits\}`\}/);
-  assert.match(clientsScreen, /href=\{`sms:\+48\$\{phoneDigits\}`\}/);
+  assert.match(clientsScreen, /Baza klientów/);
+  assert.match(clientsScreen, /onCreateClient/);
+  // The base only lists people; contact, booking and settling actions live in the client card and calendar sheet.
+  assert.doesNotMatch(clientsScreen, /tel:\+48|sms:\+48|onBookClient|onSettleAppointment|onOpenSms/);
   assert.match(bookingHome, /Usuń klienta/);
   assert.match(bookingHome, /isVisibleInClientDatabase/);
   assert.match(appointmentApi, /"delete_admin_client"/);
@@ -457,7 +456,8 @@ test("moves the complete client directory into the shared appointments workspace
   assert.match(bookingHome, /<MessageSquare className="sms-icon"/);
   assert.match(bookingHome, /<Mail className="email-icon"/);
   assert.match(bookingHome, /<Calendar className="small-calendar-icon"/);
-  assert.match(bookingHome, /<Clock className="workspace-tab-icon upcoming"/);
+  assert.match(bookingHome, /<Calendar className="workspace-tab-icon schedule"/);
+  assert.match(bookingHome, /mode="agenda"/);
   assert.doesNotMatch(styles, /\.phone-icon::/);
   assert.doesNotMatch(styles, /\.workspace-tab-icon\.upcoming::/);
   assert.doesNotMatch(styles, /\.clients-icon/);
@@ -471,7 +471,7 @@ test("moves the complete appointment workflow into the calendar", async () => {
     readFile(new URL("../shared/data-model.mjs", import.meta.url), "utf8"),
   ]);
 
-  assert.match(bookingHome, /Dodaj wizytę/);
+  assert.match(await readFile(new URL("../app/components/screens/admin-calendar-screen.tsx", import.meta.url), "utf8"), /Dodaj wizytę/);
   assert.match(bookingHome, /const renderCalendarAppointmentActions/);
   assert.match(bookingHome, /Potwierdź/);
   assert.match(bookingHome, /Rozlicz/);
@@ -532,8 +532,9 @@ test("merges days and services into one permission-aware work workspace", async 
   assert.match(bookingHome, /aria-label="Widok dni pracy i usług"/);
   assert.match(bookingHome, /<span>Dni<\/span>/);
   assert.match(bookingHome, /<span>Usługi<\/span>/);
-  assert.match(settingsScreen, /Dni dostępne dla klientów/);
-  assert.match(settingsScreen, /Usługi w aplikacji/);
+  assert.match(settingsScreen, /Kiedy pracujesz\?/);
+  assert.match(settingsScreen, /Twoje dostępne dni/);
+  assert.match(settingsScreen, /Jaka to usługa\?/);
   assert.doesNotMatch(bookingHome, /adminSection === "services"/);
   assert.doesNotMatch(bookingHome, /setAdminSection\("services"\)/);
   assert.match(styles, /\.work-workspace-panel\.active/);
@@ -589,8 +590,7 @@ test("keeps barber ownership and excludes the owner from appointment notificatio
   assert.doesNotMatch(bookingHome, /shouldRunDataMigration/);
   assert.match(appointmentApi, /next\.settlement = \{[\s\S]*amount/);
   assert.match(notifications, /barberId: string/);
-  assert.match(notificationService, /process\.env\.BARBER_MATEUSZ_EMAIL/);
-  assert.match(notificationService, /process\.env\.BARBER_KACPER_EMAIL/);
+  assert.doesNotMatch(notificationService, /api\.resend\.com|BARBER_MATEUSZ_EMAIL/);
   assert.doesNotMatch(notificationService, /process\.env\.ADMIN_EMAIL/);
   assert.match(notificationService, /String\(member\?\.userId \|\| ""\)/);
   assert.match(adminHelper, /readDatabase\("team\/owner", accessToken\)/);
@@ -682,7 +682,7 @@ test("keeps barber calendars scoped and client directory counters current", asyn
   assert.match(bookingHome, /new BroadcastChannel\("bnb-appointment-sync"\)/);
   assert.match(
     clientsScreen,
-    /Klienci\s*<small>\{directoryClients\.length\}<\/small>/,
+    /Klienci\s*<span>\{directoryClients\.length\}<\/span>/,
   );
 });
 
@@ -703,12 +703,10 @@ test("separates active visits from the client directory", async () => {
     bookingHome,
     /const calendarBookingClients = useMemo\(\(\) => \{[\s\S]*return adminClientProfiles\.filter/,
   );
-  assert.match(clientsScreen, /role="tablist" aria-label="Widok bazy klientów"/);
-  assert.match(clientsScreen, /Aktywne wizyty/);
-  assert.match(clientsScreen, /workspaceTab === "directory"/);
-  assert.match(styles, /\.client-workspace-tabs/);
-  assert.match(styles, /\.client-workspace-tab-icon/);
-  assert.match(clientsScreen, /<Calendar[\s\S]*className="client-workspace-tab-icon appointments"/);
+  assert.match(bookingHome, /clientWorkspaceTab: "directory"/);
+  assert.doesNotMatch(clientsScreen, /role="tablist"|Aktywne wizyty|workspaceTab\b/);
+  assert.match(clientsScreen, /className=\{`clients-base-row/);
+  assert.match(clientsScreen, /onClick=\{\(\) => onOpenClient\(client\.id\)\}/);
 });
 
 test("keeps the client barber selection and resilient profile photos", async () => {
@@ -722,7 +720,7 @@ test("keeps the client barber selection and resilient profile photos", async () 
   assert.match(profileAvatar, /function ProfileAvatar/);
   assert.match(profileAvatar, /referrerPolicy="no-referrer"/);
   assert.match(profileAvatar, /onError=\{\(\) => setFailedPhotoUrl/);
-  assert.match(bookingHome, /const sourceSize = Math\.min\(image\.naturalWidth, image\.naturalHeight\)/);
+  assert.match(bookingHome, /<PhotoCropDialog/); // profile photos are cropped by hand, see photo-crop.test.mjs
   assert.match(bookingHome, /className="client-barber-picker booking-scroll-target"/);
   assert.match(bookingHome, /<span>1<\/span> Barber/);
   assert.match(bookingHome, /const selectBookingBarber = \(barberId: string/);
@@ -802,6 +800,6 @@ test("shows content-shaped loading states and closes slow actions optimistically
 
 // Architectural assertions follow the modules extracted from the former monolith.
 async function readBookingModules() {
-  const paths = ["booking-home.tsx", "lib/booking-types.ts", "lib/booking-selectors.ts", "lib/analytics.ts", "hooks/use-client-directory.ts", "hooks/use-admin-calendar.ts", "hooks/use-barber-catalog.ts", "hooks/use-appointment-synchronization.ts"];
+  const paths = ["booking-home.tsx", "lib/booking-types.ts", "lib/booking-selectors.ts", "lib/analytics.ts", "hooks/use-client-directory.ts", "hooks/use-admin-calendar.ts", "hooks/use-barber-catalog.ts", "hooks/use-appointment-synchronization.ts", "lib/booking-labels.ts", "lib/booking-format.ts", "lib/calendar-export.ts", "lib/client-sms.ts", "lib/availability-helpers.ts", "lib/team-normalizers.ts", "lib/view-memory.ts", "lib/google-redirect.ts", "components/install-guide-dialog.tsx", "components/screens/auth-screen.tsx", "components/screens/success-screen.tsx"];
   return (await Promise.all(paths.map(path => readFile(new URL(`../app/${path}`, import.meta.url), "utf8")))).join("\n");
 }

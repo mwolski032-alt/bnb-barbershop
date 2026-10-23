@@ -35,7 +35,13 @@ test("gallery is public to read but only the active owner may add, reorder and d
     await assertFails(set(ref(db, path), photo));
   }
   const owner = databaseFor(ownerUid);
-  await assertFails(set(ref(owner, "shopfront/gallery/6"), photo));
+  // The gallery holds up to 20 photos (records 0 to 19) and may credit the barber who did the haircut.
+  await assertFails(set(ref(owner, "shopfront/gallery/20"), photo));
+  await assertSucceeds(set(ref(owner, "shopfront/gallery/19"), { ...photo, order: 19, barberId: "mateusz" }));
+  await assertFails(set(ref(owner, "shopfront/gallery/19"), { ...photo, order: 20 }));
+  await assertFails(set(ref(owner, "shopfront/gallery/19"), { ...photo, order: 19, barberId: "not a key/../" }));
+  await assertFails(set(ref(owner, "shopfront/gallery/19"), { ...photo, order: 19, barberId: 5 }));
+  await assertSucceeds(set(ref(owner, "shopfront/gallery/19"), null));
   await assertSucceeds(set(ref(owner, path), photo));
   await assertSucceeds(set(ref(owner, `${path}/order`), 1));
   await assertFails(set(ref(owner, `${path}/imageUrl`), "javascript:alert(1)"));
@@ -43,6 +49,19 @@ test("gallery is public to read but only the active owner may add, reorder and d
   await assertFails(set(ref(databaseFor(mateuszUid), path), null));
   await assertFails(set(ref(databaseFor(clientUid), `${path}/order`), 2));
   await assertSucceeds(set(ref(owner, path), null));
+});
+
+test("gallery records for stored photos accept only same-origin photo paths", async () => {
+  const owner = databaseFor(ownerUid);
+  const id = "123e4567-e89b-42d3-a456-426614174000";
+  const bucketUrl = `/api/gallery-image/${id}/1600.webp`;
+  const photo = { id, imageUrl: bucketUrl, alt: "Salon", order: 0, storage: true, width: 1600, height: 1067, blur: "data:image/webp;base64,AAAA" };
+  await assertSucceeds(set(ref(owner, "shopfront/gallery/0"), photo));
+  await assertFails(set(ref(owner, "shopfront/gallery/0/imageUrl"), "https://evil.example/x.webp"));
+  await assertFails(set(ref(owner, "shopfront/gallery/0/imageUrl"), `//evil.example${bucketUrl}`));
+  await assertFails(set(ref(owner, "shopfront/gallery/0/blur"), "javascript:alert(1)"));
+  await assertFails(set(ref(databaseFor(clientUid), "shopfront/gallery/0"), photo));
+  await assertSucceeds(set(ref(owner, "shopfront/gallery/0"), null));
 });
 
 test("diagnostic reports cannot be read or forged through the public Firebase client", async () => {

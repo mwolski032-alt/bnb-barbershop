@@ -21,6 +21,8 @@ export const notificationEventByAction = {
   cancel_admin: "admin_cancelled",
   join_waitlist: "waitlist_joined",
   notify_waitlist: "waitlist_slot_open",
+  notify_waitlist_day: "waitlist_day_open",
+  settle_admin: "visit_settled",
 };
 
 const MAX_ATTEMPTS = 6;
@@ -33,6 +35,9 @@ const waitlistTimePreferenceLabels = {
   afternoon: "po południu, 12:00–17:00",
   evening: "wieczorem, od 17:00",
 };
+
+const weekdayName = (dateKey) =>
+  new Intl.DateTimeFormat("pl-PL", { weekday: "long", timeZone: "UTC" }).format(new Date(`${dateKey}T12:00:00Z`));
 
 const formatDateKey = (value) => {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -93,34 +98,27 @@ const eventCopy = {
     target: "barber",
     title: "Nowa wizyta",
     body: (appointment) => `${appointment.clientName} zarezerwował: ${appointment.serviceName}.`,
-    barberEmail: true,
     clientTitle: "Wizyta potwierdzona",
     clientBody: (appointment) => `${appointment.serviceName}: ${appointment.dateKey}, ${appointment.startTime}.`,
-    clientEmail: true,
   },
   client_rescheduled: {
     target: "barber",
     title: "Klient przesunął wizytę",
     body: (appointment) => `${appointment.clientName}: ${appointment.dateKey}, ${appointment.startTime}.`,
-    barberEmail: true,
     clientTitle: "Termin wizyty zmieniony",
     clientBody: (appointment) => `${appointment.serviceName}: ${appointment.dateKey}, ${appointment.startTime}.`,
-    clientEmail: true,
   },
   client_confirmed: {
     target: "barber",
     title: "Klient potwierdził nowy termin",
     body: (appointment) => `${appointment.clientName}: ${appointment.dateKey}, ${appointment.startTime}.`,
-    barberEmail: true,
     clientTitle: "Nowy termin potwierdzony",
     clientBody: (appointment) => `${appointment.serviceName}: ${appointment.dateKey}, ${appointment.startTime}.`,
-    clientEmail: true,
   },
   client_cancelled: {
     target: "barber",
     title: "Klient odwołał wizytę",
     body: (appointment) => `${appointment.clientName} odwołał: ${appointment.serviceName}.`,
-    barberEmail: true,
     clientTitle: "Wizyta odwołana",
     clientBody: (appointment) => `${appointment.serviceName}: ${appointment.dateKey}, ${appointment.startTime}.`,
   },
@@ -128,25 +126,21 @@ const eventCopy = {
     target: "client",
     title: "Wizyta została przesunięta",
     body: (appointment) => `Nowy termin: ${appointment.dateKey}, ${appointment.startTime}.`,
-    clientEmail: true,
   },
   admin_confirmed: {
     target: "client",
     title: "Nowy termin został potwierdzony",
     body: (appointment) => `${appointment.serviceName}: ${appointment.dateKey}, ${appointment.startTime}.`,
-    clientEmail: true,
   },
   admin_cancelled: {
     target: "client",
     title: "Wizyta została odwołana",
     body: (appointment) => `${appointment.serviceName} została odwołana przez barbera.`,
-    clientEmail: true,
   },
   admin_appointment_updated: {
     target: "client",
     title: appointmentUpdateTitle,
     body: appointmentUpdateBody,
-    clientEmail: true,
   },
   waitlist_joined: {
     target: "barber",
@@ -154,7 +148,6 @@ const eventCopy = {
     title: "Nowy zapis na listę rezerwową",
     body: (appointment) =>
       `${appointment.clientName} chce umówić: ${appointment.serviceName}. Termin: ${waitlistDateRange(appointment)}, ${waitlistPreferenceLabel(appointment)}.`,
-    barberEmail: true,
   },
   waitlist_slot_open: {
     target: "client",
@@ -164,7 +157,28 @@ const eventCopy = {
     clientTitle: "Zwolnił się termin z listy rezerwowej",
     clientBody: (appointment) =>
       `${appointment.serviceName}: ${appointment.dateKey}, ${appointment.startTime}. Zarezerwuj w ciągu 10 minut.`,
-    clientEmail: true,
+  },
+  // Sent to the client right after the barber settles a visit. Opens the visit, where the review form is.
+  visit_settled: {
+    target: "client",
+    title: (appointment) =>
+      appointment.barberName ? `Jak było u ${appointment.barberName}?` : "Jak było na wizycie?",
+    body: (appointment) =>
+      `Dziękujemy za wizytę: ${appointment.serviceName}. Zostaw krótką opinię, zajmie to chwilę ⭐`,
+  },
+  // New free days the barber added. Nothing is held: everyone can book them, the client is just told first.
+  waitlist_day_open: {
+    target: "client",
+    title: (appointment) =>
+      appointment.barberName ? `${appointment.barberName} dodał nowe terminy` : "Pojawiły się nowe terminy",
+    body: (appointment) => {
+      const dates = Array.isArray(appointment.newDates) && appointment.newDates.length > 0 ? appointment.newDates : [appointment.dateKey];
+      const label = (dateKey) => `${weekdayName(dateKey)} ${formatDateKey(dateKey).slice(0, 5)}`;
+      const days = dates.length === 1
+        ? label(dates[0])
+        : `${dates.slice(0, 3).map(label).join(", ")}${dates.length > 3 ? ` i ${dates.length - 3} więcej` : ""}`;
+      return `${appointment.serviceName}: ${days}. Termin czeka na Ciebie na liście rezerwowej. Zarezerwuj, zanim zajmie go ktoś inny.`;
+    },
   },
   test_push: {
     target: "client",
@@ -175,81 +189,9 @@ const eventCopy = {
 
 const safeKey = (value) => String(value).replace(/[.#$\[\]/]/g, "_");
 const errorMessage = (error) => error instanceof Error ? error.message : "Unknown notification error.";
-const barberFallbackEmail = (barberId) => {
-  if (barberId === "mateusz") return process.env.BARBER_MATEUSZ_EMAIL || "";
-  if (barberId === "kacper") return process.env.BARBER_KACPER_EMAIL || "";
-  return "";
-};
-
 export const resolveNotificationSiteUrl = (request) => {
   const configured = process.env.URL || process.env.DEPLOY_PRIME_URL;
   return configured || new URL(request.url).origin;
-};
-
-const escapeHtml = (value) => String(value ?? "")
-  .replaceAll("&", "&amp;")
-  .replaceAll("<", "&lt;")
-  .replaceAll(">", "&gt;")
-  .replaceAll('"', "&quot;");
-
-const renderAppointmentEmail = (title, body, appointment, actionUrl = "") => `
-  <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111827;">
-    <h2 style="margin: 0 0 12px;">${escapeHtml(title)}</h2>
-    <p>${escapeHtml(body)}</p>
-    <table style="border-collapse: collapse; margin-top: 16px;">
-      <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Klient</td><td>${escapeHtml(appointment.clientName)}</td></tr>
-      <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Barber</td><td>${escapeHtml(appointment.barberName || appointment.barberId)}</td></tr>
-      <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Telefon</td><td>${escapeHtml(appointment.phone || "brak")}</td></tr>
-      <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Usługa</td><td>${escapeHtml(appointment.serviceName)}</td></tr>
-      <tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Termin</td><td>${escapeHtml(
-        appointment.waitlistId && appointment.dateFrom
-          ? `${waitlistDateRange(appointment)}, ${waitlistPreferenceLabel(appointment)}`
-          : `${appointment.dateKey} ${appointment.startTime}`,
-      )}</td></tr>
-    </table>
-    ${actionUrl ? `<p style="margin-top: 20px;"><a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:#111827;color:#ffffff;text-decoration:none;font-weight:700;">Zarezerwuj termin</a></p>` : ""}
-  </div>
-`;
-
-const sendResendEmail = async ({ to, subject, text, html, idempotencyKey }) => {
-  if (!to) return { status: "skipped", error: "" };
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM_EMAIL;
-  if (!apiKey || !from) return { status: "failed", error: "Missing Resend configuration." };
-
-  const payload = {
-    from,
-    to,
-    subject,
-    text,
-    html,
-    headers: {
-      Importance: "high",
-      Priority: "urgent",
-      "X-Priority": "1",
-      "X-MSMail-Priority": "High",
-    },
-  };
-  if (process.env.RESEND_REPLY_TO) payload.reply_to = process.env.RESEND_REPLY_TO;
-
-  try {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "Idempotency-Key": idempotencyKey,
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!response.ok) {
-      return { status: "failed", error: (await response.text()) || `Resend error ${response.status}` };
-    }
-    return { status: "delivered", error: "", deliveredAt: Date.now() };
-  } catch (error) {
-    return { status: "failed", error: errorMessage(error) };
-  }
 };
 
 const readFcmErrorCode = (value) => {
@@ -274,6 +216,12 @@ const buildNotificationLink = (siteUrl, appointment, event) => {
   if (event === "waitlist_joined" && appointment.waitlistId) {
     link.searchParams.set("waitlist", appointment.waitlistId);
     link.searchParams.set("barber", appointment.barberId);
+  } else if (event === "waitlist_day_open" && appointment.waitlistId) {
+    // Opens the booking on that very day, with the barber and the service already chosen.
+    link.searchParams.set("waitlist", appointment.waitlistId);
+    link.searchParams.set("barber", appointment.barberId);
+    link.searchParams.set("service", appointment.serviceId);
+    link.searchParams.set("date", appointment.dateKey);
   } else if (event === "waitlist_slot_open" && appointment.waitlistId) {
     link.searchParams.set("waitlist", appointment.waitlistId);
     link.searchParams.set("barber", appointment.barberId);
@@ -286,10 +234,10 @@ const buildNotificationLink = (siteUrl, appointment, event) => {
   return link;
 };
 
-const sendToDevice = async (accessToken, device, notification, appointment, event, siteUrl) => {
+const sendToDevice = async (accessToken, device, notification, appointment, event, siteUrl, linkOverride, extraData = {}) => {
   const projectId = process.env.FIREBASE_PROJECT_ID;
   if (!projectId) return { status: "failed", error: "Missing FIREBASE_PROJECT_ID.", errorCode: "" };
-  const link = buildNotificationLink(siteUrl, appointment, event);
+  const link = linkOverride ? new URL(linkOverride) : buildNotificationLink(siteUrl, appointment, event);
 
   try {
     const response = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
@@ -306,6 +254,7 @@ const sendToDevice = async (accessToken, device, notification, appointment, even
             body: notification.body,
             link: link.href,
             tag: `appointment-${appointment.id}-${event}`,
+            ...extraData,
           },
           webpush: {
             headers: { Urgency: "high", TTL: "86400" },
@@ -370,9 +319,6 @@ const readDeliveryContext = async (accessToken, appointment, copy) => {
       active: member?.active === true,
       userId: barberUid,
       name: String(member?.name || ""),
-      email: member?.active === true
-        ? String(member?.email || barberFallbackEmail(appointment.barberId)).trim().toLowerCase()
-        : "",
     },
   };
 };
@@ -473,6 +419,7 @@ const processClaimedJob = async (accessToken, job, siteUrl) => {
   }
 
   const context = await readDeliveryContext(accessToken, appointment, copy);
+  const appointmentWithBarber = { ...appointment, barberName: context.barber.name };
   const devices = collectTargetDevices({ ...context, appointment, copy });
   const previous = job.deliveries ?? {};
   const deviceDeliveries = { ...(previous.devices ?? {}) };
@@ -484,7 +431,7 @@ const processClaimedJob = async (accessToken, job, siteUrl) => {
     const result = await sendToDevice(
       accessToken,
       device,
-      audienceNotification(copy, appointment, device.audience),
+      audienceNotification(copy, appointmentWithBarber, device.audience),
       appointment,
       job.event,
       siteUrl,
@@ -510,62 +457,10 @@ const processClaimedJob = async (accessToken, job, siteUrl) => {
     return result;
   }));
 
-  const appointmentWithBarber = { ...appointment, barberName: context.barber.name };
-  const waitlistActionUrl = job.event === "waitlist_slot_open"
-    ? buildNotificationLink(siteUrl, appointmentWithBarber, job.event).href
-    : "";
-  const emailDeliveries = { ...(previous.emails ?? {}) };
-  const emailTasks = [];
-  if (
-    copy.barberEmail &&
-    !["delivered", "skipped"].includes(emailDeliveries.barber?.status)
-  ) {
-    const title = resolveCopy(copy.title, appointmentWithBarber);
-    const body = resolveCopy(copy.body, appointmentWithBarber);
-    emailTasks.push(sendResendEmail({
-      to: context.barber.email,
-      subject: `PILNE BNB: ${title}`,
-      text: body,
-      html: renderAppointmentEmail(title, body, appointmentWithBarber),
-      idempotencyKey: `bnb-${job.operationId}-barber`,
-    }).then(async (result) => {
-      emailDeliveries.barber = { ...result, lastAttemptAt: Date.now() };
-      await patchDatabase(
-        `notificationOutbox/${encodeURIComponent(job.operationId)}/deliveries/emails/barber`,
-        emailDeliveries.barber,
-        accessToken,
-      ).catch(() => undefined);
-      return result;
-    }));
-  }
-  if (
-    copy.clientEmail &&
-    appointment.userId !== context.ownerUid &&
-    !["delivered", "skipped"].includes(emailDeliveries.client?.status)
-  ) {
-    const title = resolveCopy(copy.clientTitle || copy.title, appointmentWithBarber);
-    const body = resolveCopy(copy.clientBody || copy.body, appointmentWithBarber);
-    emailTasks.push(sendResendEmail({
-      to: appointment.clientEmail,
-      subject: `BNB Barbershop: ${title}`,
-      text: body,
-      html: renderAppointmentEmail(title, body, appointmentWithBarber, waitlistActionUrl),
-      idempotencyKey: `bnb-${job.operationId}-client`,
-    }).then(async (result) => {
-      emailDeliveries.client = { ...result, lastAttemptAt: Date.now() };
-      await patchDatabase(
-        `notificationOutbox/${encodeURIComponent(job.operationId)}/deliveries/emails/client`,
-        emailDeliveries.client,
-        accessToken,
-      ).catch(() => undefined);
-      return result;
-    }));
-  }
-  const emailResults = await Promise.all(emailTasks);
-  const failed = [...deviceResults, ...emailResults].filter((result) => result.status === "failed");
+  const failed = deviceResults.filter((result) => result.status === "failed");
   const invalid = deviceResults.filter((result) => result.status === "invalid");
-  const delivered = [...deviceResults, ...emailResults].filter((result) => result.status === "delivered");
-  const deliveries = { devices: deviceDeliveries, emails: emailDeliveries };
+  const delivered = deviceResults.filter((result) => result.status === "delivered");
+  const deliveries = { devices: deviceDeliveries };
 
   if (failed.length === 0) {
     return finishJob(accessToken, job, {
@@ -667,6 +562,40 @@ export const processDueNotificationJobs = async (options = {}) => {
     retrying: results.filter((result) => result.state === "retry").length,
     exhausted: results.filter((result) => result.state === "exhausted").length,
     results,
+  };
+};
+
+// A push that is not tied to a visit (the evening summary). Returns how many devices received it,
+// so the caller can retry later when none did.
+export const sendDirectPush = async ({ accessToken, uid, title, body, tag, siteUrl, event = "daily_summary", query, data }) => {
+  const [tokensForUser, owner] = await Promise.all([
+    readDatabase(`notificationTokens/${encodeURIComponent(uid)}`, accessToken),
+    readDatabase("team/owner", accessToken),
+  ]);
+  if (!uid || uid === owner?.userId) return { targets: 0, sent: 0, failed: 0 };
+  const devices = Object.entries(tokensForUser ?? {})
+    .filter(([, device]) => device?.token && device.active !== false)
+    .map(([deviceKey, device]) => ({ uid, deviceKey, token: device.token }));
+  // With `query` the link carries ?event=...&<query>. Without it the app opens where the user left off.
+  const link = new URL(siteUrl);
+  if (query) {
+    link.searchParams.set("event", event);
+    for (const [key, value] of Object.entries(query)) link.searchParams.set(key, value);
+  }
+  const results = await Promise.all(devices.map((device) => sendToDevice(
+    accessToken,
+    device,
+    { title, body },
+    { id: tag, lastOperationId: "" },
+    event,
+    siteUrl,
+    link.href,
+    data,
+  )));
+  return {
+    targets: devices.length,
+    sent: results.filter((result) => result.status === "delivered").length,
+    failed: results.filter((result) => result.status === "failed").length,
   };
 };
 

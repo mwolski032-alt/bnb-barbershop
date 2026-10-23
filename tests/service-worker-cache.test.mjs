@@ -29,8 +29,12 @@ function harness() {
     keys: async () => [...stores.keys()],
     delete: async name => stores.delete(name),
   };
+  const timers = new Map();
+  let timerId = 0;
   vm.runInNewContext(source, {
     URL, Set, Promise, caches, fetch: (...args) => fetcher(...args),
+    setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
+    clearTimeout: id => { timers.delete(id); },
     importScripts: () => { throw new Error("offline Firebase import"); },
     self: { location: { origin }, addEventListener: (event, listener) => handlers.set(event, listener),
       skipWaiting: async () => undefined, clients: { claim: async () => undefined } },
@@ -39,6 +43,7 @@ function harness() {
     stores, caches,
     fetch: callback => { fetcher = callback; },
     quota: () => { failPut = true; },
+    expireTimers: () => { for (const [id, callback] of [...timers]) { timers.delete(id); callback(); } },
     async lifecycle(type) { let pending; handlers.get(type)({ waitUntil: promise => { pending = promise; } }); await pending; },
     navigate(path = "/", destination = "document") {
       let pending;
@@ -76,6 +81,27 @@ test("offline navigation refuses a poisoned shell even if a cache entry already 
   await cache.put("/", html("<html>Login</html>"));
   h.fetch(async () => { throw new Error("offline"); });
   await assert.rejects(h.navigate());
+});
+
+test("a slow network serves the verified cached shell instead of leaving a blank screen", async () => {
+  const h = harness();
+  await h.navigate();
+  h.fetch(() => new Promise(() => undefined));
+  const pending = h.navigate();
+  await new Promise(resolve => setImmediate(resolve));
+  h.expireTimers();
+  assert.equal(await (await pending).text(), shell);
+});
+
+test("a slow network without a cached shell keeps waiting for the network", async () => {
+  const h = harness();
+  let release;
+  h.fetch(() => new Promise(resolve => { release = () => resolve(html()); }));
+  const pending = h.navigate();
+  await new Promise(resolve => setImmediate(resolve));
+  h.expireTimers();
+  release();
+  assert.equal(await (await pending).text(), shell);
 });
 
 test("activation removes old BNB caches but leaves unrelated caches alone", async () => {

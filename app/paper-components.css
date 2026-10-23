@@ -3,6 +3,13 @@ html, body { background: var(--color-background); color: var(--color-text); }
 body, button, input, select, textarea, option, optgroup, output {
   font-family: var(--font-app);
 }
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+body { font-variant-numeric: tabular-nums; text-rendering: optimizeLegibility; }
 input::placeholder, textarea::placeholder { font-family: inherit; color: var(--color-text-muted); opacity: 1; }
 button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 button, input, select, textarea { accent-color: var(--color-primary); }
@@ -162,16 +169,68 @@ input:focus, select:focus, textarea:focus { border-color: var(--color-primary); 
   border-bottom-color: var(--color-primary);
   border-left-color: var(--color-primary);
 }
-:is(.calendar-save-button, .client-appointment-modal .modal-calendar-button) {
-  border: 1px solid var(--color-primary);
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
+/* Waitlist: the way in (a real button with a bell) and the form that reuses the barber's day picker. */
+.booking-story .story-waitlist {
+  position: relative; overflow: hidden; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .75rem 1rem; align-items: center;
+  width: 100%; margin-top: 1rem; padding: 1.1rem; text-align: left;
+  border: 1.5px solid var(--color-primary); border-radius: var(--radius-control, 1rem);
+  background: var(--color-surface); color: var(--color-primary); cursor: pointer;
+  transition: transform var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out), background-color var(--duration-base) var(--ease-out);
 }
-.calendar-save-button span,
-.calendar-save-button span::after {
-  border-color: var(--color-primary);
+.booking-story .story-waitlist:hover:not(:disabled) { transform: translateY(-2px); box-shadow: var(--shadow-raised); background: var(--color-primary-soft); }
+.booking-story .story-waitlist:active:not(:disabled) { transform: scale(.985); }
+.booking-story .story-waitlist:disabled { opacity: .5; cursor: default; }
+.story-waitlist-bell { position: relative; display: grid; place-items: center; width: 3.4rem; height: 3.4rem; border-radius: 50%; background: var(--color-primary); color: var(--color-on-primary); }
+.story-waitlist-bell svg { width: 1.6rem; height: 1.6rem; }
+.story-waitlist-bell i { position: absolute; width: .4rem; height: .4rem; border-radius: 50%; background: var(--color-star-bright); opacity: 0; }
+.story-waitlist-bell i:nth-of-type(1) { top: -.1rem; right: .1rem; }
+.story-waitlist-bell i:nth-of-type(2) { bottom: .2rem; left: -.25rem; }
+.story-waitlist-bell i:nth-of-type(3) { top: .5rem; right: -.35rem; width: .3rem; height: .3rem; }
+.story-waitlist-copy { display: grid; gap: .15rem; min-width: 0; }
+.story-waitlist-copy small { color: var(--color-text-secondary); font-size: .8125rem; }
+.story-waitlist-copy strong { font-family: var(--font-display); font-size: 1.35rem; font-weight: 500; line-height: 1.15; }
+.story-waitlist-copy em { color: var(--color-text-secondary); font-size: .875rem; font-style: normal; line-height: 1.45; }
+.story-waitlist-go { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: .5rem; min-height: 2.9rem; border-radius: 999px; background: var(--color-primary); color: var(--color-on-primary); font-weight: 700; }
+.story-waitlist-go svg { width: 1.15rem; transition: transform var(--duration-base) var(--ease-out); }
+.story-waitlist:hover:not(:disabled) .story-waitlist-go svg { transform: translateX(4px); }
+.story-waitlist::after { content: ""; position: absolute; inset: 0; pointer-events: none; transform: translateX(-120%); background: linear-gradient(105deg, transparent 35%, var(--color-star-glow) 50%, transparent 65%); opacity: .5; }
+.waitlist-modal-lead { margin: .85rem 0 0; color: var(--color-text-secondary); font-size: .875rem; line-height: 1.55; }
+.waitlist-planner { display: grid; gap: .2rem; padding: 1rem; }
+.waitlist-planner .wk-block:first-child { border-top: 0; padding-top: .2rem; }
+.work-preset-grid.wk-presets-four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.waitlist-planner .waitlist-contact-fields { grid-template-columns: 1fr; }
+.waitlist-planner .waitlist-contact-fields input { background: var(--color-surface); }
+
+/* "Dodaj do kalendarza": a full-width pill, clear enough to find and big enough to hit with a thumb. */
+.calendar-add-button {
+  display: flex; align-items: center; justify-content: center; gap: 0.6rem;
+  width: 100%; min-height: 3.25rem; margin-top: 1rem; padding: 0 1.25rem;
+  border: 1px solid var(--color-primary); border-radius: 999px;
+  background: var(--color-primary-soft); color: var(--color-primary);
+  font: inherit; font-size: 1rem; font-weight: 700; cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
 }
-.calendar-save-button span::before { background: var(--color-primary); }
+.calendar-add-button svg { width: 1.3rem; height: 1.3rem; flex: 0 0 auto; }
+.calendar-add-button:hover:not(:disabled) { background: var(--color-primary); color: var(--color-on-primary); }
+.calendar-add-button:active:not(:disabled) { transform: scale(.98); }
+.calendar-add-button:disabled { cursor: not-allowed; opacity: 0.42; }
+.success-summary .calendar-add-button { margin-top: 1.25rem; }
+.calendar-change-link { display: block; width: 100%; min-height: 2.75rem; margin-top: .25rem; padding: 0; border: 0; background: transparent; color: var(--color-text-secondary); font: inherit; font-size: .8125rem; text-decoration: underline; cursor: pointer; }
+/* The calendar chooser: a sheet at the bottom of the screen on phones, a card on larger screens. */
+@media (max-width: 700px) {
+  .salon-dialog.calendar-sheet { width: 100%; max-width: 100%; margin: auto 0 0; border-width: 1px 0 0; border-radius: 1.6rem 1.6rem 0 0; }
+  .salon-dialog.calendar-sheet .salon-dialog-content { padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); }
+}
+.calendar-sheet h2 { margin: 0 2.6rem .35rem 0; font-size: 1.6rem; }
+.calendar-sheet-lead { margin: 0 0 1rem; color: var(--color-text-secondary); line-height: 1.5; }
+.calendar-sheet-list { display: grid; gap: .6rem; margin: 0; padding: 0; list-style: none; }
+.calendar-sheet-list button { display: grid; gap: .1rem; width: 100%; min-height: 3.6rem; padding: .7rem 1.1rem; border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface); color: var(--color-text); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out); }
+.calendar-sheet-list button:hover { border-color: var(--color-primary); background: var(--color-primary-soft); }
+.calendar-sheet-list button:active { transform: scale(.98); }
+.calendar-sheet-list strong { font-size: 1.05rem; font-weight: 600; color: var(--color-primary); }
+.calendar-sheet-list small { font-size: .8125rem; color: var(--color-text-secondary); }
+.calendar-sheet-remember { display: flex; align-items: center; gap: .75rem; min-height: 3rem; margin-top: .75rem; cursor: pointer; }
+.calendar-sheet-remember input { width: 1.4rem; height: 1.4rem; accent-color: var(--color-primary); }
 
 /* Work and service controls are outlined before selection and filled afterwards. */
 :is(.work-week-strip button, .work-preset-grid button,
@@ -269,3 +328,51 @@ button[aria-busy="true"] { cursor: progress; }
   .auth-shell { padding: .75rem; }
   .auth-card h1 { font-size: clamp(2.1rem, 9vw, 3rem); }
 }
+/* Work days and services share one guided, three-step layout. */
+.wk-block { display: grid; gap: .6rem; padding: .85rem; border: 1px solid var(--color-border); border-radius: 1.1rem; background: var(--color-surface-secondary); }
+.wk-step-title { display: flex; align-items: center; gap: .55rem; margin: 0; color: var(--color-text); font-size: 1rem; }
+.wk-step-title b { display: inline-grid; place-items: center; flex: 0 0 auto; width: 1.75rem; height: 1.75rem; border-radius: 50%; background: var(--color-primary); color: var(--color-on-primary); font-size: .875rem; }
+.wk-help { margin: 0; color: var(--color-text-secondary); font-size: .8125rem; font-weight: 700; line-height: 1.4; }
+.wk-label { margin: .35rem 0 0; color: var(--color-text-secondary); font-size: .75rem; font-weight: 700; }
+.wk-hint { color: var(--color-warning); font-size: .8125rem; font-weight: 700; }
+.wk-month-nav { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem; align-items: center; gap: .5rem; }
+.wk-month-nav strong { color: var(--color-text); font-size: 1rem; text-align: center; text-transform: capitalize; }
+.wk-month-nav button { min-height: 2.75rem; border: 1px solid var(--color-primary); border-radius: 999px; background: var(--color-surface); color: var(--color-primary); cursor: pointer; font-size: 1.4rem; line-height: 1; }
+.wk-chips { display: flex; flex-wrap: wrap; gap: .45rem; }
+.wk-chips button, .wk-weekdays button { min-height: 2.75rem; padding: 0 .9rem; border: 1px solid var(--color-primary); border-radius: 999px; background: var(--color-surface); color: var(--color-text); cursor: pointer; font-size: .875rem; font-weight: 700; }
+.wk-chips button.active, .wk-weekdays button.active { background: var(--color-primary); color: var(--color-on-primary); }
+.wk-chips button.wk-clear { border-color: var(--color-border-strong); color: var(--color-text-secondary); }
+.wk-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .3rem; }
+.wk-weekdays button { padding: 0; }
+.wk-calendar-toggle { display: flex; align-items: center; justify-content: space-between; gap: .75rem; width: 100%; min-height: 3.25rem; margin-top: .3rem; padding: .6rem .85rem; border: 1px dashed var(--color-primary); border-radius: 1rem; background: var(--color-surface); color: var(--color-text); cursor: pointer; text-align: left; }
+.wk-calendar-toggle span { display: grid; gap: .12rem; min-width: 0; }
+.wk-calendar-toggle strong { font-size: .9rem; }
+.wk-calendar-toggle small { color: var(--color-text-secondary); font-size: .75rem; font-weight: 700; }
+.wk-calendar-toggle b { font-size: 1.1rem; transition: transform 200ms ease; }
+.wk-calendar-toggle[aria-expanded="true"] b { transform: rotate(180deg); }
+.wk-calendar { display: grid; gap: .4rem; padding: .6rem; border-radius: 1rem; background: var(--color-surface); }
+.wk-calendar-head, .wk-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .25rem; }
+.wk-calendar-head span { color: var(--color-text-secondary); font-size: .75rem; font-weight: 700; text-align: center; }
+.wk-day { min-height: 2.75rem; border: 1px solid var(--color-border); border-radius: .8rem; background: var(--color-surface); color: var(--color-text); cursor: pointer; font-size: .9rem; font-weight: 700; }
+.wk-day.saved { border: 2px dashed var(--color-success); background: var(--color-success-soft); color: var(--color-success); }
+.wk-day.selected { border: 1px solid var(--color-primary); background: var(--color-primary); color: var(--color-on-primary); }
+.wk-legend { display: flex; flex-wrap: wrap; gap: .4rem 1rem; color: var(--color-text-secondary); font-size: .75rem; font-weight: 700; }
+.wk-legend i { display: inline-block; width: .8rem; height: .8rem; margin-right: .35rem; border-radius: .25rem; vertical-align: -.1rem; }
+.wk-legend i.selected { background: var(--color-primary); }
+.wk-legend i.saved { border: 2px dashed var(--color-success); background: var(--color-success-soft); }
+.wk-time-stepper { display: grid; grid-template-columns: 2.5rem 3rem minmax(0, 1fr) 3rem; align-items: center; gap: .5rem; }
+.wk-time-stepper span { color: var(--color-text-secondary); font-size: .8125rem; font-weight: 700; }
+.wk-time-stepper strong { color: var(--color-text); font-size: 1.35rem; text-align: center; }
+.wk-time-stepper button { min-height: 3rem; border: 1px solid var(--color-primary); border-radius: 999px; background: var(--color-surface); color: var(--color-primary); cursor: pointer; font-size: 1.4rem; line-height: 1; }
+.availability-maker .work-preset-grid button { padding: .6rem .5rem; }
+.availability-maker .work-preset-grid span { font-size: .75rem; white-space: nowrap; }
+.availability-summary-panel > div span { white-space: normal; }
+.wk-remove-month { min-height: 2.75rem; border: 1px solid var(--color-error); border-radius: var(--radius-control); background: var(--color-error-soft); color: var(--color-error); cursor: pointer; font-size: .8125rem; font-weight: 700; }
+.wk-add-button { min-height: 3.25rem; border: 0; border-radius: var(--radius-control); background: var(--color-primary); color: var(--color-on-primary); cursor: pointer; font-size: 1rem; font-weight: 700; }
+.wk-add-button:hover { background: var(--color-primary-hover); }
+.wk-price-field { display: flex; align-items: center; gap: .5rem; }
+.wk-price-field input { max-width: 9rem; }
+.wk-price-field b { color: var(--color-text); font-size: 1rem; }
+.service-management-card.editing { border-color: var(--color-primary); box-shadow: inset 0 0 0 1px var(--color-primary); }
+.service-editor-summary { grid-template-columns: minmax(0, 1fr); }
+.service-editor-summary button { min-height: 3rem; }

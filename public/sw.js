@@ -1,5 +1,6 @@
 const CACHE_NAME = "bnb-barbershop-v15";
 const APP_SHELL_URL = "/";
+const SHELL_NETWORK_TIMEOUT_MS = 3000;
 const APP_SHELL = [
   APP_SHELL_URL,
   "/manifest.webmanifest?v=9",
@@ -38,6 +39,13 @@ const showPushNotification = (payload = {}) => {
       url: payload.fcmOptions?.link ?? data.link ?? "/",
     },
   };
+  // The visit reminder asks a question, so it carries the answers as buttons.
+  if (data.actions === "attend") {
+    options.actions = [
+      { action: "confirm", title: "Potwierdzam" },
+      { action: "cancel", title: "Odwołuję" },
+    ];
+  }
 
   return self.registration.showNotification(title, options);
 };
@@ -95,11 +103,21 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       caches.open(CACHE_NAME).then(async (cache) => {
         try {
-          const networkResponse = await fetch(request);
-          if (await isAppShell(networkResponse)) {
-            await cache.put(APP_SHELL_URL, networkResponse.clone()).catch(() => undefined);
-          }
-          return networkResponse;
+          // Network first, but a slow connection must not leave a blank screen:
+          // after SHELL_NETWORK_TIMEOUT_MS the verified cached shell is served while
+          // the network request keeps running to refresh the cache for next time.
+          const networkRequest = fetch(request).then(async (networkResponse) => {
+            if (await isAppShell(networkResponse)) {
+              await cache.put(APP_SHELL_URL, networkResponse.clone()).catch(() => undefined);
+            }
+            return networkResponse;
+          });
+          const cachedShell = await cache.match(APP_SHELL_URL);
+          if (!cachedShell || !(await isAppShell(cachedShell))) return await networkRequest;
+          let timer;
+          const slow = new Promise((resolve) => { timer = setTimeout(() => resolve(cachedShell), SHELL_NETWORK_TIMEOUT_MS); });
+          event.waitUntil(networkRequest.catch(() => undefined));
+          return await Promise.race([networkRequest, slow]).finally(() => clearTimeout(timer));
         } catch (error) {
           const cachedShell = await cache.match(APP_SHELL_URL);
           if (cachedShell && await isAppShell(cachedShell)) return cachedShell;
@@ -149,7 +167,10 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
-  const targetUrl = new URL(event.notification.data?.url ?? "/", self.location.origin).href;
+  const target = new URL(event.notification.data?.url ?? "/", self.location.origin);
+  // A tap on a reminder button tells the app which answer to carry out once the visit is open.
+  if (event.action === "confirm" || event.action === "cancel") target.searchParams.set("reminder", event.action);
+  const targetUrl = target.href;
 
   event.waitUntil(
     self.clients

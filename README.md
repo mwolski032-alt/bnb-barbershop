@@ -1,6 +1,6 @@
 # BNB Barbershop
 
-Aplikacja rezerwacji wizyt dla klientów, barberów i właściciela salonu. Produkcja działa na Netlify, Firebase Authentication i Realtime Database, a wiadomości e-mail są wysyłane przez Resend.
+Aplikacja rezerwacji wizyt dla klientów, barberów i właściciela salonu. Produkcja działa na Netlify, Firebase Authentication i Realtime Database. Powiadomienia trafiają wyłącznie jako push na urządzenia, wiadomości e-mail nie są wysyłane.
 
 ## Uruchomienie
 
@@ -8,6 +8,14 @@ Aplikacja rezerwacji wizyt dla klientów, barberów i właściciela salonu. Prod
 npm install
 npm run dev
 ```
+
+## Struktura i styl
+
+- `app/theme.css` to jedno źródło tokenów: kolory, czcionki (Fraunces do nagłówków, Geist do interfejsu), promienie,
+  odstępy, cienie oraz czasy i easing animacji. Zmiana tokenu stroi całą aplikację.
+- `app/motion.css` zawiera wszystkie animacje. `prefers-reduced-motion` wyłącza je jedną regułą.
+- `app/booking-home.tsx` koordynuje interfejs, a logika pomocnicza jest w `app/lib/*`, ekrany w
+  `app/components/screens/*`. Pełny opis remasteru i pomiary: `docs/REMASTER-REPORT.md`.
 
 ## Kontrola jakości
 
@@ -38,7 +46,6 @@ Zmienne środowiskowe są opisane w `.env.example`. Funkcje `appointments` i `se
 - `FIREBASE_DATABASE_URL`
 - `NEXT_PUBLIC_FIREBASE_API_KEY`
 
-Powiadomienia e-mail wymagają również `RESEND_API_KEY`, `RESEND_FROM_EMAIL` oraz adresów właściwych barberów.
 
 ## Reguły Firebase
 
@@ -52,6 +59,26 @@ firebase deploy --only database
 
 Nie publikuj aplikacji produkcyjnej z testowymi lub otwartymi regułami Realtime Database.
 
+## Zdjęcia galerii (Netlify Blobs)
+
+Zdjęcia salonu są plikami w **Netlify Blobs** (magazyn wbudowany w Netlify, bez osobnego konta i bez płatnego
+planu Firebase), a nie tekstem w bazie. Każde zdjęcie ma trzy rozmiary WebP (480, 960 i 1600 px), a w bazie
+zostaje mały rekord (`storage`, `width`, `height` i miniatura `blur` do rozmytego podglądu). Adresy
+(`/api/gallery-image/<id>/<szerokość>.webp`) aplikacja wylicza z identyfikatora (`shared/gallery-images.mjs`),
+a przeglądarka dobiera rozmiar przez `srcset`.
+
+- **Odczyt** jest publiczny: `netlify/functions/gallery-image.mjs` oddaje plik z nagłówkiem
+  `Cache-Control: immutable` i `Netlify-CDN-Cache-Control` na rok, więc po pierwszym żądaniu zdjęcie jest
+  serwowane z CDN, a funkcja nie jest już wywoływana.
+- **Zapis i usuwanie** idzie wyłącznie przez `/api/gallery-images` (`netlify/functions/gallery-images.mjs`),
+  która sprawdza aktywnego właściciela, identyfikator, format WebP i rozmiar. Przeglądarka nigdy nie zapisuje
+  do magazynu bezpośrednio.
+- Nic nie trzeba włączać w konsoli: Blobs działa automatycznie na Netlify. Zużycie jest pomijalne (kilka
+  zdjęć po ok. 1 MB) i liczy się do miesięcznej puli kredytów planu.
+- Reguły bazy (`database.rules.json`) przyjmują tylko adresy `/api/gallery-image/...` oraz stare dane base64.
+  Po zmianie reguł: `npm run deploy:firebase`, potem wdrożenie Netlify.
+- Stare zdjęcia (base64) nadal działają. W panelu właściciela, w zakładce zdjęć, pojawia się przycisk
+  **Zoptymalizuj zdjęcia**, który jednorazowo przenosi je do Blobs.
 ## Zatwierdzane scalanie klientów
 
 Zgodny telefon lub ręcznie wpisany e-mail nie przenosi automatycznie historii na konto Google.

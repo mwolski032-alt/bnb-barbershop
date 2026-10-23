@@ -51,10 +51,10 @@ try {
     await page.getByRole("button",{name:"Przesuń zdjęcie dalej"}).first().click();
     assert.notEqual(await page.locator(".salon-manager-grid img").first().getAttribute("src"),first);
     await page.locator('input[type="file"]').setInputFiles("public/brand/bnb-logo.png");
-    await page.getByText("Dodaj zdjęcie (3/6)").waitFor();
+    await page.getByText("Dodaj zdjęcie (3/20)").waitFor();
     page.on("dialog",dialog=>dialog.accept());
     await page.getByRole("button",{name:"Usuń zdjęcie"}).last().click();
-    await page.getByText("Dodaj zdjęcie (2/6)").waitFor();
+    await page.getByText("Dodaj zdjęcie (2/20)").waitFor();
     await page.getByLabel("Adres",{exact:true}).fill("Testowa 1");
     await page.getByLabel("Godziny otwarcia").fill("Poniedziałek 10–18");
     await page.getByRole("button",{name:"Zapisz informacje"}).click();

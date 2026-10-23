@@ -1,0 +1,400 @@
+/* One look for every pop-up: bottom sheet on phones, centred card on wide screens. Loaded last. */
+
+/* ---------- Shell ---------- */
+.client-modal-backdrop {
+  align-items: end;
+  justify-items: center;
+  padding: 0;
+}
+.client-appointment-modal {
+  --sheet-accent: var(--color-primary);
+  width: min(100%, 32rem);
+  max-height: min(92dvh, 52rem);
+  margin: 0;
+  padding: 1.6rem 1.15rem calc(1.15rem + env(safe-area-inset-bottom));
+  border: 0;
+  border-top: 0.35rem solid var(--sheet-accent);
+  border-radius: 1.6rem 1.6rem 0 0;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-floating);
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  animation: dialog-sheet-in var(--duration-slow) var(--ease-out) backwards;
+}
+.client-appointment-modal::-webkit-scrollbar { display: none; }
+.client-appointment-modal::before {
+  content: "";
+  position: absolute;
+  top: 0.45rem;
+  left: 50%;
+  width: 2.4rem;
+  height: 0.28rem;
+  border-radius: 99px;
+  background: var(--color-border-strong);
+  transform: translateX(-50%);
+}
+.modal-presence[data-leaving] > .client-modal-backdrop .client-appointment-modal {
+  animation: dialog-sheet-out var(--duration-base) var(--ease-in-out) both;
+}
+@media (min-width: 720px) {
+  .client-modal-backdrop { align-items: center; padding: 1.5rem; }
+  .client-appointment-modal { border-radius: 1.6rem; animation-name: dialog-in; padding-bottom: 1.3rem; }
+  .client-appointment-modal::before { display: none; }
+  .modal-presence[data-leaving] > .client-modal-backdrop .client-appointment-modal { animation-name: dialog-out; }
+}
+.sheet-grabber { display: none; }
+
+.modal-close-button {
+  top: 1rem;
+  right: 0.9rem;
+  width: 2.3rem;
+  height: 2.3rem;
+  background: var(--color-surface-secondary);
+  font-size: 1.15rem;
+  transition: transform var(--duration-base) var(--ease-spring), background-color var(--duration-fast) var(--ease-out);
+}
+.modal-close-button:hover { background: var(--color-primary-soft); transform: rotate(90deg); }
+.modal-close-button:active { transform: scale(.88); }
+
+.client-appointment-modal .modal-title { padding-right: 3rem; }
+.client-appointment-modal .modal-title h2,
+.client-appointment-modal h2 { font-size: 1.4rem; overflow-wrap: anywhere; }
+
+.client-appointment-modal > * { animation: motion-rise var(--duration-base) var(--ease-out) backwards; }
+.client-appointment-modal > :nth-child(3) { animation-delay: 40ms; }
+.client-appointment-modal > :nth-child(4) { animation-delay: 80ms; }
+.client-appointment-modal > :nth-child(n+5) { animation-delay: 120ms; }
+
+/* ---------- Content blocks ---------- */
+.admin-edit-recap,
+.manual-client-recap,
+.waitlist-modal-summary,
+.modal-client-note {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0.9rem 0 0;
+  padding: 0.8rem 0.95rem;
+  border: 0;
+  border-radius: 1rem;
+  background: var(--color-primary-soft);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+.modal-client-note { background: var(--color-surface-secondary); }
+.modal-client-note strong { font-size: .9rem; }
+.modal-client-note span { color: var(--color-text-secondary); }
+
+/* ---------- Fields ---------- */
+.client-appointment-modal label { display: grid; gap: 0.35rem; font-size: .8125rem; font-weight: 700; color: var(--color-text-secondary); }
+.client-appointment-modal :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 1rem;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 400;
+  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+.client-appointment-modal textarea { min-height: 7rem; resize: vertical; }
+.client-appointment-modal :is(input, select, textarea):focus {
+  outline: 0;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-focus);
+}
+.client-appointment-modal :is(input, select, textarea)[aria-invalid="true"] { border-color: var(--color-error); }
+.admin-edit-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin-top: 0.9rem; }
+.admin-edit-price-field { grid-column: 1 / -1; }
+
+/* ---------- Buttons: secondary by default, one filled primary, danger in soft red ---------- */
+.client-appointment-modal :is(.modal-actions, .client-creator-footer, .waitlist-form-actions, .team-member-dialog-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.1rem;
+}
+.client-appointment-modal :is(.modal-actions, .client-creator-footer, .waitlist-form-actions, .team-member-dialog-actions) > :is(button, a) {
+  display: inline-flex;
+  flex: 1 1 8rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 3rem;
+  padding: 0 1.1rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+.client-appointment-modal :is(.modal-actions, .client-creator-footer, .waitlist-form-actions, .team-member-dialog-actions) > :is(button, a):hover:not(:disabled) {
+  background: var(--color-primary-soft);
+}
+.client-appointment-modal :is(.modal-actions, .client-creator-footer, .waitlist-form-actions, .team-member-dialog-actions) > :is(button, a):active:not(:disabled) {
+  transform: scale(.96);
+}
+.client-appointment-modal :is(.modal-actions, .client-creator-footer, .waitlist-form-actions, .team-member-dialog-actions) > :is(.primary, .confirm, [type="submit"]) {
+  order: 2;
+  flex-grow: 1.6;
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.client-appointment-modal :is(.modal-actions, .client-creator-footer, .waitlist-form-actions, .team-member-dialog-actions) > :is(.primary, .confirm, [type="submit"]):hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  box-shadow: var(--shadow-raised);
+}
+.client-appointment-modal :is(.modal-actions, .client-creator-footer, .waitlist-form-actions, .team-member-dialog-actions) > .danger {
+  order: 2;
+  flex-grow: 1.6;
+  border-color: transparent;
+  background: var(--color-error);
+  color: var(--color-brand-white);
+}
+.client-appointment-modal :is(.modal-actions, .client-creator-footer, .waitlist-form-actions, .team-member-dialog-actions) > .danger:hover:not(:disabled) {
+  background: var(--color-error);
+  filter: brightness(.92);
+}
+.client-appointment-modal :is(.modal-actions, .client-creator-footer, .waitlist-form-actions, .team-member-dialog-actions) > :disabled {
+  border-color: transparent;
+  background: var(--color-disabled-bg);
+  color: var(--color-disabled-text);
+  cursor: not-allowed;
+}
+
+/* ---------- Cancellation and removal confirmations ---------- */
+.cancellation-sheet { --sheet-accent: var(--color-error); }
+.cancellation-sheet .cancellation-copy {
+  margin: 0.8rem 0 0;
+  padding: 0.8rem 0.95rem;
+  border: 0;
+  border-radius: 1rem;
+  background: var(--color-error-soft);
+  color: var(--color-text);
+  line-height: var(--leading-body);
+}
+
+/* ---------- Client card ---------- */
+.admin-client-profile-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 40rem);
+  max-height: min(92dvh, 50rem);
+  padding: 1.6rem 1.15rem calc(1.15rem + env(safe-area-inset-bottom));
+}
+.admin-client-profile-modal > * { flex: none; min-width: 0; }
+
+.client-profile-header { gap: 0.9rem; padding-right: 3rem; }
+.client-profile-avatar {
+  width: 3.8rem;
+  height: 3.8rem;
+  min-width: 3.8rem;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+.client-profile-header h2 { font-size: 1.4rem; white-space: normal; overflow-wrap: anywhere; }
+.client-profile-header > div > span {
+  justify-self: start;
+  padding: 0.18rem 0.65rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-secondary);
+  font-size: .75rem;
+}
+
+.client-profile-contact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding: 0;
+  border: 0;
+}
+.client-profile-contact > div:not(.client-profile-contact-actions) {
+  padding: 0.7rem 0.85rem;
+  border-radius: 1rem;
+  background: var(--color-surface-secondary);
+}
+.client-profile-contact strong { font-size: .9rem; }
+.client-profile-contact-actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(4.4rem, 1fr));
+  gap: 0.45rem;
+}
+.client-profile-contact-actions :is(button, a) {
+  min-width: 0;
+  height: 3rem;
+  padding: 0 0.6rem;
+  border-radius: var(--radius-pill);
+  transition: transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+.client-profile-contact-actions :is(button, a):active { transform: scale(.95); }
+.client-profile-contact-actions :is(button, a) svg { width: 1.05rem; height: 1.05rem; }
+.client-profile-contact-actions button.book { background: var(--color-primary); color: var(--color-on-primary); }
+
+.client-merge-panel { margin: 0.9rem 0 0; border: 0; border-radius: 1rem; }
+.client-merge-panel button { border-radius: var(--radius-pill); }
+
+.client-history-heading { padding: 1.1rem 0 0.6rem; align-items: center; }
+.client-history-heading > div > strong { font-size: 1rem; }
+
+.client-history-list { display: grid; gap: 0.55rem; overflow: visible; padding-right: 0; }
+.client-history-row {
+  --row-tone: var(--color-primary);
+  position: relative;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.35rem 0.75rem;
+  padding: 0.75rem 0.8rem 0.75rem 0.95rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--row-tone) 30%, var(--color-surface));
+  border-radius: 1.1rem;
+  background: color-mix(in srgb, var(--row-tone) 8%, var(--color-surface));
+  animation: agenda-tile-in var(--duration-slow) var(--ease-out) backwards;
+}
+.client-history-row::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 0.3rem; background: var(--row-tone); }
+.client-history-row:nth-child(2) { animation-delay: 50ms; }
+.client-history-row:nth-child(3) { animation-delay: 100ms; }
+.client-history-row:nth-child(n+4) { animation-delay: 150ms; }
+.client-history-row:has(.appointment-status.completed) { --row-tone: var(--color-success); }
+.client-history-row:has(.appointment-status.cancelled),
+.client-history-row:has(.appointment-status.no_show),
+.client-history-row:has(.appointment-status.missed) { --row-tone: var(--color-error); }
+.client-history-row:has(.appointment-status.rescheduled) { --row-tone: var(--color-warning); }
+
+.client-history-date { width: 3.1rem; height: 3.3rem; background: color-mix(in srgb, var(--row-tone) 16%, var(--color-surface)); }
+.client-history-date span { color: var(--row-tone); }
+.client-history-main { gap: 0.1rem; }
+.client-history-main :is(strong, span, small) { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+.client-history-main strong { font-size: .95rem; }
+.client-history-main small { color: var(--color-text-muted); }
+.client-history-row > .appointment-status { grid-column: 3; justify-self: end; align-self: start; white-space: nowrap; }
+.client-history-actions { grid-column: 2 / -1; flex-wrap: wrap; justify-content: flex-start; gap: 0.4rem; margin-top: 0.3rem; }
+.client-history-actions button {
+  min-height: 2.5rem;
+  padding: 0 0.9rem;
+  border-radius: var(--radius-pill);
+  transition: transform var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out);
+}
+.client-history-actions button:active:not(:disabled) { transform: scale(.95); }
+.client-history-actions button.settle { border-color: var(--color-primary); background: var(--color-primary); color: var(--color-on-primary); }
+
+.client-profile-empty-history { border-radius: 1.1rem; }
+.client-profile-footer { margin-top: 1rem; padding-top: 0.9rem; }
+.remove-client-button { border: 0; border-radius: var(--radius-pill); color: var(--color-error); transition: transform var(--duration-fast) var(--ease-out); }
+.remove-client-button:active { transform: scale(.95); }
+
+@media (max-width: 420px) {
+  .client-profile-contact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .client-profile-contact-actions :is(button, a) { font-size: .75rem; gap: 0.3rem; }
+  .client-history-row { grid-template-columns: auto minmax(0, 1fr); }
+  .client-history-row > .appointment-status { grid-column: 2; justify-self: start; }
+  .client-history-actions { grid-column: 1 / -1; }
+}
+
+/* ---------- SMS ---------- */
+.sms-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+.sms-composer-footer > span { color: var(--color-text-muted); font-size: var(--text-sm); }
+.sms-composer-footer > a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+  padding: 0 1.3rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 700;
+  text-decoration: none;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.sms-composer-footer > a:active { transform: scale(.95); }
+.sms-composer-footer > a.disabled { background: var(--color-disabled-bg); color: var(--color-disabled-text); pointer-events: none; }
+.sms-template-picker {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.sms-template-picker button {
+  min-height: 2.7rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  transition: transform var(--duration-fast) var(--ease-out), background-color var(--duration-base) var(--ease-out),
+    color var(--duration-base) var(--ease-out);
+}
+.sms-template-picker button.active { border-color: var(--color-primary); background: var(--color-primary); color: var(--color-on-primary); }
+.sms-template-picker button:active { transform: scale(.95); }
+.sms-composer-icon { border-radius: 50%; background: var(--color-primary-soft); color: var(--color-primary); }
+.sms-composer-heading h2 { white-space: normal; }
+.sms-message-field textarea { min-height: 8rem; }
+
+/* ---------- Dialogs opened through confirmAction and the photo cropper ---------- */
+.salon-dialog.salon-confirm,
+.salon-dialog.photo-crop {
+  width: min(100%, 28rem);
+  max-height: 92dvh;
+  margin: auto auto 0;
+  border: 0;
+  border-top: 0.35rem solid var(--color-primary);
+  border-radius: 1.6rem 1.6rem 0 0;
+  box-shadow: var(--shadow-floating);
+}
+.salon-dialog.salon-confirm:has(.salon-danger) { border-top-color: var(--color-error); }
+.salon-dialog.salon-confirm .salon-dialog-content { padding: 1.7rem 1.3rem calc(1.3rem + env(safe-area-inset-bottom)); }
+.salon-dialog.salon-confirm h2 { margin: 0 2.6rem 0.6rem 0; font-size: 1.35rem; color: var(--color-text); }
+.salon-dialog .salon-close {
+  top: 0.9rem;
+  right: 0.9rem;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 50%;
+  background: var(--color-surface-secondary);
+  transition: transform var(--duration-base) var(--ease-spring);
+}
+.salon-dialog .salon-close:hover { transform: rotate(90deg); }
+.salon-confirm-actions { gap: 0.6rem; }
+.salon-confirm-actions > button,
+.salon-dialog.salon-confirm .salon-cta,
+.salon-dialog.photo-crop .salon-confirm-actions .salon-cta {
+  flex: 1 1 8rem;
+  min-height: 3rem;
+  padding: 0 1.2rem;
+  border-radius: var(--radius-pill);
+  justify-content: center;
+  font-weight: 700;
+}
+.salon-ghost { border-radius: var(--radius-pill); color: var(--color-text); }
+.salon-confirm-actions .salon-ghost { order: 1; }
+.salon-confirm-actions .salon-cta { order: 2; flex-grow: 1.6; }
+.salon-cta.salon-danger { border-color: transparent; background: var(--color-error); }
+.salon-dialog.salon-confirm,
+.salon-dialog.photo-crop { animation: dialog-sheet-in var(--duration-slow) var(--ease-out) backwards; }
+.salon-dialog[data-closing] { animation: dialog-sheet-out var(--duration-fast) var(--ease-in-out) both; }
+@media (min-width: 720px) {
+  .salon-dialog.salon-confirm,
+  .salon-dialog.photo-crop { margin: auto; border-radius: 1.6rem; animation-name: dialog-in; }
+  .salon-dialog[data-closing] { animation-name: dialog-out; }
+}
+@media (max-width: 480px) {
+  .salon-confirm-actions { flex-direction: row; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .client-appointment-modal, .client-appointment-modal > *, .client-history-row,
+  .salon-dialog.salon-confirm, .salon-dialog.photo-crop { animation: none; }
+}

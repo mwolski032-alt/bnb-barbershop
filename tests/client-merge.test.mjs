@@ -173,6 +173,25 @@ test("profile editing cannot bypass approval by setting userId or attaching anot
   assert.equal(fixture.database.appointments["manual-paid"].clientId, "manual");
 });
 
+test("a new card for a person on the barber's waiting list is linked to their account without a merge", async () => {
+  seed();
+  delete fixture.database.clients[clientBUid];
+  const card = {
+    id: "fresh-card", firstName: "Nowy", lastName: "Klient", email: "client-b@example.com", phone: "600700800",
+    barberIds: { mateusz: true }, userId: clientBUid,
+  };
+  const save = () => request(tokens.mateusz, "POST", { action: "upsert_admin_client", barberId: "mateusz", client: card });
+  // Not on the waiting list yet: the account may not be attached.
+  assert.equal((await save()).status, 403);
+  fixture.database.waitlistEntries = { w1: {
+    id: "w1", userId: clientBUid, barberId: "mateusz", version: 1, status: "waiting",
+    dateFrom: "2099-01-10", dateTo: "2099-01-11",
+  } };
+  const response = await save();
+  assert.equal(response.status, 200, JSON.stringify(await response.clone().json()).slice(0, 300));
+  assert.equal(Object.values(fixture.database.clients).some(client => client.userId === clientBUid && client.barberIds?.mateusz), true);
+});
+
 test("a manual waitlist relation follows only its approved target", async () => {
   seed();
   fixture.database.waitlistEntries = { manualWait: {

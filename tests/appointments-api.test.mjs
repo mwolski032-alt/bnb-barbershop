@@ -355,6 +355,34 @@ test("client can confirm an admin-rescheduled appointment", async () => {
   assert.equal(typeof database.appointments.own.confirmedAt, "number");
 });
 
+test("client can vouch for a booked visit once, without changing its status", async () => {
+  database.appointments.own.status = "confirmed";
+  database.appointments.own.version = 1;
+  delete database.appointments.own.attendanceConfirmedAt;
+  const response = await request("POST", { action: "attend_client", appointmentId: "own" });
+  assert.equal(response.status, 200, await response.text());
+  assert.equal(database.appointments.own.status, "confirmed");
+  assert.equal(typeof database.appointments.own.attendanceConfirmedAt, "number");
+  assert.equal(database.appointments.own.version, 2);
+
+  const again = await request("POST", { action: "attend_client", appointmentId: "own" });
+  assert.equal(again.status, 409);
+});
+
+test("attendance cannot be confirmed for a visit awaiting a new-term decision or someone else's visit", async () => {
+  database.appointments.own.status = "rescheduled";
+  database.appointments.own.rescheduledBy = "admin";
+  database.appointments.own.version = 1;
+  delete database.appointments.own.attendanceConfirmedAt;
+  const pendingMove = await request("POST", { action: "attend_client", appointmentId: "own" });
+  assert.equal(pendingMove.status, 409);
+  assert.equal(database.appointments.own.attendanceConfirmedAt, undefined);
+
+  const foreign = await request("POST", { action: "attend_client", appointmentId: "other" });
+  assert.notEqual(foreign.status, 200);
+  assert.equal(database.appointments.other.attendanceConfirmedAt, undefined);
+});
+
 test("client cannot approve a reschedule they requested themselves", async () => {
   database.appointments.own.status = "rescheduled";
   database.appointments.own.rescheduledBy = "client";

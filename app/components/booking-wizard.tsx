@@ -1,8 +1,25 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, X, Clock3, CalendarDays } from "lucide-react";
+import { ArrowLeft, ArrowRight, BellRing, Check, X, Clock3, CalendarDays } from "lucide-react";
 import ProfileAvatar from "./profile-avatar";
+import { getBackController } from "../lib/back-navigation";
+import { formatPhoneNumber } from "../lib/booking-format";
 import type { DayCell, FormState, Service } from "../lib/booking-types";
+
+/** The way into the waitlist: a real button with a bell, so nobody wonders whether it can be tapped. */
+function WaitlistCard({ onClick, disabled = false }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <button type="button" className="story-waitlist" onClick={onClick} disabled={disabled}>
+      <span className="story-waitlist-bell" aria-hidden="true"><BellRing /><i /><i /><i /></span>
+      <span className="story-waitlist-copy">
+        <small>Żaden termin nie pasuje?</small>
+        <strong>Lista rezerwowa</strong>
+        <em>Wybierz dni, a damy Ci znać, gdy barber doda wolny termin.</em>
+      </span>
+      <span className="story-waitlist-go">Zapisz się<ArrowRight aria-hidden="true" /></span>
+    </button>
+  );
+}
 
 type Barber = { id: string; name: string; photoUrl?: string; bio?: string; label: string };
 export type BookingWizardProps = {
@@ -33,6 +50,9 @@ export default function BookingWizard(props: BookingWizardProps) {
   const { onStepChange } = props;
   const [internalStep, setInternalStep] = useState(props.initialStep ?? 0);
   const step = typeof props.step === "number" ? Math.max(0, Math.min(5, props.step)) : internalStep;
+  // Remember which way the user is moving so steps slide in from the right (next) or the left (back).
+  const [motion, setMotion] = useState({ step, direction: "forward" });
+  if (motion.step !== step) setMotion({ step, direction: step > motion.step ? "forward" : "back" });
   const setCurrentStep = useCallback((next: number) => {
     const normalized = Math.max(0, Math.min(5, next));
     if (onStepChange) onStepChange(normalized);
@@ -48,9 +68,32 @@ export default function BookingWizard(props: BookingWizardProps) {
   useEffect(() => { latest.current = { step, busy: props.busy || sending, onClose: props.onClose, overlayOpen: props.overlayOpen, onOverlayBack: props.onOverlayBack }; }, [step, props.busy, sending, props.onClose, props.overlayOpen, props.onOverlayBack]);
   const barber = props.barbers.find(item => item.id === props.barberId);
   const service = props.services.find(item => item.id === props.serviceId);
-  const validDetails = props.form.fullName.trim().length >= 3 && props.form.phone.replace(/\D/g, "").length === 9;
+  // Typing happens in a local draft: the parent screen is large, so it is updated only when a field
+  // loses focus, the step changes or the wizard closes, never on every keystroke.
+  const [draft, setDraft] = useState<FormState>(props.form);
+  const draftRef = useRef(draft);
+  const sync = useRef({ form: props.form, onForm: props.onForm });
+  useEffect(() => { sync.current = { form: props.form, onForm: props.onForm }; });
+  const changeDraft = (field: keyof FormState, value: string) => {
+    const next = { ...draftRef.current, [field]: field === "phone" ? formatPhoneNumber(value) : value };
+    draftRef.current = next; setDraft(next);
+  };
+  const flushDraft = useCallback(() => {
+    const { form, onForm } = sync.current, current = draftRef.current;
+    if (current.fullName !== form.fullName) onForm("fullName", current.fullName);
+    if (current.phone !== form.phone) onForm("phone", current.phone);
+  }, []);
+  useEffect(() => {
+    // The parent changed the details itself (restored profile, reschedule): take them over.
+    if (props.form.fullName !== draftRef.current.fullName || props.form.phone !== draftRef.current.phone) {
+      draftRef.current = props.form; setDraft(props.form);
+    }
+  }, [props.form]);
+  useEffect(() => flushDraft, [flushDraft]);
+  const validDetails = draft.fullName.trim().length >= 3 && draft.phone.replace(/\D/g, "").length === 9;
   const selectionValid = Boolean(barber && service && props.dateKey && props.time && props.times.includes(props.time));
   const busy = props.busy || sending;
+  const todayKey = keyFor(new Date());
 
   useEffect(() => {
     const update = () => setOffline(!navigator.onLine);
@@ -75,7 +118,11 @@ export default function BookingWizard(props: BookingWizardProps) {
     return () => {
       window.removeEventListener("popstate",back);
       window.clearTimeout(timer);
-      if (ownsEntry && window.history.state?.bnbWizard) window.history.back();
+      if (ownsEntry && window.history.state?.bnbWizard) {
+        // Tell the app-level Back handling that this popstate is ours, not a user's Back press.
+        getBackController().expectPop();
+        window.history.back();
+      }
     };
   }, [setCurrentStep]);
   useEffect(() => {
@@ -86,8 +133,11 @@ export default function BookingWizard(props: BookingWizardProps) {
   const go = (next: number) => {
     if (busy || navLock.current || next === step) return;
     navLock.current = true;
+    flushDraft();
     setLocalError(""); setCurrentStep(next);
   };
+  // Leaving the details step by any route (Back button, progress) hands the draft to the parent.
+  useEffect(() => { if (step !== 4) flushDraft(); }, [step, flushDraft]);
   async function confirm() {
     if (submitLock.current || busy || offline || !props.canConfirm || !selectionValid) return;
     submitLock.current = true; setSending(true); setLocalError("");
@@ -107,9 +157,9 @@ export default function BookingWizard(props: BookingWizardProps) {
       </ol>
     </header>
     <div className="story-body">
+      <div key={step} className="story-scene" data-direction={motion.direction}>
       <div className="story-heading"><span className="salon-overline">{String(step+1).padStart(2,"0")} / 06 · {steps[step]}</span><h1 ref={heading} tabIndex={-1}>{titles[step]}</h1><p>{descriptions[step]}</p></div>
       {offline && <p className="story-notice" role="status">Jesteś offline. Twoje wybory pozostają tutaj. Połącz się z internetem, aby potwierdzić wizytę.</p>}
-      <div key={step} className="story-scene">
         {step === 0 && <div className="story-options">{props.barbers.map(item => <button className={`story-barber ${item.id === props.barberId ? "selected" : ""}`} type="button" key={item.id} aria-pressed={item.id === props.barberId} onClick={() => { if (!navLock.current) { props.onBarber(item.id); go(1); } }} disabled={busy || Boolean(props.rescheduling && item.id !== props.barberId)}>
           <ProfileAvatar className="story-avatar" name={item.name} photoUrl={item.photoUrl} /><span><small>{item.label}</small><strong>{item.name}</strong>{item.bio && <em>{item.bio}</em>}</span><ArrowRight aria-hidden="true" />
         </button>)}{!props.barbers.length && <p role="status">Nie ma obecnie barberów dostępnych do rezerwacji.</p>}</div>}
@@ -119,15 +169,15 @@ export default function BookingWizard(props: BookingWizardProps) {
         {step === 2 && <>
           <div className="story-calendar"><div className="story-month"><button type="button" aria-label="Poprzedni miesiąc" onClick={() => props.onMonth(-1)} disabled={!props.canPreviousMonth || busy}>‹</button><h2>{new Intl.DateTimeFormat("pl-PL",{month:"long",year:"numeric"}).format(props.month)}</h2><button type="button" aria-label="Następny miesiąc" onClick={() => props.onMonth(1)} disabled={busy}>›</button></div>
             <div className="story-week" aria-hidden="true">{["Pn","Wt","Śr","Cz","Pt","So","Nd"].map(label=><span key={label}>{label}</span>)}</div>
-            {props.calendarReady ? <div className="story-days">{props.days.map(day => {const key=keyFor(day.date);return <button type="button" key={key} disabled={busy || !day.freeSlots} className={`${key === props.dateKey ? "selected" : ""} ${day.monthOffset ? "outside" : ""}`} aria-pressed={key===props.dateKey} aria-label={`${dateLabel(key)}, ${day.freeSlots ? "dostępny" : "brak terminów"}`} onClick={()=>{if(!navLock.current){props.onDay(key);go(3)}}}><span>{day.day}</span>{day.freeSlots>0 && <i aria-hidden="true" />}</button>})}</div> : <div className="story-calendar-skeleton" role="status" aria-label="Sprawdzamy dostępność">{Array.from({length:35},(_,index)=><span className="skeleton-block" key={index} aria-hidden="true" />)}</div>}
+            {props.calendarReady ? <div className="story-days">{props.days.map(day => {const key=keyFor(day.date);return <button type="button" key={key} disabled={busy || !day.freeSlots} className={`${key === props.dateKey ? "selected" : ""} ${day.monthOffset ? "outside" : ""} ${key === todayKey ? "today" : ""}`} aria-pressed={key===props.dateKey} aria-label={`${dateLabel(key)}, ${day.freeSlots ? "dostępny" : "brak terminów"}`} onClick={()=>{if(!navLock.current){props.onDay(key);go(3)}}}><span>{day.day}</span>{day.freeSlots>0 && <i aria-hidden="true" />}</button>})}</div> : <div className="story-calendar-skeleton" role="status" aria-label="Sprawdzamy dostępność">{Array.from({length:35},(_,index)=><span className="skeleton-block" key={index} aria-hidden="true" />)}</div>}
           </div>
           <button type="button" className="story-nearest" disabled={!props.nearest || !props.calendarReady || busy} onClick={()=>{props.onNearest();go(4)}}><CalendarDays aria-hidden="true" /><span><small>Najbliższy wolny termin</small><strong>{props.nearest ? `${dateLabel(keyFor(props.nearest.date))} · ${props.nearest.time}` : "Brak wolnych terminów"}</strong></span><ArrowRight aria-hidden="true" /></button>
-          <button type="button" className="story-text-button" onClick={props.onWaitlist}>Nie pasuje termin? Dołącz do listy rezerwowej</button>
+          <WaitlistCard onClick={props.onWaitlist} disabled={busy} />
         </>}
-        {step === 3 && <><p className="story-date-label"><CalendarDays aria-hidden="true" />{dateLabel(props.dateKey)}</p>{props.calendarReady ? <div className="story-times">{props.times.map(time=><button type="button" key={time} disabled={busy} className={props.time===time?"selected":""} aria-pressed={props.time===time} onClick={()=>{if(!navLock.current){props.onTime(time);go(4)}}}>{time}</button>)}</div> : <div className="story-times story-times-skeleton" role="status" aria-label="Wczytujemy godziny">{Array.from({length:6},(_,index)=><span className="skeleton-block" key={index} aria-hidden="true" />)}</div>}{props.calendarReady && !props.times.length && <p role="status">Nie ma już godzin tego dnia. Wróć do kalendarza i wybierz inny termin.</p>}</>}
+        {step === 3 && <><p className="story-date-label"><CalendarDays aria-hidden="true" />{dateLabel(props.dateKey)}</p>{props.calendarReady ? <div className="story-times">{props.times.map(time=><button type="button" key={time} disabled={busy} className={props.time===time?"selected":""} aria-pressed={props.time===time} onClick={()=>{if(!navLock.current){props.onTime(time);go(4)}}}>{time}</button>)}</div> : <div className="story-times story-times-skeleton" role="status" aria-label="Wczytujemy godziny">{Array.from({length:6},(_,index)=><span className="skeleton-block" key={index} aria-hidden="true" />)}</div>}{props.calendarReady && !props.times.length && <p role="status">Nie ma już godzin tego dnia. Wróć do kalendarza i wybierz inny termin.</p>}{props.calendarReady && <WaitlistCard onClick={props.onWaitlist} disabled={busy} />}</>}
         {step === 4 && <form className="story-form" onSubmit={event=>{event.preventDefault();if(validDetails)go(5)}}>
-          <label htmlFor="story-name">Imię i nazwisko<input id="story-name" value={props.form.fullName} onChange={event=>props.onForm("fullName",event.target.value)} required minLength={3} autoComplete="name" enterKeyHint="next" /></label>
-          <label htmlFor="story-phone">Numer telefonu<span className="story-phone"><span aria-hidden="true">+48</span><input id="story-phone" type="tel" inputMode="tel" value={props.form.phone} onChange={event=>props.onForm("phone",event.target.value)} required autoComplete="tel-national" maxLength={11} pattern="[0-9 ]{9,11}" enterKeyHint="done" aria-describedby="story-phone-hint" /></span></label>
+          <label htmlFor="story-name">Imię i nazwisko<input id="story-name" value={draft.fullName} onChange={event=>changeDraft("fullName",event.target.value)} onBlur={flushDraft} required minLength={3} autoComplete="name" enterKeyHint="next" /></label>
+          <label htmlFor="story-phone">Numer telefonu<span className="story-phone"><span aria-hidden="true">+48</span><input id="story-phone" type="tel" inputMode="tel" value={draft.phone} onChange={event=>changeDraft("phone",event.target.value)} onBlur={flushDraft} required autoComplete="tel-national" maxLength={11} pattern="[0-9 ]{9,11}" enterKeyHint="done" aria-describedby="story-phone-hint" /></span></label>
           <p id="story-phone-hint">Wpisz 9 cyfr numeru telefonu.</p><button className="salon-cta" type="submit" disabled={!validDetails || busy}>Przejdź do podsumowania<ArrowRight aria-hidden="true" /></button>
         </form>}
         {step === 5 && <>

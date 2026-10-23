@@ -16,6 +16,12 @@ const matchesTimePreference = (preference, startTime) => {
   return true;
 };
 
+/** The client may pick specific days (`dates`); older entries only have a range. */
+export const waitlistCoversDate = (entry, dateKey) =>
+  entry.dateFrom <= dateKey &&
+  entry.dateTo >= dateKey &&
+  (!Array.isArray(entry.dates) || entry.dates.length === 0 || entry.dates.includes(dateKey));
+
 const rangesOverlap = (firstStart, firstDuration, secondStart, secondDuration) =>
   firstStart < secondStart + secondDuration && secondStart < firstStart + firstDuration;
 
@@ -70,7 +76,12 @@ const hasSlotConflict = (database, slot, now) => {
   );
 };
 
-const findAvailableSlotForEntry = (database, entry, now) => {
+/**
+ * Every day inside the entry's wishes that has a free matching slot, earliest first:
+ * [{ ...slot }] with one slot (the first free one) per day.
+ */
+const findAvailableDaysForEntry = (database, entry, now) => {
+  const days = [];
   const member = database.team?.barbers?.[entry.barberId];
   const barber = database.barbers?.[entry.barberId];
   const service = barber?.services?.[entry.serviceId];
@@ -81,7 +92,7 @@ const findAvailableSlotForEntry = (database, entry, now) => {
     service.id !== entry.serviceId ||
     service.barberId !== entry.barberId
   ) {
-    return null;
+    return days;
   }
 
   const durationMinutes = Math.max(15, Number(service.durationMinutes) || 15);
@@ -91,6 +102,7 @@ const findAvailableSlotForEntry = (database, entry, now) => {
   const dateFrom = entry.dateFrom > todayKey ? entry.dateFrom : todayKey;
 
   for (const dateKey of dateKeysBetween(dateFrom, entry.dateTo)) {
+    if (!waitlistCoversDate(entry, dateKey)) continue;
     const availability = barber.workSettings?.availability?.[dateKey];
     if (
       !availability ||
@@ -116,10 +128,13 @@ const findAvailableSlotForEntry = (database, entry, now) => {
         startTime,
         durationMinutes,
       };
-      if (!hasSlotConflict(database, slot, now)) return slot;
+      if (!hasSlotConflict(database, slot, now)) {
+        days.push(slot);
+        break;
+      }
     }
   }
-  return null;
+  return days;
 };
 
 export const waitlistEntryMatchesSlot = (entry, slot, now = Date.now()) =>
@@ -127,8 +142,7 @@ export const waitlistEntryMatchesSlot = (entry, slot, now = Date.now()) =>
   Number(entry.nextOfferAt || 0) <= now &&
   entry.barberId === slot.barberId &&
   entry.serviceId === slot.serviceId &&
-  entry.dateFrom <= slot.dateKey &&
-  entry.dateTo >= slot.dateKey &&
+  waitlistCoversDate(entry, slot.dateKey) &&
   matchesTimePreference(entry.timePreference, slot.startTime);
 
 const notificationKeyPart = (value) =>
@@ -143,6 +157,9 @@ const enqueueWaitlistNotification = (
   sourceOperationId,
   actorUid,
   now,
+  // "notify_waitlist": a slot held for this client for ten minutes (a cancellation).
+  // "notify_waitlist_day": new free days that stay open to everyone.
+  { action = "notify_waitlist", event = "waitlist_slot_open", extra = {} } = {},
 ) => {
   const operationId = `${notificationKeyPart(sourceOperationId)}-wait-${notificationKeyPart(entry.id)}`;
   const appointmentId = `waitlist-${notificationKeyPart(entry.id)}`;
@@ -163,7 +180,8 @@ const enqueueWaitlistNotification = (
     status: "confirmed",
     version: 1,
     waitlistId: entry.id,
-    offerExpiresAt: now + WAITLIST_OFFER_DURATION_MS,
+    ...(action === "notify_waitlist" ? { offerExpiresAt: now + WAITLIST_OFFER_DURATION_MS } : {}),
+    ...extra,
     lastOperationId: operationId,
     createdAt: now,
     updatedAt: now,
@@ -173,7 +191,7 @@ const enqueueWaitlistNotification = (
   database.notificationOutbox ??= {};
   database.appointmentOperations[operationId] = {
     operationId,
-    action: "notify_waitlist",
+    action,
     actorUid,
     appointmentId,
     appointment,
@@ -183,7 +201,7 @@ const enqueueWaitlistNotification = (
   database.notificationOutbox[operationId] = {
     operationId,
     appointmentId,
-    event: "waitlist_slot_open",
+    event,
     barberId: slot.barberId,
     userId: entry.userId,
     status: "pending",
@@ -299,9 +317,15 @@ export const advanceExpiredWaitlistOffers = (database, now = Date.now()) => {
   };
 };
 
-export const offerAvailableWaitlistSlots = (
+/**
+ * The barber added availability: tell every waiting client whose wishes now have a free day.
+ * Nothing is held. The new days are open to everyone, the client is simply told first, and each
+ * entry is told about a day only once (`notifiedDates`). A new entry, or one from before this existed,
+ * first records the days that are free right now without announcing them.
+ */
+export const notifyNewWaitlistDays = (
   database,
-  { now = Date.now(), maxOffers = 20, excludedEntryIds = [] } = {},
+  { now = Date.now(), maxNotifications = 20, excludedEntryIds = [] } = {},
 ) => {
   const excludedIds = new Set(excludedEntryIds);
   const waitingIds = Object.entries(database.waitlistEntries ?? {})
@@ -319,29 +343,58 @@ export const offerAvailableWaitlistSlots = (
     )
     .map((entry) => entry.id);
   const notificationOperationIds = [];
+  let changed = false;
+  const limit = Math.max(1, Math.min(50, Number(maxNotifications) || 20));
 
   for (const entryId of waitingIds) {
-    if (notificationOperationIds.length >= Math.max(1, Math.min(50, Number(maxOffers) || 20))) {
-      break;
-    }
     const entry = database.waitlistEntries?.[entryId];
     if (entry?.status !== "waiting") continue;
-    const slot = findAvailableSlotForEntry(database, entry, now);
-    if (!slot) continue;
-    const result = offerWaitlistSlot(database, slot, {
-      sourceOperationId: `waitlist-available-${entryId}-${slot.dateKey}-${slot.startTime}-${now}`,
+    const days = findAvailableDaysForEntry(database, { ...entry, id: entryId }, now);
+    const free = days.map((day) => day.dateKey);
+
+    if (!Array.isArray(entry.notifiedDates)) {
+      entry.notifiedDates = free;
+      changed = true;
+      continue;
+    }
+    const known = new Set(entry.notifiedDates);
+    const fresh = days.filter((day) => !known.has(day.dateKey));
+    // Days that are no longer free are forgotten, so they count as new when they open up again.
+    const kept = entry.notifiedDates.filter((dateKey) => free.includes(dateKey));
+    if (fresh.length === 0) {
+      if (kept.length !== entry.notifiedDates.length) {
+        entry.notifiedDates = kept;
+        changed = true;
+      }
+      continue;
+    }
+    if (notificationOperationIds.length >= limit) break;
+
+    const first = fresh[0];
+    const operationId = enqueueWaitlistNotification(
+      database,
+      { ...entry, id: entryId },
+      first,
+      `waitlist-days-${entryId}-${first.dateKey}-${now}`,
+      "system",
       now,
-    });
-    if (result.operationId) notificationOperationIds.push(result.operationId);
+      {
+        action: "notify_waitlist_day",
+        event: "waitlist_day_open",
+        extra: { newDates: fresh.map((day) => day.dateKey), daysCount: fresh.length },
+      },
+    );
+    entry.notifiedDates = [...kept, ...fresh.map((day) => day.dateKey)].sort();
+    notificationOperationIds.push(operationId);
+    changed = true;
   }
 
   return {
-    changed: notificationOperationIds.length > 0,
-    offeredCount: notificationOperationIds.length,
+    changed,
+    notifiedCount: notificationOperationIds.length,
     notificationOperationIds,
   };
 };
-
 export const hasBlockingWaitlistOffer = (database, appointment, userId, now = Date.now()) =>
   Object.values(database.waitlistEntries ?? {}).some(
     (entry) =>
@@ -365,8 +418,7 @@ export const consumeMatchingWaitlistEntry = (database, appointment, userId) => {
     }
     return (
       entry.status === "waiting" &&
-      entry.dateFrom <= appointment.dateKey &&
-      entry.dateTo >= appointment.dateKey &&
+      waitlistCoversDate(entry, appointment.dateKey) &&
       matchesTimePreference(entry.timePreference, appointment.startTime)
     );
   });

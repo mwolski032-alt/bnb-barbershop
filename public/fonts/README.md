@@ -1,29 +1,9 @@
-# Sitka Heading
+﻿# Fonts
 
-The app uses `"Sitka Heading", Sitka, Georgia, serif` globally via `--font-app`.
-No distributable Sitka font is included in this repository. Do not copy a system font
-or download a substitute without a suitable web-embedding licence.
+Self-hosted, SIL Open Font License 1.1. No external font requests are made.
 
-When licensed webfonts are supplied, put them here and add these declarations before
-`:root` in `app/theme.css` (adjust filenames to the actual supplied files):
+- **Fraunces** (headings) - variable weight 400-700, `fraunces-latin` and `fraunces-latin-ext` (Polish letters). Source: Google Fonts.
+- **Geist** (interface, buttons, prices, times) - variable weight 100-900, `geist-latin` and `geist-latin-ext`. Source: Vercel / Google Fonts.
 
-```css
-@font-face {
-  font-family: "Sitka Heading";
-  src: url("/fonts/sitka-heading-regular.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Sitka Heading";
-  src: url("/fonts/sitka-heading-bold.woff2") format("woff2");
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-```
-
-Keep the declarations disabled until the files exist. Current Android/iOS devices
-without Sitka use Georgia or the platform serif fallback; no missing font requests
-or external font downloads are made.
+The `@font-face` declarations live in `app/theme.css`; the four files are preloaded in `app/layout.tsx`.
+Tokens: `--font-display` (headings), `--font-ui` (interface), `--font-app` (default, = `--font-ui`).

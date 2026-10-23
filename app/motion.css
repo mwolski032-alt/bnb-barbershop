@@ -1,0 +1,299 @@
+/* Motion language for the whole app. Timing and easing come from theme.css tokens, so one
+   change there retunes every animation, and prefers-reduced-motion collapses them all. */
+
+@keyframes motion-rise { from { opacity: 0; transform: translateY(18px); } }
+@keyframes motion-fade { from { opacity: 0; } }
+@keyframes motion-slide-next { from { opacity: 0; transform: translateX(26px); } }
+@keyframes motion-slide-back { from { opacity: 0; transform: translateX(-26px); } }
+@keyframes motion-pop { 0% { transform: scale(.9); } 55% { transform: scale(1.05); } 100% { transform: scale(1); } }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(14px) scale(.97); } }
+@keyframes dialog-out { to { opacity: 0; transform: translateY(8px) scale(.98); } }
+@keyframes dialog-sheet-in { from { opacity: 0; transform: translateY(40px); } }
+@keyframes dialog-sheet-out { to { opacity: 0; transform: translateY(40px); } }
+@keyframes backdrop-in { from { opacity: 0; } }
+@keyframes backdrop-out { to { opacity: 0; } }
+@keyframes success-ring-pop { 0% { transform: scale(.88); } 60% { transform: scale(1.06); } 100% { transform: scale(1); } }
+
+/* ---------- Salon page ---------- */
+
+/* Entrance on first paint: the copy rises in sequence while the photo fades in. */
+.salon-header { animation: motion-fade var(--duration-slow) var(--ease-out) backwards; }
+.salon-cover-media { animation: motion-fade calc(var(--duration-slow) * 1.4) var(--ease-out) backwards; }
+.salon-cover-copy > * { animation: motion-rise var(--duration-slow) var(--ease-out) backwards; }
+.salon-cover-copy > :nth-child(2) { animation-delay: 80ms; }
+.salon-cover-copy > :nth-child(3) { animation-delay: 160ms; }
+.salon-cover-copy > :nth-child(4) { animation-delay: 240ms; }
+
+/* Below the fold: sections rise when they scroll into view (see use-reveal.ts). */
+.salon-home.reveal-ready [data-reveal]:not(.is-visible) { opacity: 0; }
+.salon-home [data-reveal].is-visible {
+  animation: motion-rise var(--duration-slow) var(--ease-out) backwards;
+  animation-delay: calc(var(--reveal-index, 0) * 90ms);
+}
+
+.salon-person > svg { transition: transform var(--duration-base) var(--ease-out); }
+.salon-person:hover > svg { transform: translate(3px, -3px); }
+.salon-person-photo, .salon-person-photo img { transition: transform var(--duration-slow) var(--ease-out); }
+.salon-person:hover .salon-person-photo { transform: scale(1.04); }
+
+/* Underline that grows from the left on text links in the header and footer. */
+.salon-header nav button:not(:disabled), .salon-footer button:not(:disabled) {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-repeat: no-repeat;
+  background-position: 0 calc(100% - 6px);
+  background-size: 0% 1px;
+  transition: background-size var(--duration-base) var(--ease-out);
+}
+.salon-header nav button:not(:disabled):hover, .salon-footer button:not(:disabled):hover { background-size: 100% 1px; }
+
+.salon-gallery-feature .gallery-photo img { transition: opacity var(--duration-slow) var(--ease-out), transform calc(var(--duration-slow) * 2) var(--ease-out); }
+.salon-gallery-feature:hover .gallery-photo img { transform: scale(1.025); }
+
+/* ---------- Dialogs ---------- */
+
+.salon-dialog[open] { animation: dialog-in var(--duration-base) var(--ease-out) both; }
+.salon-dialog[open]::backdrop { animation: backdrop-in var(--duration-base) ease both; }
+.salon-dialog[data-closing] { animation: dialog-out var(--duration-fast) var(--ease-in-out) both; }
+.salon-dialog[data-closing]::backdrop { animation: backdrop-out var(--duration-fast) ease both; }
+.salon-lightbox[open] { animation-name: backdrop-in; }
+.salon-lightbox[data-closing] { animation-name: backdrop-out; }
+.salon-lightbox img { animation: motion-fade var(--duration-slow) var(--ease-out) backwards; }
+@media (max-width: 700px) {
+  .salon-dialog:not(.salon-lightbox)[open] { animation-name: dialog-sheet-in; animation-duration: var(--duration-slow); }
+  .salon-dialog:not(.salon-lightbox)[data-closing] { animation-name: dialog-sheet-out; }
+}
+
+/* ---------- Booking wizard ---------- */
+
+/* Steps slide in from the side the user is moving towards; the options then cascade. */
+.story-scene { animation: none; }
+.story-scene[data-direction="forward"] { animation: motion-slide-next var(--duration-base) var(--ease-out) both; }
+.story-scene[data-direction="back"] { animation: motion-slide-back var(--duration-base) var(--ease-out) both; }
+.story-options > *, .story-times > * { animation: motion-rise var(--duration-slow) var(--ease-out) backwards; }
+.story-options > :nth-child(2), .story-times > :nth-child(2) { animation-delay: 50ms; }
+.story-options > :nth-child(3), .story-times > :nth-child(3) { animation-delay: 100ms; }
+.story-options > :nth-child(4), .story-times > :nth-child(4) { animation-delay: 150ms; }
+.story-options > :nth-child(n+5), .story-times > :nth-child(n+5) { animation-delay: 200ms; }
+
+/* The progress bar fills left to right instead of switching colour. */
+.story-segment { position: relative; overflow: hidden; }
+.story-progress .done .story-segment, .story-progress .current .story-segment { background: var(--color-border); }
+.story-segment::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--color-primary);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--duration-slow) var(--ease-out);
+}
+.story-progress .done .story-segment::after, .story-progress .current .story-segment::after { transform: scaleX(1); }
+.story-step-label { transition: color var(--duration-base) var(--ease-out); }
+
+.story-barber > svg { transition: transform var(--duration-base) var(--ease-out); }
+.story-days button, .story-times button { transition: var(--transition-interactive); }
+@media (hover: hover) {
+  .booking-story .story-barber:hover:not(:disabled):not(.selected),
+  .booking-story .story-service:hover:not(:disabled):not(.selected) { transform: translateY(-2px); box-shadow: var(--shadow-raised); }
+  .story-barber:hover:not(:disabled) > svg { transform: translateX(4px); }
+  .booking-story .story-days button:hover:not(:disabled):not(.selected),
+  .booking-story .story-times button:hover:not(:disabled):not(.selected) { background: var(--color-primary-soft); }
+  .booking-story .story-nearest:hover:not(:disabled) { box-shadow: var(--shadow-raised); transform: translateY(-1px); }
+}
+.story-times button.selected, .story-days button.selected { animation: motion-pop var(--duration-base) var(--ease-spring); }
+
+/* Summary ticket: rows appear one after another, then the total. */
+.story-ticket { animation: motion-rise var(--duration-slow) var(--ease-out) backwards; }
+.story-ticket dl > div { animation: motion-rise var(--duration-slow) var(--ease-out) backwards; }
+.story-ticket dl > :nth-child(1) { animation-delay: 80ms; }
+.story-ticket dl > :nth-child(2) { animation-delay: 140ms; }
+.story-ticket dl > :nth-child(3) { animation-delay: 200ms; }
+.story-ticket dl > :nth-child(4) { animation-delay: 260ms; }
+.story-ticket dl > :nth-child(5) { animation-delay: 320ms; }
+.story-price { animation: motion-rise var(--duration-slow) var(--ease-out) 380ms backwards; }
+.story-confirm .story-spinner { margin-left: 4px; }
+
+.story-notice { animation: motion-rise var(--duration-base) var(--ease-out) backwards; }
+
+/* ---------- Confirmation ---------- */
+
+.success-loader.done { animation: success-ring-pop var(--duration-slow) var(--ease-out); }
+.success-loader.done .loader-check { transition: opacity var(--duration-base) var(--ease-out) 120ms, transform var(--duration-slow) var(--ease-spring) 120ms; }
+.success-summary { animation: motion-rise var(--duration-slow) var(--ease-out) backwards; }
+.success-summary > * { animation: motion-rise var(--duration-slow) var(--ease-out) backwards; }
+.success-summary > :nth-child(2) { animation-delay: 80ms; }
+.success-summary > :nth-child(3) { animation-delay: 160ms; }
+.success-summary > :nth-child(4) { animation-delay: 240ms; }
+.success-summary > :nth-child(5) { animation-delay: 320ms; }
+.success-details span { animation: motion-pop var(--duration-slow) var(--ease-spring) backwards; }
+.success-details span:nth-child(2) { animation-delay: 60ms; }
+.success-details span:nth-child(3) { animation-delay: 120ms; }
+.success-details span:nth-child(4) { animation-delay: 180ms; }
+
+/* ---------- Screen to screen (View Transitions API) ---------- */
+
+::view-transition-old(root), ::view-transition-new(root) {
+  animation-duration: var(--duration-base);
+  animation-timing-function: var(--ease-out);
+}
+
+/* ---------- Admin panels (barber and owner) ---------- */
+
+@keyframes motion-grow-y { from { transform: scaleY(0); } }
+@keyframes motion-grow-x { from { transform: scaleX(0); } }
+
+/* Analytics: figures rise in order, bars and meters grow from their baseline. */
+.admin-tab-panel.active .analytics-kpi { animation: motion-rise var(--duration-slow) var(--ease-out) backwards; }
+.admin-tab-panel.active .analytics-panel { animation: motion-rise var(--duration-slow) var(--ease-out) 200ms backwards; }
+.admin-tab-panel.active .analytics-bar-track span { transform-origin: bottom center; animation: motion-grow-y calc(var(--duration-slow) * 1.5) var(--ease-out) 320ms backwards; }
+.admin-tab-panel.active .analytics-kpi-grid > :nth-child(2) { animation-delay: 60ms; }
+.admin-tab-panel.active .analytics-kpi-grid > :nth-child(3) { animation-delay: 120ms; }
+.admin-tab-panel.active .analytics-kpi-grid > :nth-child(4) { animation-delay: 180ms; }
+.admin-tab-panel.active .analytics-bar-column:nth-child(2) .analytics-bar-track span { animation-delay: 360ms; }
+.admin-tab-panel.active .analytics-bar-column:nth-child(3) .analytics-bar-track span { animation-delay: 400ms; }
+.admin-tab-panel.active .analytics-bar-column:nth-child(4) .analytics-bar-track span { animation-delay: 440ms; }
+.admin-tab-panel.active .analytics-bar-column:nth-child(n+5) .analytics-bar-track span { animation-delay: 480ms; }
+.admin-tab-panel.active .analytics-service-meter span { transform-origin: left center; animation: motion-grow-x calc(var(--duration-slow) * 1.5) var(--ease-out) 300ms backwards; }
+
+/* Lists: rows rise one after another when a day, filter or tab loads. */
+:is(.mobile-agenda-appointment, .nearest-appointment-card, .client-row, .admin-waitlist-row, .team-member-card,
+  .service-management-card, .availability-window-row, .admin-appointment) {
+  animation: motion-rise var(--duration-slow) var(--ease-out) backwards;
+}
+:is(.mobile-agenda-list, .nearest-appointments-list, .client-directory-list, .admin-waitlist-list, .team-member-list,
+  .service-management-list, .availability-window-list) > :nth-child(2) { animation-delay: 45ms; }
+:is(.mobile-agenda-list, .nearest-appointments-list, .client-directory-list, .admin-waitlist-list, .team-member-list,
+  .service-management-list, .availability-window-list) > :nth-child(3) { animation-delay: 90ms; }
+:is(.mobile-agenda-list, .nearest-appointments-list, .client-directory-list, .admin-waitlist-list, .team-member-list,
+  .service-management-list, .availability-window-list) > :nth-child(4) { animation-delay: 135ms; }
+:is(.mobile-agenda-list, .nearest-appointments-list, .client-directory-list, .admin-waitlist-list, .team-member-list,
+  .service-management-list, .availability-window-list) > :nth-child(n+5) { animation-delay: 180ms; }
+
+:is(.mobile-agenda-empty, .admin-empty-state, .clients-empty-state, .admin-waitlist-empty, .nearest-appointments-empty,
+  .analytics-empty-state, .admin-days-empty, .work-feedback, .client-feedback) {
+  animation: motion-rise var(--duration-base) var(--ease-out) backwards;
+}
+
+/* Touch and pointer feedback on the controls used all day. */
+:is(.admin-workspace-tabs button, .analytics-period-control button, .client-filters button, .admin-days button,
+  .mobile-agenda-actions button, .nearest-appointment-actions button, .client-quick-actions button,
+  .add-client-button, .schedule-add-appointment) {
+  transition: var(--transition-interactive);
+}
+:is(.mobile-agenda-actions button, .nearest-appointment-actions button, .client-quick-actions button,
+  .add-client-button, .schedule-add-appointment, .admin-days button, .availability-month-toggle):active:not(:disabled) {
+  transform: scale(.97);
+}
+@media (hover: hover) {
+  :is(.nearest-appointment-card, .client-row, .team-member-card, .service-management-card, .mobile-agenda-appointment) {
+    transition: var(--transition-interactive);
+  }
+  :is(.nearest-appointment-card, .client-row, .team-member-card, .service-management-card, .mobile-agenda-appointment):hover {
+    box-shadow: var(--shadow-raised);
+    transform: translateY(-2px);
+  }
+}
+
+/* Panel modals: the backdrop fades in, and ModalPresence keeps the last copy long enough to fade out. */
+@keyframes motion-fade-out { to { opacity: 0; } }
+.modal-presence { display: contents; }
+.modal-presence > .client-modal-backdrop { animation: motion-fade var(--duration-base) var(--ease-out) backwards; }
+.modal-presence[data-leaving] > .client-modal-backdrop { animation: motion-fade-out var(--duration-fast) var(--ease-in-out) both; pointer-events: none; }
+/* ---------- Less motion ---------- */
+
+/* ---------- Reviews ---------- */
+
+@keyframes review-star-pop { 0% { transform: scale(0) rotate(-45deg); opacity: 0; } 60% { transform: scale(1.4) rotate(10deg); opacity: 1; } 100% { transform: scale(1) rotate(0); } }
+@keyframes review-twinkle { 0%, 100% { opacity: 0; transform: scale(.2) rotate(0); } 35% { opacity: .95; transform: scale(1) rotate(45deg); } 70% { opacity: .25; transform: scale(.6) rotate(90deg); } }
+@keyframes review-score-in { from { opacity: 0; transform: translateY(16px) scale(.88); filter: blur(6px); } }
+@keyframes review-bar-grow { from { transform: scaleX(0); } }
+@keyframes review-card-in { from { opacity: 0; transform: perspective(700px) translateY(34px) rotateX(-12deg) scale(.95); } }
+@keyframes review-sheen { 0%, 62% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
+@keyframes review-icon-pulse { 0% { box-shadow: 0 0 0 0 var(--color-star-glow); } 70%, 100% { box-shadow: 0 0 0 14px transparent; } }
+@keyframes review-burst-ray { 0% { opacity: 1; transform: rotate(var(--a)) translateY(-6px) scale(1); } 100% { opacity: 0; transform: rotate(var(--a)) translateY(-36px) scale(.3); } }
+@keyframes review-celebrate { 0% { transform: scale(.94); box-shadow: 0 0 0 0 var(--color-star-glow); } 45% { transform: scale(1.03); } 100% { transform: scale(1); box-shadow: 0 0 0 26px transparent; } }
+@keyframes review-mark-pop { from { transform: scale(0) rotate(-90deg); } 60% { transform: scale(1.18) rotate(8deg); } }
+@keyframes review-check-draw { from { stroke-dashoffset: 30; } }
+@keyframes review-confetti-fall {
+  0% { opacity: 1; transform: translate(0, 0) rotate(0) scale(.4); }
+  16% { opacity: 1; transform: translate(calc(var(--tx) * .4), -76px) rotate(calc(var(--rot) * .3)) scale(1); }
+  100% { opacity: 0; transform: translate(var(--tx), var(--ty)) rotate(var(--rot)) scale(.8); }
+}
+
+/* Stars pop in one after another wherever a rating is first drawn. */
+.review-stars.is-animated svg.is-filled { animation: review-star-pop var(--duration-slow) var(--ease-spring) backwards; animation-delay: calc(var(--i) * 90ms + 150ms); }
+
+/* The card on the salon page: a slow golden sheen, a pulsing star and a few twinkles. */
+.salon-reviews-entry::after { animation: review-sheen calc(var(--duration-slow) * 14) var(--ease-in-out) infinite; }
+.salon-reviews-entry-icon { animation: review-icon-pulse calc(var(--duration-slow) * 6) var(--ease-out) infinite; }
+.salon-reviews-entry-icon > svg { transition: transform var(--duration-base) var(--ease-spring); }
+.salon-reviews-entry:hover .salon-reviews-entry-icon > svg { transform: rotate(18deg) scale(1.2); }
+.salon-reviews-entry-icon > i { animation: review-twinkle calc(var(--duration-slow) * 6) var(--ease-in-out) infinite; }
+.salon-reviews-entry-icon > i:nth-of-type(2) { animation-delay: 1100ms; }
+.salon-reviews-entry-icon > i:nth-of-type(3) { animation-delay: 2200ms; }
+
+/* The review reminder: it drops in, the stars light up one after another, and a sheen sweeps across. */
+@keyframes review-nudge-wave { 0%, 55%, 100% { transform: scale(1) rotate(0); opacity: .75; } 22% { transform: scale(1.35) rotate(-14deg); opacity: 1; } }
+.salon-review-nudge { animation: review-score-in calc(var(--duration-slow) * 1.5) var(--ease-spring) backwards; }
+.salon-review-nudge::after { animation: review-sheen calc(var(--duration-slow) * 12) var(--ease-in-out) infinite; }
+.salon-review-nudge-stars svg { animation: review-nudge-wave calc(var(--duration-slow) * 8) var(--ease-in-out) infinite; animation-delay: calc(var(--i) * 140ms); }
+
+/* The reviews dialog: sparkles over the header, a score that lands, bars that grow, cards that cascade. */
+.reviews-sparkles i { animation: review-twinkle calc(var(--duration-slow) * 7) var(--ease-in-out) infinite; animation-delay: var(--d); }
+.reviews-score { animation: review-score-in calc(var(--duration-slow) * 1.5) var(--ease-spring) backwards; animation-delay: 120ms; }
+.reviews-hero-side { animation: motion-rise var(--duration-slow) var(--ease-out) backwards; animation-delay: 240ms; }
+.reviews-histogram li { animation: motion-fade var(--duration-slow) var(--ease-out) backwards; animation-delay: calc(380ms + var(--i) * 80ms); }
+.reviews-histogram li > i > b { animation: review-bar-grow calc(var(--duration-slow) * 2) var(--ease-out) backwards; animation-delay: calc(480ms + var(--i) * 90ms); }
+.salon-reviews-list li { animation: review-card-in calc(var(--duration-slow) * 1.6) var(--ease-spring) backwards; animation-delay: calc(560ms + var(--i) * 90ms); }
+.salon-reviews-filters button { transition: background-color var(--duration-base) var(--ease-out), color var(--duration-base) var(--ease-out), transform var(--duration-base) var(--ease-spring); }
+.salon-reviews-filters button:active { transform: scale(.94); }
+
+/* The review form: stars light up in a wave with a burst of sparks, then the whole card celebrates. */
+.review-prompt-stars button.is-filled svg { animation: review-star-pop var(--duration-base) var(--ease-spring) backwards; animation-delay: calc(var(--i) * 55ms); }
+.review-burst i { animation: review-burst-ray var(--duration-slow) var(--ease-out) both; }
+.review-prompt-hint span { display: inline-block; animation: motion-rise var(--duration-base) var(--ease-spring) backwards; }
+.review-prompt.is-celebrating { animation: review-celebrate calc(var(--duration-slow) * 2) var(--ease-spring) backwards; }
+.review-done-mark { animation: review-mark-pop calc(var(--duration-slow) * 1.5) var(--ease-spring) backwards; animation-delay: 180ms; }
+.review-done-mark svg, .unsettled-done-mark svg { stroke-dasharray: 30; animation: review-check-draw calc(var(--duration-slow) * 1.5) var(--ease-out) backwards; animation-delay: 420ms; }
+.review-confetti i { animation: review-confetti-fall calc(var(--duration-slow) * 5) var(--ease-out) both; animation-delay: var(--delay); }
+
+/* End-of-day window for the barber. */
+.unsettled-done-mark { animation: review-mark-pop calc(var(--duration-slow) * 1.5) var(--ease-spring) backwards; }
+.unsettled-list li { animation: motion-rise var(--duration-slow) var(--ease-out) backwards; }
+.unsettled-list li:nth-child(2) { animation-delay: 60ms; }
+.unsettled-list li:nth-child(3) { animation-delay: 120ms; }
+.unsettled-list li:nth-child(n+4) { animation-delay: 180ms; }
+
+/* ---------- Waitlist ---------- */
+
+@keyframes waitlist-bell { 0%, 52%, 100% { transform: rotate(0); } 58% { transform: rotate(16deg); } 64% { transform: rotate(-14deg); } 70% { transform: rotate(10deg); } 76% { transform: rotate(-7deg); } 82% { transform: rotate(3deg); } }
+@keyframes waitlist-ripple { 0% { box-shadow: 0 0 0 0 var(--color-focus); } 70%, 100% { box-shadow: 0 0 0 .95rem transparent; } }
+@keyframes waitlist-day-pop { 0% { transform: scale(.7); } 60% { transform: scale(1.22); } 100% { transform: scale(1.06); } }
+
+/* The card invites a tap: it rises in, the bell rings now and then with ripples and sparks, a sheen sweeps across. */
+.booking-story .story-waitlist { animation: motion-rise var(--duration-slow) var(--ease-spring) backwards; animation-delay: 160ms; }
+.story-waitlist-bell { animation: waitlist-ripple calc(var(--duration-slow) * 6) var(--ease-out) infinite; }
+.story-waitlist-bell svg { transform-origin: 50% 12%; animation: waitlist-bell calc(var(--duration-slow) * 14) var(--ease-in-out) infinite; }
+.story-waitlist-bell i { animation: review-twinkle calc(var(--duration-slow) * 6) var(--ease-in-out) infinite; }
+.story-waitlist-bell i:nth-of-type(2) { animation-delay: 1200ms; }
+.story-waitlist-bell i:nth-of-type(3) { animation-delay: 2400ms; }
+.story-waitlist::after { animation: review-sheen calc(var(--duration-slow) * 13) var(--ease-in-out) infinite; }
+
+/* The form: the bell rings once on opening, the steps cascade in, a chosen day pops. */
+.waitlist-modal-heading > span svg { transform-origin: 50% 12%; animation: waitlist-bell calc(var(--duration-slow) * 3) var(--ease-in-out) 1; animation-delay: 300ms; }
+.waitlist-planner .wk-block { animation: motion-rise var(--duration-slow) var(--ease-out) backwards; }
+.waitlist-planner .wk-block:nth-child(2) { animation-delay: 80ms; }
+.waitlist-planner .wk-block:nth-child(3) { animation-delay: 160ms; }
+.waitlist-planner .wk-day.selected { animation: waitlist-day-pop var(--duration-base) var(--ease-spring); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}
