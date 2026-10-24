@@ -9,10 +9,6 @@ import {
   escapeIcsText,
   eventFromCalendarQuery,
   foldIcsLine,
-  googleCalendarUrl,
-  outlookCalendarUrl,
-  GOOGLE_CALENDAR_PACKAGE,
-  SAMSUNG_CALENDAR_PACKAGE,
 } from "../shared/calendar-ics.mjs";
 import handler from "../netlify/functions/calendar.mjs";
 
@@ -73,9 +69,10 @@ test("the .ics endpoint answers inline as a calendar so iPhones open 'Add to Cal
   assert.equal((await handler(new Request("https://bnb.example/api/calendar.ics", { method: "POST" }))).status, 405);
 });
 
-test("Android gets the system 'add event' intent, filled in and with a Google Calendar fallback", () => {
+test("Android gets the system 'add event' intent, filled in, with the .ics file as the fallback", () => {
   const start = Date.parse("2026-10-12T13:30:00Z");
-  const intent = androidCalendarIntent(event, start, start + 5_400_000);
+  const fallback = "https://bnb.example/api/calendar.ics?s=20261012T153000";
+  const intent = androidCalendarIntent(event, start, start + 5_400_000, fallback);
   assert.ok(intent.startsWith("intent:#Intent;action=android.intent.action.INSERT;type=vnd.android.cursor.dir/event;"));
   assert.ok(intent.endsWith(";end"));
   assert.ok(intent.includes(`l.beginTime=${start};`) && intent.includes(`l.endTime=${start + 5_400_000};`));
@@ -83,40 +80,11 @@ test("Android gets the system 'add event' intent, filled in and with a Google Ca
   assert.ok(intent.includes("S.title=BNB%20Barbershop%20-%20Strzy%C5%BCenie%20%2B%20broda;"));
   assert.ok(intent.includes("Strzy%C5%BCenie%2C%20broda%3B%20fade"));
   assert.ok(intent.includes("S.eventLocation="));
-  assert.ok(intent.includes("S.browser_fallback_url=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Frender"));
-  assert.ok(!androidCalendarIntent({ ...event, location: "" }, start, start + 1).includes("eventLocation"));
-});
-
-test("each Android calendar can be named, or left open so Android asks \"Just once / Always\"", () => {
-  const start = Date.parse("2026-10-12T13:30:00Z");
-  const samsung = androidCalendarIntent(event, start, start + 1, { packageName: SAMSUNG_CALENDAR_PACKAGE });
-  assert.ok(samsung.includes(`type=vnd.android.cursor.dir/event;package=${SAMSUNG_CALENDAR_PACKAGE};S.title=`));
-  const google = androidCalendarIntent(event, start, start + 1, { packageName: GOOGLE_CALENDAR_PACKAGE });
-  assert.ok(google.includes(`package=${GOOGLE_CALENDAR_PACKAGE};`));
-  // No package: nothing names an app, so the phone lists every calendar and asks.
-  assert.ok(!androidCalendarIntent(event, start, start + 1).includes("package="));
-  // The fallback used when the app is missing can be replaced.
-  const custom = androidCalendarIntent(event, start, start + 1, { packageName: SAMSUNG_CALENDAR_PACKAGE, fallbackUrl: "https://bnb.example/x.ics" });
-  assert.ok(custom.includes("S.browser_fallback_url=https%3A%2F%2Fbnb.example%2Fx.ics;end"));
-});
-
-test("Outlook opens prefilled with real instants", () => {
-  const start = Date.parse("2026-10-12T13:30:00Z");
-  const url = new URL(outlookCalendarUrl(event, start, start + 5_400_000));
-  assert.equal(url.origin + url.pathname, "https://outlook.live.com/calendar/0/deeplink/compose");
-  assert.equal(url.searchParams.get("startdt"), "2026-10-12T13:30:00.000Z");
-  assert.equal(url.searchParams.get("enddt"), "2026-10-12T15:00:00.000Z");
-  assert.equal(url.searchParams.get("subject"), event.title);
-  assert.equal(url.searchParams.get("location"), event.location);
-});
-
-test("Google Calendar opens prefilled with the right time zone", () => {
-  const url = new URL(googleCalendarUrl(event));
-  assert.equal(url.origin + url.pathname, "https://calendar.google.com/calendar/render");
-  assert.equal(url.searchParams.get("action"), "TEMPLATE");
-  assert.equal(url.searchParams.get("dates"), "20261012T153000/20261012T170000");
-  assert.equal(url.searchParams.get("ctz"), "Europe/Warsaw");
-  assert.equal(url.searchParams.get("text"), event.title);
+  assert.ok(!androidCalendarIntent({ ...event, location: "" }, start, start + 1, fallback).includes("eventLocation"));
+  // No app is named, so the phone lists every calendar and asks. Nothing sends the user to Google's website.
+  assert.ok(!intent.includes("package="));
+  assert.ok(intent.includes(`S.browser_fallback_url=${encodeURIComponent(fallback)};end`));
+  assert.ok(!/calendar.google.com/.test(intent));
 });
 
 test("the booking summary and the visit sheet both carry the calendar button, and the old file download is gone", () => {
@@ -131,18 +99,18 @@ test("the booking summary and the visit sheet both carry the calendar button, an
   assert.match(read("app/components/calendar-button.tsx"), /warmSalonAddress\(\)/);
 });
 
-test("the calendar chooser lists the right apps per device and can remember the choice", () => {
+test("there is one way to add a visit to the calendar and the phone picks the app", () => {
   const lib = read("app/lib/calendar-export.ts");
-  // Samsung phones get their own calendar first; other Androids do not see it.
-  assert.match(lib, /\/SAMSUNG\|SM-\[A-Z0-9\]\+\/i\.test\(ua\)/);
-  assert.match(lib, /\.\.\.\(samsung \? \[\{ id: "samsung" as const/);
-  assert.match(lib, /id: "android-choose", label: "Inna aplikacja"/);
-  // The saved choice is only used when this device still offers it, and storage failures are harmless.
-  assert.match(lib, /getCalendarChoices\(\)\.some\(\(choice\) => choice\.id === saved\)/);
   const button = read("app/components/calendar-button.tsx");
-  assert.match(button, /saved \? run\(saved, true\) : setOpen\(true\)/);
-  assert.match(button, /Zapamiętaj mój wybór/);
-  assert.match(button, /Zmień kalendarz/);
-  // The calendar opens straight from the tap, before the sheet closes.
-  assert.match(button, /run\(choice, remember\); close\(\);/);
+  // No list of calendars, no remembered choice, no Google, Outlook or file option.
+  for (const gone of ["getCalendarChoices", "saveCalendarChoice", "googleCalendarUrl", "outlookCalendarUrl", "SAMSUNG_CALENDAR_PACKAGE", "android-choose"]) {
+    assert.ok(!lib.includes(gone) && !button.includes(gone), gone);
+  }
+  assert.doesNotMatch(button, /SalonDialog|Zapamiętaj|Zmień kalendarz/);
+  // Android: the system intent, whose fallback is the site's own .ics address (absolute, as Chrome needs).
+  assert.ok(lib.includes("androidCalendarIntent(event, startMs, endMs, new URL(fileUrl, window.location.origin).href)"));
+  // iPhone: the .ics opens as "Add to Calendar".
+  assert.ok(lib.includes("window.location.assign(fileUrl)"));
+  // The calendar opens straight from the tap.
+  assert.ok(button.includes("onClick={() => { if (summary) addToCalendar(summary); }}"));
 });

@@ -1,13 +1,12 @@
-// "Add to calendar" for any phone. One event description feeds every route the user can pick:
-//   Android -> the system "add event" intent, for one named app (Samsung, Google) or for any app, in which
-//              case Android itself asks "Just once / Always";
-//   iPhone  -> an .ics served by the site itself, which iOS opens as "Add to Calendar";
-//   web     -> Google Calendar's or Outlook's prefilled "new event" page.
+// "Add to calendar" for any phone, through one door: the visit as an .ics file served by the site itself.
+//   Android -> the system "add event" intent first; Chrome only lets a page start it when a calendar app
+//              accepts links from the browser, so the .ics address is the fallback, and the phone then asks
+//              which calendar app should open the file;
+//   iPhone  -> the .ics opens as "Add to Calendar";
+//   other   -> the .ics is downloaded.
 // Times are "floating" local times (YYYYMMDDTHHMMSS), so the event lands at the same wall-clock time
 // wherever the phone is set to Warsaw time, with no time zone tables to ship.
 
-export const SAMSUNG_CALENDAR_PACKAGE = "com.samsung.android.calendar";
-export const GOOGLE_CALENDAR_PACKAGE = "com.google.android.calendar";
 export const CALENDAR_FILE_PATH = "/api/calendar.ics";
 export const CALENDAR_TIME_PATTERN = /^\d{8}T\d{6}$/;
 export const CALENDAR_UID_PATTERN = /^[\w.@-]{1,80}$/;
@@ -93,44 +92,16 @@ export const eventFromCalendarQuery = (params) => {
   };
 };
 
-export const googleCalendarUrl = (event) => {
-  const params = new URLSearchParams({
-    action: "TEMPLATE",
-    text: event.title,
-    dates: `${event.startLocal}/${event.endLocal}`,
-    ctz: "Europe/Warsaw",
-    details: event.description,
-  });
-  if (event.location) params.set("location", event.location);
-  return `https://calendar.google.com/calendar/render?${params.toString()}`;
-};
-
-/** Outlook.com's prefilled "new event" page. Unlike Google's it wants real instants, not wall-clock times. */
-export const outlookCalendarUrl = (event, startMs, endMs) => {
-  const params = new URLSearchParams({
-    path: "/calendar/action/compose",
-    rru: "addevent",
-    subject: event.title,
-    startdt: new Date(startMs).toISOString(),
-    enddt: new Date(endMs).toISOString(),
-    body: event.description,
-  });
-  if (event.location) params.set("location", event.location);
-  return `https://outlook.live.com/calendar/0/deeplink/compose?${params.toString()}`;
-};
-
 /**
- * Android "insert event" intent. With `packageName` that one app opens its editor with everything filled
- * in; without it Android lists every calendar app and asks "Just once / Always". `fallbackUrl` is
- * followed when the app is not installed.
+ * Android "insert event" intent: the calendar's own editor opens with everything filled in. No app is named,
+ * so Android lists every calendar and asks. `fallbackUrl` is followed when no app takes the intent.
  */
-export const androidCalendarIntent = (event, startMs, endMs, { packageName = "", fallbackUrl = googleCalendarUrl(event) } = {}) => {
+export const androidCalendarIntent = (event, startMs, endMs, fallbackUrl) => {
   const enc = encodeURIComponent;
   return [
     "intent:#Intent",
     "action=android.intent.action.INSERT",
     "type=vnd.android.cursor.dir/event",
-    ...(packageName ? [`package=${packageName}`] : []),
     `S.title=${enc(event.title)}`,
     `S.description=${enc(event.description)}`,
     ...(event.location ? [`S.eventLocation=${enc(event.location)}`] : []),
