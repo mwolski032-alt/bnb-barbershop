@@ -8,6 +8,7 @@ export type AppointmentMutationAction =
   | "confirm_client"
   | "confirm_admin"
   | "attend_client"
+  | "refuse_admin"
   | "cancel_client"
   | "create_admin"
   | "update_admin"

@@ -23,6 +23,12 @@ import {
 } from "./_notification-service.mjs";
 import { isBookableStartTime } from "../../shared/booking-time.mjs";
 import {
+  refuseClientReschedule,
+  withPreviousSchedule,
+  withoutPreviousSchedule,
+  withoutRefusalNote,
+} from "../../shared/reschedule-refusal.mjs";
+import {
   consumeMatchingWaitlistEntry,
   hasBlockingWaitlistOffer,
   offerWaitlistSlot,
@@ -34,6 +40,7 @@ const allowedActions = new Set([
   "confirm_client",
   "confirm_admin",
   "attend_client",
+  "refuse_admin",
   "cancel_client",
   "create_admin",
   "update_admin",
@@ -54,6 +61,7 @@ const scheduleAdminActions = new Set([
   "update_admin",
   "reschedule_admin",
   "confirm_admin",
+  "refuse_admin",
   "cancel_admin",
   "settle_admin",
   "mark_no_show_admin",
@@ -1446,6 +1454,10 @@ const handler = async (request, timings = {}) => {
         next.status = "rescheduled";
         next.rescheduledAt = Date.now();
         next.rescheduledBy = action === "reschedule_client" ? "client" : "admin";
+        // A client's move can be refused by the barber, which brings the visit back to the term it had.
+        next = withoutRefusalNote(
+          action === "reschedule_client" ? withPreviousSchedule(current, next) : withoutPreviousSchedule(next),
+        );
         const validationError = validateAppointmentTime(next);
         if (validationError) return { error: validationError };
         if (action === "reschedule_client") {
@@ -1484,6 +1496,7 @@ const handler = async (request, timings = {}) => {
           next.status = "rescheduled";
           next.rescheduledAt = Date.now();
           next.rescheduledBy = "admin";
+          next = withoutRefusalNote(withoutPreviousSchedule(next));
           const validationError = validateAppointmentTime(next);
           if (validationError) return { error: validationError, status: 400 };
           if (hasConflict(appointments, next, appointmentId)) {
@@ -1516,6 +1529,15 @@ const handler = async (request, timings = {}) => {
         next.status = "confirmed";
         next.confirmedAt = Date.now();
         next.confirmedBy = action === "confirm_client" ? "client" : "admin";
+        next = withoutPreviousSchedule(next);
+      } else if (action === "refuse_admin") {
+        // The barber does not accept the client's new term: the visit goes back to its old term (see
+        // shared/reschedule-refusal.mjs) and the client is told to pick another one.
+        const refusal = refuseClientReschedule(appointments, current, {
+          isHeld: (restored) => hasBlockingWaitlistOffer(database, restored, restored.userId || ""),
+        });
+        if (refusal.error) return { error: refusal.error, status: 409 };
+        next = refusal.appointment;
       } else if (action === "attend_client") {
         // "I'll be there": the answer to the reminder. Only a visit that stands as booked can be vouched for.
         if (current.status !== "confirmed") {

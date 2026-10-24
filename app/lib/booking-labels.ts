@@ -12,6 +12,7 @@ export const appointmentActionFeedback: Record<
   reschedule_client: { pending: "Zmieniam termin…", success: "Nowy termin został zapisany." },
   confirm_client: { pending: "Potwierdzam termin…", success: "Termin został potwierdzony." },
   confirm_admin: { pending: "Potwierdzam wizytę…", success: "Wizyta została potwierdzona." },
+  refuse_admin: { pending: "Odmawiam nowego terminu…", success: "Wizyta wróciła do poprzedniego terminu. Klient dostał prośbę o wybranie innego." },
   attend_client: { pending: "Potwierdzam obecność…", success: "Dziękujemy, barber widzi, że będziesz." },
   cancel_client: { pending: "Odwołuję wizytę…", success: "Wizyta została odwołana." },
   create_admin: { pending: "Zapisuję wizytę…", success: "Wizyta została zapisana." },

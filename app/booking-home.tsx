@@ -1188,6 +1188,14 @@ export function BookingHome() {
           next.rescheduledBy = action === "reschedule_client" ? "client" : "admin";
         } else if (action === "confirm_client" || action === "confirm_admin") {
           next.status = "confirmed";
+        } else if (action === "refuse_admin") {
+          if (next.previousDateKey && next.previousStartTime) {
+            next.dateKey = next.previousDateKey;
+            next.startTime = next.previousStartTime;
+            next.status = "confirmed";
+            delete next.previousDateKey;
+            delete next.previousStartTime;
+          }
         } else if (action === "attend_client") {
           next.attendanceConfirmedAt = now;
         } else if (action === "settle_admin") {
@@ -3500,6 +3508,32 @@ export function BookingHome() {
     }
   };
 
+  // The barber refuses the new term a client picked: the visit goes back to its old term and the client is asked to pick another.
+  const refuseClientRescheduledAppointment = async (appointment: AdminAppointment) => {
+    if (isSaving || !appointment.previousDateKey) return;
+    const oldTerm = `${dayFormatter.format(dateFromKey(appointment.previousDateKey))}, ${appointment.previousStartTime}`;
+    if (!(await confirmAction({
+      title: "Odmówić nowego terminu?",
+      message: `Wizyta wróci do terminu ${oldTerm}, a ${appointment.clientName} dostanie prośbę o wybranie innego. Wizyta nie zostanie odwołana.`,
+      confirmLabel: "Odmawiam",
+      tone: "danger",
+    }))) return;
+
+    try {
+      setIsSaving(true);
+      setBookingError("");
+      await runAppointmentOperation(
+        "refuse_admin",
+        { appointmentId: appointment.id },
+        { key: `refuse_admin:${appointment.id}`, expectedVersion: appointment.version ?? 1 },
+      );
+    } catch (error) {
+      setBookingError(error instanceof Error ? error.message : "Nie udało się odmówić nowego terminu.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const confirmClientAttendance = async (appointmentId: string) => {
     if (isSaving) return;
 
@@ -4833,6 +4867,8 @@ export function BookingHome() {
                   onOpenClient={setSelectedAdminClientId}
                   onOpenSms={openSmsComposer}
                   onCancelAppointment={(appointmentId) => void declineAdminAppointment(appointmentId)}
+                  onConfirmAppointment={(appointment) => void confirmClientRescheduledAppointment(appointment.id)}
+                  onRefuseAppointment={(appointment) => void refuseClientRescheduledAppointment(appointment)}
                   onBookWaitlist={openWaitlistBooking}
                   onRemoveWaitlist={(entry) => void removeAdminWaitlistEntry(entry)}
                 />
@@ -7073,6 +7109,8 @@ export function BookingHome() {
                   ? "Czy nowy termin Ci odpowiada?"
                   : selectedClientAppointmentIsRescheduled
                     ? "Czekamy na potwierdzenie barbera"
+                    : selectedClientAppointment.rescheduleRefusedFrom
+                      ? "Nowy termin nie pasuje barberowi"
                     : selectedClientAppointment.attendanceConfirmedAt
                       ? "Obecność potwierdzona"
                       : selectedClientAppointment.confirmedBy === "client"
@@ -7086,6 +7124,8 @@ export function BookingHome() {
                   ? "Sprawdź datę i godzinę powyżej. Jeśli wszystko się zgadza, potwierdź nowy termin."
                   : selectedClientAppointmentIsRescheduled
                     ? "Twoja propozycja zmiany została zapisana. Barber może ją teraz potwierdzić."
+                    : selectedClientAppointment.rescheduleRefusedFrom
+                      ? `Termin ${dayFormatter.format(dateFromKey(selectedClientAppointment.rescheduleRefusedFrom.dateKey))}, ${selectedClientAppointment.rescheduleRefusedFrom.startTime} nie pasuje. Wizyta zostaje w dawnym terminie. Wybierz inny przyciskiem „Zmień”.`
                     : selectedClientAppointment.attendanceConfirmedAt
                       ? "Dziękujemy. Barber widzi, że będziesz. W razie zmiany planów odwołaj wizytę, żeby ktoś inny mógł skorzystać z terminu."
                       : selectedClientAppointment.confirmedBy === "client"

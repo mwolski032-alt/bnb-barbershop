@@ -7,7 +7,13 @@ import {
   readDatabaseWithEtag,
   writeDatabaseIfUnchanged,
 } from "./_firebase-admin.mjs";
-import { createNotificationActionToken } from "./lib/notification-action-token.mjs";
+import {
+  BARBER_CONFIRM_ACTION,
+  BARBER_REFUSE_ACTION,
+  createAppointmentActionToken,
+  createNotificationActionToken,
+  createWaitlistOfferActionToken,
+} from "./lib/notification-action-token.mjs";
 
 export const notificationEventByAction = {
   create_client: "new_booking",
@@ -19,6 +25,7 @@ export const notificationEventByAction = {
   confirm_client: "client_confirmed",
   confirm_client_notification: "client_confirmed",
   confirm_admin: "admin_confirmed",
+  refuse_admin: "admin_reschedule_refused",
   cancel_client: "client_cancelled",
   cancel_admin: "admin_cancelled",
   join_waitlist: "waitlist_joined",
@@ -168,6 +175,16 @@ const eventCopy = {
     title: "Nowy termin został potwierdzony",
     body: (appointment) => `${appointment.serviceName}: ${appointment.dateKey}, ${appointment.startTime}.`,
   },
+  // The barber refused the client's new term: the visit is back at its old term and the client is asked to move it again.
+  admin_reschedule_refused: {
+    target: "client",
+    title: "Nowy termin nie pasuje barberowi",
+    body: (appointment) => {
+      const refused = appointment.rescheduleRefusedFrom;
+      const refusedText = refused ? `Termin ${formatDateKey(refused.dateKey)} o ${refused.startTime} nie pasuje. ` : "";
+      return `${refusedText}Twoja wizyta zostaje: ${formatDateKey(appointment.dateKey)} o ${appointment.startTime}. Wybierz inny termin w aplikacji.`;
+    },
+  },
   admin_cancelled: {
     target: "client",
     title: "Wizyta została odwołana",
@@ -284,6 +301,28 @@ const sendToDevice = async (accessToken, device, notification, appointment, even
     appointment.rescheduledBy === "admin"
       ? createNotificationActionToken(appointment)
       : "";
+  // The barber gets "Potwierdzam" / "Odmawiam" on a visit the client moved; each button carries its own signed
+  // token for exactly this visit. A held waiting-list slot can be turned down with "Nie, dziękuję".
+  const barberAnswersMove =
+    event === "client_rescheduled" &&
+    device.audience === "barber" &&
+    appointment.status === "rescheduled" &&
+    appointment.rescheduledBy === "client";
+  const barberConfirmToken = barberAnswersMove
+    ? createAppointmentActionToken(BARBER_CONFIRM_ACTION, appointment, device.uid)
+    : "";
+  const refuseActionToken = barberAnswersMove && appointment.previousDateKey
+    ? createAppointmentActionToken(BARBER_REFUSE_ACTION, appointment, device.uid)
+    : "";
+  const declineActionToken =
+    event === "waitlist_slot_open" && device.audience === "client" && appointment.waitlistId && appointment.offerExpiresAt
+      ? createWaitlistOfferActionToken({
+          userId: device.uid,
+          waitlistId: appointment.waitlistId,
+          dateKey: appointment.dateKey,
+          startTime: appointment.startTime,
+        })
+      : "";
   // The visit reminder asks a question, so it carries the answers as buttons ("Potwierdzam" / "Odwołuję").
   const answerButtons = event === "appointment_reminder" && device.audience === "client" ? "attend" : "";
 
@@ -303,7 +342,9 @@ const sendToDevice = async (accessToken, device, notification, appointment, even
             link: link.href,
             tag: `appointment-${appointment.id}-${event}`,
             ...extraData,
-            confirmActionToken,
+            confirmActionToken: confirmActionToken || barberConfirmToken,
+            refuseActionToken,
+            declineActionToken,
             ...(answerButtons ? { actions: answerButtons } : {}),
           },
           webpush: {

@@ -1061,3 +1061,211 @@ test("scheduled worker and frontend wiring keep appointment notifications backen
   assert.match(notificationSource, /status: "invalid"/);
   assert.match(notificationSource, /history/);
 });
+
+const actionRequest = (value) => notificationActionHandler(
+  new Request("https://bnb.example/.netlify/functions/notification-action", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: value }),
+  }),
+);
+
+// The client moves a visit through the API; returns what the barber's phone received.
+const clientMovesVisit = async (overrides = {}, startTime = "15:00") => {
+  const appointment = appointmentFor({ id: "moved-by-client", startTime: "10:00", ...overrides });
+  database.appointments[appointment.id] = appointment;
+  const response = await appointmentRequest("client-token", {
+    action: "reschedule_client",
+    operationId: "client-moves-visit",
+    expectedVersion: 1,
+    appointmentId: appointment.id,
+    dateKey: "2099-01-10",
+    startTime,
+  });
+  const result = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(result));
+  await dispatchNotifications("client-token", result.notificationOperationIds);
+  const barberPush = sentPushes.find(({ message }) => message.token === "mateusz-token");
+  return { appointment, barberPush };
+};
+
+test("a visit moved by the client remembers its old term and the barber's phone gets both answers", async () => {
+  reset();
+  const { appointment, barberPush } = await clientMovesVisit();
+  const moved = database.appointments[appointment.id];
+  assert.equal(moved.status, "rescheduled");
+  assert.equal(moved.rescheduledBy, "client");
+  assert.equal(moved.startTime, "15:00");
+  assert.equal(moved.previousDateKey, "2099-01-10");
+  assert.equal(moved.previousStartTime, "10:00");
+
+  assert.equal(barberPush.message.data.event, "client_rescheduled");
+  assert.ok(barberPush.message.data.confirmActionToken);
+  assert.ok(barberPush.message.data.refuseActionToken);
+  assert.notEqual(barberPush.message.data.confirmActionToken, barberPush.message.data.refuseActionToken);
+  // Only the barber's phone gets answer buttons; the client's own copy has none.
+  const clientCopies = sentPushes.filter(({ message }) => message.token.startsWith("client-"));
+  for (const { message } of clientCopies) assert.equal(message.data.refuseActionToken, "");
+});
+
+test("the barber confirms the client's new term from the notification, once", async () => {
+  reset();
+  const { appointment, barberPush } = await clientMovesVisit();
+  sentPushes = [];
+  const confirmToken = barberPush.message.data.confirmActionToken;
+
+  const first = await actionRequest(confirmToken);
+  const firstBody = await first.json();
+  assert.equal(first.status, 200, JSON.stringify(firstBody));
+  const confirmed = database.appointments[appointment.id];
+  assert.equal(confirmed.status, "confirmed");
+  assert.equal(confirmed.startTime, "15:00");
+  assert.equal(confirmed.confirmedBy, "admin");
+  assert.equal(confirmed.previousDateKey, undefined);
+  const operation = database.appointmentOperations[confirmed.lastOperationId];
+  assert.equal(operation.action, "confirm_admin");
+  assert.equal(operation.actorUid, mateuszUid);
+  assert.equal(database.appointmentAudit[confirmed.lastOperationId].actorRole, "barber");
+  // The client is told.
+  assert.equal(database.notificationOutbox[confirmed.lastOperationId].event, "admin_confirmed");
+
+  const replay = await actionRequest(confirmToken);
+  assert.equal(replay.status, 200);
+  assert.equal((await replay.json()).idempotent, true);
+  assert.equal(database.appointments[appointment.id].version, confirmed.version);
+
+  // The refuse button of the same notification no longer applies to an answered visit.
+  const lateRefuse = await actionRequest(barberPush.message.data.refuseActionToken);
+  assert.equal(lateRefuse.status, 409);
+  assert.equal(database.appointments[appointment.id].startTime, "15:00");
+});
+
+test("refusing the client's new term brings the visit back to its old term and tells the client", async () => {
+  reset();
+  const { appointment, barberPush } = await clientMovesVisit();
+  sentPushes = [];
+
+  const refused = await actionRequest(barberPush.message.data.refuseActionToken);
+  const body = await refused.json();
+  assert.equal(refused.status, 200, JSON.stringify(body));
+  const restored = database.appointments[appointment.id];
+  assert.equal(restored.status, "confirmed");
+  assert.equal(restored.startTime, "10:00");
+  assert.equal(restored.previousDateKey, undefined);
+  assert.deepEqual(restored.rescheduleRefusedFrom, { dateKey: "2099-01-10", startTime: "15:00" });
+  assert.equal(database.appointmentOperations[restored.lastOperationId].action, "refuse_admin");
+  assert.equal(database.notificationOutbox[restored.lastOperationId].event, "admin_reschedule_refused");
+
+  const clientPush = sentPushes.find(({ message }) => message.token === "client-phone-token");
+  assert.equal(clientPush.message.data.event, "admin_reschedule_refused");
+  assert.match(clientPush.message.data.body, /15:00 nie pasuje/);
+  assert.match(clientPush.message.data.body, /10:00/);
+  assert.equal(new URL(clientPush.message.data.link).searchParams.get("appointment"), appointment.id);
+});
+
+test("the barber can refuse from the app too, unless the old term is gone", async () => {
+  reset();
+  const { appointment } = await clientMovesVisit();
+  // Somebody took the old term while the visit was moved away.
+  database.appointments.taken = appointmentFor({ id: "taken", userId: waitlistClientUid, clientId: waitlistClientUid, startTime: "10:30" });
+  const blocked = await appointmentRequest("mateusz-id-token", {
+    action: "refuse_admin",
+    operationId: "refuse-blocked",
+    expectedVersion: database.appointments[appointment.id].version,
+    appointmentId: appointment.id,
+  });
+  assert.equal(blocked.status, 409);
+  assert.match((await blocked.json()).error, /zajęty/);
+  assert.equal(database.appointments[appointment.id].startTime, "15:00");
+
+  delete database.appointments.taken;
+  const allowed = await appointmentRequest("mateusz-id-token", {
+    action: "refuse_admin",
+    operationId: "refuse-allowed",
+    expectedVersion: database.appointments[appointment.id].version,
+    appointmentId: appointment.id,
+  });
+  const result = await allowed.json();
+  assert.equal(allowed.status, 200, JSON.stringify(result));
+  assert.equal(database.appointments[appointment.id].startTime, "10:00");
+  assert.equal(database.appointments[appointment.id].status, "confirmed");
+
+  // A client cannot refuse their own move: the action is the barber's.
+  const move = await appointmentRequest("client-token", {
+    action: "refuse_admin",
+    operationId: "client-tries-refuse",
+    expectedVersion: database.appointments[appointment.id].version,
+    appointmentId: appointment.id,
+  });
+  assert.notEqual(move.status, 200);
+});
+
+test("a visit moved before old terms were remembered cannot be refused, only confirmed or cancelled", async () => {
+  reset();
+  const legacy = appointmentFor({ id: "legacy-move", status: "rescheduled", rescheduledBy: "client", startTime: "15:00", version: 2 });
+  database.appointments[legacy.id] = legacy;
+  const refused = await appointmentRequest("mateusz-id-token", {
+    action: "refuse_admin",
+    operationId: "refuse-legacy",
+    expectedVersion: 2,
+    appointmentId: legacy.id,
+  });
+  assert.equal(refused.status, 409);
+  assert.equal(database.appointments[legacy.id].status, "rescheduled");
+});
+
+test("a held waiting-list slot can be turned down from the notification, and goes to the next person", async () => {
+  reset();
+  const base = {
+    clientEmail: "waitlist@example.com", phone: "600700800", barberId: "mateusz", serviceId: "cut",
+    serviceName: "Strzyżenie", durationMinutes: 60, dateFrom: "2099-01-10", dateTo: "2099-01-10",
+    timePreference: "afternoon", status: "waiting", version: 1, updatedAt: Date.now(),
+  };
+  database.waitlistEntries = {
+    first: { ...base, id: "first", userId: waitlistClientUid, clientName: "Pierwszy", createdAt: 1 },
+    second: { ...base, id: "second", userId: kacperUid, clientName: "Drugi", createdAt: 2 },
+  };
+  database.notificationTokens[kacperUid].waitlistPhone = { token: "second-waitlist-token", active: true, isAdmin: false };
+  const appointment = appointmentFor({ id: "freed-slot", startTime: "15:00" });
+  database.appointments[appointment.id] = appointment;
+
+  const cancelled = await appointmentRequest("client-token", {
+    action: "cancel_client",
+    operationId: "cancel-freed-slot",
+    expectedVersion: 1,
+    appointmentId: appointment.id,
+  });
+  const cancelResult = await cancelled.json();
+  assert.equal(cancelled.status, 200, JSON.stringify(cancelResult));
+  await dispatchNotifications("client-token", cancelResult.notificationOperationIds);
+
+  const offerPush = sentPushes.find(({ message }) => message.token === "waitlist-client-token");
+  assert.equal(offerPush.message.data.event, "waitlist_slot_open");
+  assert.ok(offerPush.message.data.declineActionToken);
+  assert.equal(offerPush.message.data.confirmActionToken, "");
+  assert.equal(database.waitlistEntries.first.status, "offered");
+  sentPushes = [];
+
+  const declined = await actionRequest(offerPush.message.data.declineActionToken);
+  const declinedBody = await declined.json();
+  assert.equal(declined.status, 200, JSON.stringify(declinedBody));
+  assert.equal(database.waitlistEntries.first.status, "waiting");
+  assert.equal(database.waitlistEntries.first.offer ?? null, null);
+  assert.ok(database.waitlistEntries.first.nextOfferAt > Date.now());
+  assert.equal(database.waitlistEntries.second.status, "offered");
+  assert.equal(database.waitlistEntries.second.offer.startTime, "15:00");
+  assert.equal(sentPushes.some(({ message }) => message.token === "second-waitlist-token"), true);
+
+  // Pressing it again, or after the offer moved on, changes nothing.
+  const again = await actionRequest(offerPush.message.data.declineActionToken);
+  assert.equal(again.status, 200);
+  assert.equal(database.waitlistEntries.second.status, "offered");
+});
+
+test("buttons are wired in the service worker for the barber and the waiting-list offer", async () => {
+  const worker = await readFile(new URL("../public/sw.js", import.meta.url), "utf8");
+  assert.match(worker, /\{ action: "confirm", title: "Potwierdzam" \}, \{ action: "refuse", title: "Odmawiam" \}/);
+  assert.match(worker, /\{ action: "reserve", title: "Rezerwuję" \}, \{ action: "decline", title: "Nie, dziękuję" \}/);
+  assert.match(worker, /event\.action === "refuse" && notification\.data\?\.refuseActionToken/);
+  assert.match(worker, /event\.action === "decline" && notification\.data\?\.declineActionToken/);
+});

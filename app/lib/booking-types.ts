@@ -107,6 +107,12 @@ export type AdminAppointment = Appointment & {
   rescheduledBy?: "client" | "admin";
   confirmedAt?: number;
   confirmedBy?: "client" | "admin";
+  /** The term a client moved the visit from; the barber can refuse the move and return to it. */
+  previousDateKey?: string;
+  previousStartTime?: string;
+  /** The barber refused the client's move: the visit went back, and this is the term that was refused. */
+  rescheduleRefusedAt?: number;
+  rescheduleRefusedFrom?: { dateKey: string; startTime: string };
   /** The client answered the reminder with "I'll be there". */
   attendanceConfirmedAt?: number;
   noShowAt?: number;

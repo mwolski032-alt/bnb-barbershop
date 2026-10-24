@@ -44,7 +44,19 @@ const showPushNotification = (payload = {}) => {
   const data = payload.data ?? {};
   const title = notification.title ?? data.title ?? "BNB Barbershop";
   const confirmActionToken = data.confirmActionToken ?? "";
+  // The barber's "Odmawiam" on a visit the client moved, and "Nie, dziękuję" on a held waiting-list slot.
+  const refuseActionToken = data.refuseActionToken ?? "";
+  const declineActionToken = data.declineActionToken ?? "";
   const isSupportedAndroid = /Android/i.test(self.navigator?.userAgent ?? "");
+  const actionButtons = !isSupportedAndroid
+    ? []
+    : confirmActionToken && refuseActionToken
+      ? [{ action: "confirm", title: "Potwierdzam" }, { action: "refuse", title: "Odmawiam" }]
+      : confirmActionToken
+        ? [{ action: "confirm", title: "Potwierdź" }, { action: "details", title: "Zobacz szczegóły" }]
+        : declineActionToken
+          ? [{ action: "reserve", title: "Rezerwuję" }, { action: "decline", title: "Nie, dziękuję" }]
+          : [];
   const options = {
     body: notification.body ?? data.body ?? "Masz nowe powiadomienie.",
     icon: notification.icon ?? data.icon ?? "/icons/icon-192.png",
@@ -53,15 +65,10 @@ const showPushNotification = (payload = {}) => {
     data: {
       url: payload.fcmOptions?.link ?? data.link ?? "/",
       confirmActionToken,
+      refuseActionToken,
+      declineActionToken,
     },
-    ...(confirmActionToken && isSupportedAndroid
-      ? {
-          actions: [
-            { action: "confirm", title: "Potwierdź" },
-            { action: "details", title: "Zobacz szczegóły" },
-          ],
-        }
-      : {}),
+    ...(actionButtons.length > 0 ? { actions: actionButtons } : {}),
   };
   // The visit reminder asks a question, so it carries the answers as buttons.
   if (data.actions === "attend") {
@@ -208,12 +215,13 @@ const openNotificationTarget = async (targetUrl) => {
   return self.clients.openWindow(targetUrl);
 };
 
-const confirmAppointmentFromNotification = async (notification, targetUrl) => {
+// Sends one signed button token to the server and tells the person what came of it.
+const answerFromNotification = async (notification, token, targetUrl, doneTitle) => {
   try {
     const response = await fetch("/.netlify/functions/notification-action", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: notification.data?.confirmActionToken ?? "" }),
+      body: JSON.stringify({ token }),
       cache: "no-store",
     });
     const result = await response.json().catch(() => ({}));
@@ -227,8 +235,8 @@ const confirmAppointmentFromNotification = async (notification, targetUrl) => {
       });
       return;
     }
-    await self.registration.showNotification("Termin potwierdzony", {
-      body: result.message ?? "Nowy termin wizyty został potwierdzony.",
+    await self.registration.showNotification(doneTitle, {
+      body: result.message ?? "Gotowe.",
       icon: "/icons/icon-192.png",
       badge: "/icons/notification-b-v4.png",
       tag: notification.tag,
@@ -245,6 +253,9 @@ const confirmAppointmentFromNotification = async (notification, targetUrl) => {
   }
 };
 
+const confirmAppointmentFromNotification = (notification, targetUrl) =>
+  answerFromNotification(notification, notification.data?.confirmActionToken ?? "", targetUrl, "Termin potwierdzony");
+
 self.addEventListener("notificationclick", (event) => {
   const notification = event.notification;
   const targetUrl = new URL(notification.data?.url ?? "/", self.location.origin).href;
@@ -252,6 +263,16 @@ self.addEventListener("notificationclick", (event) => {
 
   if (event.action === "confirm" && notification.data?.confirmActionToken) {
     event.waitUntil(confirmAppointmentFromNotification(notification, targetUrl));
+    return;
+  }
+
+  if (event.action === "refuse" && notification.data?.refuseActionToken) {
+    event.waitUntil(answerFromNotification(notification, notification.data.refuseActionToken, targetUrl, "Termin odrzucony"));
+    return;
+  }
+
+  if (event.action === "decline" && notification.data?.declineActionToken) {
+    event.waitUntil(answerFromNotification(notification, notification.data.declineActionToken, targetUrl, "Odmowa zapisana"));
     return;
   }
 

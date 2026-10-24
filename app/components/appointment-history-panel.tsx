@@ -47,6 +47,7 @@ const actionLabels: Record<string, string> = {
   reschedule_admin: "Barber zmienił termin",
   confirm_client: "Klient zaakceptował zmianę",
   confirm_admin: "Barber zaakceptował zmianę",
+  refuse_admin: "Barber odrzucił nowy termin",
   update_admin: "Zmieniono szczegóły wizyty",
   cancel_client: "Klient odwołał wizytę",
   cancel_admin: "Barber odwołał wizytę",

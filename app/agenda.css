@@ -462,6 +462,28 @@
 .agenda-sheet-primary svg { width: 1.2rem; height: 1.2rem; }
 .agenda-sheet-primary:active:not(:disabled) { transform: scale(.97); }
 
+/* The client moved the visit: confirm the new term, or refuse it and go back to the old one. */
+.agenda-sheet-answer { display: grid; gap: 0.6rem; }
+.agenda-sheet-answer p { margin: 0; color: var(--color-text-secondary); font-size: 0.9rem; line-height: 1.4; }
+.agenda-sheet-answer > div { display: grid; gap: 0.5rem; }
+.agenda-sheet-refuse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 3.2rem;
+  border: 1px solid var(--color-error);
+  border-radius: 1rem;
+  background: var(--color-surface);
+  color: var(--color-error);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.agenda-sheet-refuse svg { width: 1.2rem; height: 1.2rem; }
+.agenda-sheet-refuse:active:not(:disabled) { transform: scale(.97); }
+
 .agenda-sheet-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
 .agenda-sheet-actions > * {
   display: grid;

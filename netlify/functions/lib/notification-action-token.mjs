@@ -22,37 +22,77 @@ const signingSecret = () => {
 const signatureFor = (encodedPayload) =>
   crypto.createHmac("sha256", signingSecret()).update(encodedPayload).digest("base64url");
 
-const validClaims = (claims) =>
-  claims?.v === TOKEN_VERSION &&
-  claims?.action === "confirm_reschedule" &&
+// What a token may do. The visit actions carry the exact visit they were issued for (version and schedule),
+// so a stale button cannot touch a visit that has changed since. The waiting-list action names the entry.
+export const CLIENT_CONFIRM_ACTION = "confirm_reschedule";
+export const BARBER_CONFIRM_ACTION = "barber_confirm_reschedule";
+export const BARBER_REFUSE_ACTION = "barber_refuse_reschedule";
+export const DECLINE_OFFER_ACTION = "decline_waitlist_offer";
+const appointmentActions = new Set([CLIENT_CONFIRM_ACTION, BARBER_CONFIRM_ACTION, BARBER_REFUSE_ACTION]);
+
+const validAppointmentClaims = (claims) =>
+  appointmentActions.has(claims?.action) &&
   appointmentIdPattern.test(String(claims.appointmentId || "")) &&
   appointmentIdPattern.test(String(claims.userId || "")) &&
   appointmentIdPattern.test(String(claims.scheduleOperationId || "")) &&
   datePattern.test(String(claims.dateKey || "")) &&
   timePattern.test(String(claims.startTime || "")) &&
   Number.isInteger(claims.appointmentVersion) &&
-  claims.appointmentVersion >= 1 &&
+  claims.appointmentVersion >= 1;
+
+const validOfferClaims = (claims) =>
+  claims?.action === DECLINE_OFFER_ACTION &&
+  appointmentIdPattern.test(String(claims.userId || "")) &&
+  appointmentIdPattern.test(String(claims.waitlistId || "")) &&
+  datePattern.test(String(claims.dateKey || "")) &&
+  timePattern.test(String(claims.startTime || ""));
+
+const validClaims = (claims) =>
+  claims?.v === TOKEN_VERSION &&
+  (validAppointmentClaims(claims) || validOfferClaims(claims)) &&
   Number.isInteger(claims.iat) &&
   Number.isInteger(claims.exp);
 
-export const createNotificationActionToken = (appointment, now = Date.now()) => {
+const sign = (claims) => {
+  if (!validClaims(claims)) throw new Error("Invalid notification action claims.");
+  const encodedPayload = Buffer.from(JSON.stringify(claims)).toString("base64url");
+  return `${encodedPayload}.${signatureFor(encodedPayload)}`;
+};
+
+const lifetime = (now) => {
   const issuedAt = Math.floor(now / 1000);
-  const claims = {
+  return { iat: issuedAt, exp: issuedAt + TOKEN_LIFETIME_SECONDS };
+};
+
+/** Token for one visit action. `userId` is who may use it: the client for a confirmation of a moved visit, the barber for his actions. */
+export const createAppointmentActionToken = (action, appointment, userId, now = Date.now()) =>
+  sign({
     v: TOKEN_VERSION,
-    action: "confirm_reschedule",
+    action,
     appointmentId: String(appointment?.id || ""),
-    userId: String(appointment?.userId || ""),
+    userId: String(userId || ""),
     scheduleOperationId: String(appointment?.lastOperationId || ""),
     dateKey: String(appointment?.dateKey || ""),
     startTime: String(appointment?.startTime || ""),
     appointmentVersion: Number(appointment?.version),
-    iat: issuedAt,
-    exp: issuedAt + TOKEN_LIFETIME_SECONDS,
-  };
-  if (!validClaims(claims)) throw new Error("Invalid appointment notification action claims.");
-  const encodedPayload = Buffer.from(JSON.stringify(claims)).toString("base64url");
-  return `${encodedPayload}.${signatureFor(encodedPayload)}`;
-};
+    ...lifetime(now),
+  });
+
+/** The client's "Potwierdź" on a visit the barber moved. */
+export const createNotificationActionToken = (appointment, now = Date.now()) =>
+  createAppointmentActionToken(CLIENT_CONFIRM_ACTION, appointment, appointment?.userId, now);
+
+/** "Nie, dziękuję" on a waiting-list offer. */
+export const createWaitlistOfferActionToken = (offer, now = Date.now()) =>
+  sign({
+    v: TOKEN_VERSION,
+    action: DECLINE_OFFER_ACTION,
+    userId: String(offer?.userId || ""),
+    waitlistId: String(offer?.waitlistId || ""),
+    dateKey: String(offer?.dateKey || ""),
+    startTime: String(offer?.startTime || ""),
+    ...lifetime(now),
+  });
 
 export const verifyNotificationActionToken = (token, now = Date.now()) => {
   const value = String(token || "");

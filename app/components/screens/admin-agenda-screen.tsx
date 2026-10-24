@@ -64,6 +64,10 @@ export type AgendaScreenProps = {
   onOpenClient: (clientId: string) => void;
   onOpenSms: (client: AdminClientProfile, appointment: AdminAppointment) => void;
   onCancelAppointment: (appointmentId: string) => void;
+  /** The client moved the visit: the barber confirms the new term... */
+  onConfirmAppointment: (appointment: AdminAppointment) => void;
+  /** ...or refuses it, which puts the visit back at its old term. */
+  onRefuseAppointment: (appointment: AdminAppointment) => void;
   onBookWaitlist: (entry: WaitlistEntry, dateKey?: string) => void;
   onRemoveWaitlist: (entry: WaitlistEntry) => void;
 };
@@ -214,6 +218,10 @@ export default function AdminAgendaScreen(props: AgendaScreenProps) {
   const canSettle = selectedAppointment ? canSettleAppointment(selectedAppointment, props.currentDate) : false;
   const canEdit = selectedAppointment ? !isClosedAppointmentStatus(selectedAppointment.status) : false;
   const isCompleted = selectedAppointment ? normalizeAppointmentStatus(selectedAppointment.status) === "completed" : false;
+  const awaitsBarber = selectedAppointment
+    ? normalizeAppointmentStatus(selectedAppointment.status) === "rescheduled" && selectedAppointment.rescheduledBy !== "admin"
+    : false;
+  const canRefuse = Boolean(awaitsBarber && selectedAppointment?.previousDateKey);
 
   return (
     <div className="admin-tab-panel admin-workspace-panel active agenda-panel">
@@ -486,6 +494,40 @@ export default function AdminAgendaScreen(props: AgendaScreenProps) {
                 <strong>{selectedAppointment.price}</strong>
               </span>
             </div>
+
+            {props.canManageSchedule && awaitsBarber && selectedAppointment ? (
+              <div className="agenda-sheet-answer">
+                <p>
+                  {selectedAppointment.previousDateKey
+                    ? `Klient chce przenieść wizytę z ${dateFromKey(selectedAppointment.previousDateKey).toLocaleDateString("pl-PL", { day: "numeric", month: "long" })}, ${selectedAppointment.previousStartTime}.`
+                    : "Klient przeniósł tę wizytę na nowy termin."}
+                </p>
+                <div>
+                  <button
+                    className="agenda-sheet-primary"
+                    type="button"
+                    disabled={props.isActionPending(`confirm_admin:${selectedAppointment.id}`)}
+                    aria-busy={props.isActionPending(`confirm_admin:${selectedAppointment.id}`)}
+                    onClick={() => runAndClose(() => props.onConfirmAppointment(selectedAppointment))}
+                  >
+                    <Check aria-hidden="true" />
+                    Potwierdź nowy termin
+                  </button>
+                  {canRefuse ? (
+                    <button
+                      className="agenda-sheet-refuse"
+                      type="button"
+                      disabled={props.isActionPending(`refuse_admin:${selectedAppointment.id}`)}
+                      aria-busy={props.isActionPending(`refuse_admin:${selectedAppointment.id}`)}
+                      onClick={() => runAndClose(() => props.onRefuseAppointment(selectedAppointment))}
+                    >
+                      <X aria-hidden="true" />
+                      Odmawiam
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
 
             {props.canManageSchedule && canSettle ? (
               <button
