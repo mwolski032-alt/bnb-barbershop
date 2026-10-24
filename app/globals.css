@@ -8607,8 +8607,10 @@ body[data-bnb-screen^="wlasciciel"] .pwa-update-notice {
     box-shadow: var(--shadow-card);
   }
 
-  .admin-topbar {
+  /* The bar sits on the rounded panel itself: no lighter, square-cornered band of its own. */
+  .app-shell .admin-view > .admin-topbar {
     grid-column: 1 / -1;
+    grid-row: 1;
     grid-template-columns: auto minmax(0, 1fr) auto;
     padding: 0;
     background: transparent;
@@ -8674,16 +8676,19 @@ body[data-bnb-screen^="wlasciciel"] .pwa-update-notice {
     padding: 1.1rem;
   }
 
+  /* The barber pill shares the top row with the bar: flush with the right edge, centred on the same line. */
   .selected-barber-context {
-    position: absolute;
-    top: 1.05rem;
-    right: 5.2rem;
+    position: relative;
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    align-self: center;
     z-index: 2;
     width: auto;
     min-width: 12.5rem;
     margin: 0;
     padding: 0.38rem 0.48rem;
-    background: var(--color-surface);
+    background: var(--color-primary-soft);
   }
 
   .selected-barber-context button {
