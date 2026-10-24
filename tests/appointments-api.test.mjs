@@ -151,6 +151,11 @@ globalThis.fetch = async (input, options = {}) => {
         users: [{ localId: mateuszUid, email: "barber@example.com", emailVerified: true }],
       });
     }
+    if (idToken === "valid-owner-token") {
+      return Response.json({
+        users: [{ localId: "owner-test-uid", email: "owner@example.com", emailVerified: true }],
+      });
+    }
     if (idToken === "invited-barber-token") {
       return Response.json({
         users: [{ localId: "invited-uid", email: "New.Barber@Example.com", emailVerified: true }],
@@ -492,5 +497,80 @@ test("two waiting cards with the same e-mail are never claimed", async () => {
   } finally {
     delete database.team.barbers.invited;
     delete database.team.barbers.invited2;
+  }
+});
+
+const teamMemberModule = await import("../netlify/functions/team-member.mjs");
+const deleteBarber = (barberId, token = "valid-owner-token") =>
+  teamMemberModule.default(
+    new Request("https://bnb.example/api/team-member", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ barberId }),
+    }),
+  );
+const addExtraBarber = () => {
+  database.team.barbers.extra = { id: "extra", userId: "extra-uid", active: true, access: {} };
+  database.barbers.extra = { profile: { displayName: "Extra", phone: "500" }, services: {}, workSettings: { availability: {} } };
+  database.appointmentSync.barbers = { ...(database.appointmentSync.barbers ?? {}), extra: { revision: 1 } };
+  database.shopfront = { gallery: { 0: { id: "g", barberId: "extra" }, 1: { id: "h", barberId: "mateusz" } } };
+  database.clients = { c1: { barberIds: { extra: true, mateusz: true } } };
+};
+const removeExtraBarber = () => {
+  delete database.team.barbers.extra;
+  delete database.barbers.extra;
+  delete database.shopfront;
+  delete database.clients;
+  delete database.waitlistEntries;
+  delete database.appointments["extra-visit"];
+};
+
+test("the owner deletes a barber who has no visits, with their profile, client links and photo credits", async () => {
+  addExtraBarber();
+  try {
+    const response = await deleteBarber("extra");
+    const body = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(body));
+    assert.equal(database.team.barbers.extra, undefined);
+    assert.equal(database.barbers.extra, undefined);
+    assert.equal(database.appointmentSync.barbers.extra, undefined);
+    assert.equal(database.clients.c1.barberIds.extra, undefined);
+    assert.equal(database.clients.c1.barberIds.mateusz, true);
+    assert.equal(database.shopfront.gallery[0].barberId, undefined);
+    assert.equal(database.shopfront.gallery[1].barberId, "mateusz");
+    // The other barbers are untouched.
+    assert.ok(database.team.barbers.mateusz && database.barbers.mateusz);
+  } finally {
+    removeExtraBarber();
+  }
+});
+
+test("a barber with a visit or a waiting client is kept, and nobody but the owner can delete", async () => {
+  addExtraBarber();
+  try {
+    database.appointments["extra-visit"] = {
+      id: "extra-visit", barberId: "extra", userId: "client-uid", dateKey: "2099-08-21", startTime: "09:00",
+      durationMinutes: 30, status: "completed", version: 1,
+    };
+    const blocked = await deleteBarber("extra");
+    assert.equal(blocked.status, 409);
+    assert.match((await blocked.json()).error, /Wyłącz jego konto/);
+    assert.ok(database.team.barbers.extra);
+
+    delete database.appointments["extra-visit"];
+    database.waitlistEntries = { w1: { id: "w1", barberId: "extra", status: "waiting" } };
+    assert.equal((await deleteBarber("extra")).status, 409);
+    assert.ok(database.team.barbers.extra);
+    delete database.waitlistEntries;
+
+    // A client, a barber and an anonymous caller are refused whatever the barber's state.
+    assert.equal((await deleteBarber("extra", "valid-client-token")).status, 403);
+    assert.equal((await deleteBarber("extra", "valid-barber-token")).status, 403);
+    assert.equal((await deleteBarber("extra", "nonsense-token")).status, 403);
+    assert.ok(database.team.barbers.extra);
+    assert.equal((await deleteBarber("../team")).status, 400);
+    assert.equal((await deleteBarber("nobody")).status, 404);
+  } finally {
+    removeExtraBarber();
   }
 });

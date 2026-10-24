@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 
+import ConfirmButton from "../confirm-button";
 import ProfileAvatar from "../profile-avatar";
 
 type BarberDetails = {
@@ -126,6 +127,8 @@ type TeamScreenProps = {
   onAddMember: () => void;
   /** Deletes a barber who has not signed in yet. */
   onRemoveInvite: (member: BarberProfile) => void;
+  /** Deletes a barber for good; the server refuses when they have visits or waiting-list entries. */
+  onDeleteMember: (member: BarberProfile) => void;
 };
 
 type ProfileScreenProps = {
@@ -957,7 +960,16 @@ function TeamSettingsScreen(props: TeamScreenProps) {
                       <button className="danger" type="button" disabled={props.isSaving} onClick={() => props.onRemoveInvite(member)}>
                         Usuń zaproszenie
                       </button>
-                    ) : null}
+                    ) : (
+                      <ConfirmButton
+                        className="danger"
+                        disabled={props.isSaving}
+                        confirmLabel="Na pewno usunąć?"
+                        onConfirm={() => props.onDeleteMember(member)}
+                      >
+                        Usuń barbera
+                      </ConfirmButton>
+                    )}
                   </div>
                 </div>
 

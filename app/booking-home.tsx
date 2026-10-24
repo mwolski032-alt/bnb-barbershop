@@ -112,6 +112,7 @@ import { listenToBarberProfile } from "./lib/barber-profile-listener";
 import { useAutoGrow } from "./hooks/use-auto-grow";
 import OfflineBanner from "./components/offline-banner";
 import ConfirmButton from "./components/confirm-button";
+import { deleteTeamMember } from "./lib/team-member-api";
 import { useOfflineQueue, useOnlineStatus } from "./hooks/use-offline-queue";
 import {
   clearOfflineAppointments,
@@ -3025,6 +3026,27 @@ export function BookingHome() {
     }
   };
 
+  // Deleting a barber for good. The server refuses (and says why) when the barber has visits or waiting-list
+  // entries: then the account is switched off instead, so the history stays.
+  const deleteTeamMemberForGood = async (member: BarberProfile) => {
+    if (!isOwner || isTeamSaving) return;
+    try {
+      setIsTeamSaving(true);
+      setTeamFeedback(null);
+      showActionFeedback("delete_team_member", "pending", "Usuwam barbera…");
+      await deleteTeamMember(member.id);
+      setSelectedBarberId((current) => (current === member.id ? null : current));
+      setTeamFeedback({ kind: "success", message: `Usunięto: ${member.name}.` });
+      showActionFeedback("delete_team_member", "success", `Usunięto: ${member.name}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Nie udało się usunąć barbera.";
+      setTeamFeedback({ kind: "error", message });
+      showActionFeedback("delete_team_member", "error", message);
+    } finally {
+      setIsTeamSaving(false);
+    }
+  };
+
   // The owner adds a barber by e-mail: a waiting card is saved, and the server links it to the Google account
   // the first time that person signs in with this address (see claimWaitingBarberCard).
   const createTeamMember = async () => {
@@ -5076,6 +5098,7 @@ export function BookingHome() {
                   onEditMember={openTeamMemberEditDialog}
                   onAddMember={openTeamMemberCreateDialog}
                   onRemoveInvite={(member) => void removeTeamInvite(member)}
+                  onDeleteMember={(member) => void deleteTeamMemberForGood(member)}
                   onOpenBarberPanel={openOwnerBarberPanel}
                   onAccessChange={(member, section, enabled) =>
                     void updateTeamMemberAccess(member, section, enabled)
