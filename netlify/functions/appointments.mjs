@@ -11,6 +11,7 @@ import {
 import { mutateScopedDatabase } from "./_scoped-database.mjs";
 import { createAppointmentReadPlan } from "./lib/appointment-read-plan.mjs";
 import { inspectClientMerge, mergeConfirmedClients } from "./lib/client-merge.mjs";
+import { orderTeamEntries } from "../../shared/team-order.mjs";
 import {
   cleanText,
   isFirebaseKeySafe,
@@ -647,7 +648,7 @@ const getAppointmentData = async (
     barberRevision: Number(database.appointmentSync?.barbers?.[database.occupancyBarberId]?.revision) || 0,
   };
   const rawTeam = database.team?.barbers ?? {};
-  const teamMembers = Object.entries(rawTeam)
+  const teamMembers = orderTeamEntries(Object.entries(rawTeam))
     .filter(([, member]) => admin.isOwner || (member?.active === true && member?.userId))
     .map(([id, member]) => ({
       id: cleanText(id, 80),

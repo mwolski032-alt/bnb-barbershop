@@ -92,6 +92,7 @@ import SalonHome from "./components/salon-home";
 import BookingWizard from "./components/booking-wizard";
 import { instagramUrl } from "../shared/shopfront.mjs";
 import { buildInvitedMember, isInviteEmail, makeBarberId } from "../shared/team-invite.mjs";
+import { orderTeamEntries } from "../shared/team-order.mjs";
 import { withViewTransition } from "./lib/view-transition";
 import { confirmAction } from "./lib/confirm-action";
 import ProfileAvatar from "./components/profile-avatar";
@@ -2021,7 +2022,7 @@ export function BookingHome() {
         return;
       }
 
-      const loadedMembers = Object.entries(value).map(([id, member], index) =>
+      const loadedMembers = orderTeamEntries(Object.entries(value)).map(([id, member], index) =>
         normalizeTeamMember(id, member, index),
       );
       setTeamMembers((current) =>
