@@ -24,6 +24,16 @@ const queueKey = "bnb-diagnostic-queue-v1";
 const deviceKey = "bnb-diagnostic-device-v1";
 const maxQueueSize = 20;
 const retryDelayMs = 350;
+// A phone waking up a sleeping app often needs a second or two before the first request gets through.
+const laterRetryDelaysMs = [1500];
+const staleBuildReloadKey = "bnb-stale-build-reload-at";
+// Messages of things that are not faults of the app: the browser closing its own storage while the page is
+// hidden, a sign-in refresh without a network, an animation another one replaced.
+const harmlessMessage = /Database is closing\/hidden|auth\/network-request-failed|Transition was (aborted|skipped)/i;
+// The page still asks for files of a version that has been replaced by a newer deployment.
+const staleBuildMessage = /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module/i;
+// Only files this app ships count; a stylesheet injected by some other tool is none of our business.
+const ownFilePrefixes = ["/assets/", "/brand/", "/icons/", "/fonts/"];
 const recentFingerprints = new Map<string, number>();
 let monitoringStarted = false;
 let originalFetch: typeof window.fetch | null = null;
@@ -136,7 +146,11 @@ export const reportClientError = (
 ) => {
   if (typeof window === "undefined") return;
   const cleanMessage = cleanText(message, 500) || "Nieznany błąd aplikacji";
-  if (/ResizeObserver loop|Script error\.?$/i.test(cleanMessage)) return;
+  if (/ResizeObserver loop|Script error\.?$/i.test(cleanMessage) || harmlessMessage.test(cleanMessage)) return;
+  if (staleBuildMessage.test(cleanMessage)) {
+    reloadForNewBuild();
+    return;
+  }
   const cleanStack = cleanText(stack, 1800);
   const fingerprint = `${type}|${cleanMessage}|${cleanStack.split("\n")[0]}|${location.pathname}`;
   const now = Date.now();
@@ -154,6 +168,18 @@ export const reportClientError = (
   };
   writeQueue([...readQueue(), report]);
   void flushQueue();
+};
+
+/** A deployment replaced the files this page was built from: one reload brings the new version, never in a loop. */
+const reloadForNewBuild = () => {
+  if (!navigator.onLine) return;
+  try {
+    if (Date.now() - (Number(sessionStorage.getItem(staleBuildReloadKey)) || 0) < 60_000) return;
+    sessionStorage.setItem(staleBuildReloadKey, String(Date.now()));
+  } catch {
+    return;
+  }
+  window.location.reload();
 };
 
 const errorArgument = (value: unknown) => value instanceof Error
@@ -180,7 +206,11 @@ export const startClientErrorMonitoring = () => {
     const resource = target && "src" in target ? String((target as HTMLImageElement).src) :
       target && "href" in target ? String((target as HTMLLinkElement).href) : "zasób aplikacji";
     try {
-      reportClientError("resource", `Nie udało się wczytać: ${new URL(resource, location.href).pathname}`);
+      const path = new URL(resource, location.href).pathname;
+      // Nothing to report while offline or in the background, or for files that are not this app's.
+      if (!navigator.onLine || document.visibilityState === "hidden") return;
+      if (!ownFilePrefixes.some((prefix) => path.startsWith(prefix))) return;
+      reportClientError("resource", `Nie udało się wczytać: ${path}`);
     } catch {
       reportClientError("resource", "Nie udało się wczytać zasobu aplikacji");
     }
@@ -190,10 +220,16 @@ export const startClientErrorMonitoring = () => {
     reportClientError("promise", detail.message, detail.stack);
   };
   const onOnline = () => void flushQueue();
+  // Vite reports a page chunk it cannot load (an old page after a new deployment) with this event.
+  const onPreloadError = (event: Event) => {
+    event.preventDefault();
+    reloadForNewBuild();
+  };
 
   window.addEventListener("error", onError, true);
   window.addEventListener("unhandledrejection", onRejection);
   window.addEventListener("online", onOnline);
+  window.addEventListener("vite:preloadError", onPreloadError);
   console.error = (...values: unknown[]) => {
     nativeConsoleError(...values);
     const detail = errorArgument(values.find((value) => value instanceof Error) ?? values[0]);
@@ -212,22 +248,32 @@ export const startClientErrorMonitoring = () => {
       response = await originalFetch!(input, init);
     } catch (error) {
       if (!retryable || isCancelledRequest(error, signal) || !navigator.onLine) {
-        if (monitored && !isCancelledRequest(error, signal) && navigator.onLine) {
+        if (monitored && !isCancelledRequest(error, signal) && navigator.onLine && document.visibilityState !== "hidden") {
           reportClientError("network", `${method} ${url.pathname}: brak odpowiedzi`, error);
         }
         throw error;
       }
-      await waitBeforeRetry();
-      if (signal?.aborted || !navigator.onLine) throw error;
       retried = true;
-      try {
-        response = await originalFetch!(input, init);
-      } catch (retryError) {
-        if (!isCancelledRequest(retryError, signal) && navigator.onLine) {
-          reportClientError("network", `${method} ${url.pathname}: brak odpowiedzi`, retryError);
+      let lastError: unknown = error;
+      let recovered: Response | null = null;
+      for (const delay of [retryDelayMs, ...laterRetryDelaysMs]) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, delay));
+        if (signal?.aborted || !navigator.onLine) throw lastError;
+        try {
+          recovered = await originalFetch!(input, init);
+          break;
+        } catch (retryError) {
+          lastError = retryError;
+          if (isCancelledRequest(retryError, signal)) throw retryError;
         }
-        throw retryError;
       }
+      if (!recovered) {
+        if (navigator.onLine && document.visibilityState !== "hidden") {
+          reportClientError("network", `${method} ${url.pathname}: brak odpowiedzi`, lastError);
+        }
+        throw lastError;
+      }
+      response = recovered;
     }
     if (monitored && response.status >= 500 && retryable && !retried && !signal?.aborted && navigator.onLine) {
       await waitBeforeRetry();
@@ -253,6 +299,7 @@ export const startClientErrorMonitoring = () => {
     window.removeEventListener("error", onError, true);
     window.removeEventListener("unhandledrejection", onRejection);
     window.removeEventListener("online", onOnline);
+    window.removeEventListener("vite:preloadError", onPreloadError);
     console.error = nativeConsoleError;
     if (originalFetch) window.fetch = originalFetch;
     monitoringStarted = false;

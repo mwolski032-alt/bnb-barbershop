@@ -1,7 +1,11 @@
 import { flushSync } from "react-dom";
 
 type TransitionDocument = Document & {
-  startViewTransition?: (update: () => void) => { finished?: Promise<unknown> } | undefined;
+  startViewTransition?: (update: () => void) => {
+    finished?: Promise<unknown>;
+    ready?: Promise<unknown>;
+    updateCallbackDone?: Promise<unknown>;
+  } | undefined;
 };
 
 /**
@@ -20,6 +24,10 @@ export function withViewTransition(update: () => void) {
   const transition = doc.startViewTransition(() => { flushSync(update); });
   const done = () => root.classList.remove("vt-running");
   if (transition?.finished) transition.finished.then(done, done);
+  // A transition that is skipped or aborted (a newer one starts, the tab is hidden) rejects these promises too.
+  // Nothing waits for them, and an unhandled rejection would only be reported as an error.
+  transition?.ready?.catch(() => undefined);
+  transition?.updateCallbackDone?.catch(() => undefined);
   // Never leave the loops paused if the browser does not report the end (for example a hidden tab).
   window.setTimeout(done, 1500);
 }
