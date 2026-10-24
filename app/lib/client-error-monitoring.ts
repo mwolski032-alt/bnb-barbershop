@@ -289,7 +289,9 @@ export const startClientErrorMonitoring = () => {
       }
     }
     if (monitored && response.status >= 500) {
-      reportClientError("network", `${method} ${url.pathname}: HTTP ${response.status}`);
+      // The server's own explanation, when it gave one, tells the owner what actually failed.
+      const reason = await response.clone().json().then((body) => cleanText((body as { error?: unknown })?.error ?? "", 160)).catch(() => "");
+      reportClientError("network", `${method} ${url.pathname}: HTTP ${response.status}${reason ? ` (${reason})` : ""}`);
     }
     return response;
   };

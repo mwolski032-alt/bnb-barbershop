@@ -2,7 +2,7 @@ import { get, ref } from "firebase/database";
 
 import {
   CALENDAR_FILE_PATH,
-  androidCalendarIntent,
+  androidCalendarFileIntent,
   buildIcs,
   calendarFileQuery,
 } from "../../shared/calendar-ics.mjs";
@@ -64,16 +64,16 @@ const isInstalledApp = () =>
 
 /**
  * Puts the visit in the phone's own calendar. There is one way to do it, and the phone decides the app:
- * on Android the system asks which calendar to use (or, when the browser cannot start it, the .ics file is
- * opened and Android asks then); on an iPhone the file opens as "Add to Calendar".
+ * on Android the browser is asked to open the .ics as a calendar file, so the phone lists the calendar apps (when no
+ * app takes it, the file is downloaded and Android asks when it is opened); on an iPhone the file opens as "Add to Calendar".
  * Must run straight from the tap: a browser only allows opening another app as a direct reaction to it.
  */
 export const addToCalendar = (summary: BookingSummary) => {
-  const { event, startMs, endMs } = toCalendarEvent(summary);
+  const { event } = toCalendarEvent(summary);
   const fileUrl = `${CALENDAR_FILE_PATH}?${calendarFileQuery(event)}`;
 
   if (isAndroid()) {
-    window.location.href = androidCalendarIntent(event, startMs, endMs, new URL(fileUrl, window.location.origin).href);
+    window.location.href = androidCalendarFileIntent(new URL(fileUrl, window.location.origin).href);
   } else if (isIos()) {
     // Inside the installed app a normal navigation would leave it, so the file opens in a new view.
     if (isInstalledApp()) window.open(fileUrl, "_blank");

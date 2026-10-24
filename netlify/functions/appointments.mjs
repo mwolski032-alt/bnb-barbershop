@@ -1643,6 +1643,8 @@ const handler = async (request, timings = {}) => {
     }
     const message = error instanceof Error ? error.message : "Nieznany błąd serwera.";
     const status = /nieaktywny|dostępn|godzina|minionego/i.test(message) ? 409 : 500;
+    // Only the failures that become a 500 are logged: the stack holds no names, phones or e-mails.
+    if (status === 500) console.error(`appointments ${request.method} failed:`, error instanceof Error ? error.stack : error);
     return jsonResponse({ ok: false, error: message }, status);
   }
 };

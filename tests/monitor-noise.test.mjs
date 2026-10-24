@@ -45,7 +45,7 @@ Object.defineProperty(globalThis, "navigator", {
   },
 });
 globalThis.window = globalThis;
-globalThis.location = { pathname: "/", href: "https://bnb.example/", reload: () => { reloads += 1; } };
+globalThis.location = { pathname: "/", origin: "https://bnb.example", href: "https://bnb.example/", reload: () => { reloads += 1; } };
 globalThis.document = {
   get visibilityState() { return visibility; },
   body: { dataset: {} },
@@ -89,6 +89,21 @@ test("a page built before the latest deployment reloads once instead of reportin
   reportClientError("promise", "Importing a module script failed.");
   online = true;
   assert.equal(reloads, 1);
+});
+
+test("a server error is reported together with the reason the server gave", async () => {
+  const { startClientErrorMonitoring } = await loadTypeScript("app/lib/client-error-monitoring.ts");
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ ok: false, error: "Brak indeksu w bazie." }, { status: 500 });
+  const stop = startClientErrorMonitoring();
+  try {
+    const response = await fetch("/.netlify/functions/appointments");
+    assert.equal(response.status, 500);
+    assert.ok(queued().some((message) => message === "GET /.netlify/functions/appointments: HTTP 500 (Brak indeksu w bazie.)"), queued().join(" | "));
+  } finally {
+    stop();
+    globalThis.fetch = original;
+  }
 });
 
 test("a skipped or aborted view transition leaves no unhandled rejection behind", async () => {

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  androidCalendarFileIntent,
   androidCalendarIntent,
   buildIcs,
   calendarFileQuery,
@@ -87,6 +88,15 @@ test("Android gets the system 'add event' intent, filled in, with the .ics file 
   assert.ok(!/calendar.google.com/.test(intent));
 });
 
+test("Android is asked to open the site's .ics as a calendar file, with the plain address as the fallback", () => {
+  const address = "https://bnb.example/api/calendar.ics?t=BNB&s=20261012T153000&e=20261012T170000";
+  const intent = androidCalendarFileIntent(address);
+  assert.ok(intent.startsWith("intent://bnb.example/api/calendar.ics?t=BNB&s=20261012T153000&e=20261012T170000#Intent;"));
+  for (const part of ["scheme=https", "action=android.intent.action.VIEW", "type=text/calendar"]) assert.ok(intent.includes(`;${part};`), part);
+  assert.ok(intent.endsWith(`;S.browser_fallback_url=${encodeURIComponent(address)};end`));
+  assert.ok(!/package=|calendar\.google\.com/.test(intent));
+});
+
 test("the booking summary and the visit sheet both carry the calendar button, and the old file download is gone", () => {
   assert.match(read("app/components/screens/success-screen.tsx"), /<CalendarButton summary=\{summary\} \/>/);
   const home = read("app/booking-home.tsx");
@@ -108,7 +118,7 @@ test("there is one way to add a visit to the calendar and the phone picks the ap
   }
   assert.doesNotMatch(button, /SalonDialog|Zapamiętaj|Zmień kalendarz/);
   // Android: the system intent, whose fallback is the site's own .ics address (absolute, as Chrome needs).
-  assert.ok(lib.includes("androidCalendarIntent(event, startMs, endMs, new URL(fileUrl, window.location.origin).href)"));
+  assert.ok(lib.includes("androidCalendarFileIntent(new URL(fileUrl, window.location.origin).href)"));
   // iPhone: the .ics opens as "Add to Calendar".
   assert.ok(lib.includes("window.location.assign(fileUrl)"));
   // The calendar opens straight from the tap.

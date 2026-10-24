@@ -1,7 +1,6 @@
 // "Add to calendar" for any phone, through one door: the visit as an .ics file served by the site itself.
-//   Android -> the system "add event" intent first; Chrome only lets a page start it when a calendar app
-//              accepts links from the browser, so the .ics address is the fallback, and the phone then asks
-//              which calendar app should open the file;
+//   Android -> an intent that opens the .ics as a calendar file, so the phone lists the calendar apps; the
+//              "add event" intent is not accepted from a browser, and the plain .ics address is the fallback;
 //   iPhone  -> the .ics opens as "Add to Calendar";
 //   other   -> the .ics is downloaded.
 // Times are "floating" local times (YYYYMMDDTHHMMSS), so the event lands at the same wall-clock time
@@ -90,6 +89,24 @@ export const eventFromCalendarQuery = (params) => {
     startLocal,
     endLocal,
   };
+};
+
+/**
+ * Android "view this calendar file" intent for the site's own .ics address. Unlike the "insert event" intent
+ * below, a calendar app can accept it from a browser, and then Android lists the calendar apps and asks which
+ * to use. `fileUrl` is absolute and https. When no app takes it, the browser follows the same address as a
+ * plain link, which downloads the file.
+ */
+export const androidCalendarFileIntent = (fileUrl) => {
+  const url = new URL(fileUrl);
+  return [
+    `intent://${url.host}${url.pathname}${url.search}#Intent`,
+    "scheme=https",
+    "action=android.intent.action.VIEW",
+    "type=text/calendar",
+    `S.browser_fallback_url=${encodeURIComponent(url.href)}`,
+    "end",
+  ].join(";");
 };
 
 /**
