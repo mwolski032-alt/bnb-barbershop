@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, RefreshCw, Smartphone } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, RefreshCw, Smartphone } from "lucide-react";
 import { getAuth } from "firebase/auth";
 import { firebaseApp } from "../lib/firebase";
+import { ERROR_TYPE_LABELS, formatErrorReportsText } from "../../shared/error-report-text.mjs";
 
 type MonitoringReport = {
   id: string;
@@ -27,12 +28,29 @@ type MonitoringReport = {
   };
 };
 
-const labels: Record<MonitoringReport["type"], string> = {
-  javascript: "Błąd aplikacji",
-  promise: "Operacja w tle",
-  resource: "Ładowanie pliku",
-  network: "Połączenie z serwerem",
-  react: "Widok aplikacji",
+const labels: Record<MonitoringReport["type"], string> = ERROR_TYPE_LABELS;
+
+// Clipboard access needs a secure page; the old copy command covers the rest.
+const copyText = async (text: string) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const field = document.createElement("textarea");
+    field.value = text;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.appendChild(field);
+    field.select();
+    try {
+      return document.execCommand("copy");
+    } catch {
+      return false;
+    } finally {
+      field.remove();
+    }
+  }
 };
 
 const formatDate = (value: number) => new Intl.DateTimeFormat("pl-PL", {
@@ -63,6 +81,7 @@ export default function ErrorMonitoringPanel() {
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState("");
   const [error, setError] = useState("");
+  const [copyState, setCopyState] = useState<"idle" | "done" | "failed">("idle");
 
   const loadReports = useCallback(async () => {
     setLoading(true);
@@ -83,6 +102,13 @@ export default function ErrorMonitoringPanel() {
   const visibleReports = showResolved ? reports : activeReports;
   const occurrences = activeReports.reduce((sum, report) => sum + Number(report.count || 0), 0);
   const devices = new Set(activeReports.map((report) => `${report.device.os}|${report.device.browser}`)).size;
+
+  // Copies what the list shows right now (active errors, or all of them) as one text to paste into a message.
+  const copyReports = async () => {
+    const copied = await copyText(formatErrorReportsText(visibleReports, { scope: showResolved ? "wszystkie" : "aktywne" }));
+    setCopyState(copied ? "done" : "failed");
+    window.setTimeout(() => setCopyState("idle"), 3000);
+  };
 
   const toggleResolved = async (report: MonitoringReport) => {
     if (updatingId) return;
@@ -110,10 +136,21 @@ export default function ErrorMonitoringPanel() {
           <h2 id="error-monitor-title">Monitoring błędów</h2>
           <span>Bez nazwisk, telefonów, e-maili i treści formularzy.</span>
         </div>
-        <button type="button" onClick={() => void loadReports()} disabled={loading}>
-          <RefreshCw aria-hidden="true" className={loading ? "is-spinning" : ""} />
-          Odśwież
-        </button>
+        <div className="error-monitor-actions">
+          <button
+            type="button"
+            onClick={() => void copyReports()}
+            disabled={loading || visibleReports.length === 0}
+            aria-live="polite"
+          >
+            {copyState === "done" ? <CheckCircle2 aria-hidden="true" /> : <Copy aria-hidden="true" />}
+            {copyState === "done" ? "Skopiowano" : copyState === "failed" ? "Nie udało się" : "Kopiuj błędy"}
+          </button>
+          <button type="button" onClick={() => void loadReports()} disabled={loading}>
+            <RefreshCw aria-hidden="true" className={loading ? "is-spinning" : ""} />
+            Odśwież
+          </button>
+        </div>
       </header>
 
       <div className="error-monitor-summary" aria-label="Podsumowanie monitoringu">

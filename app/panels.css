@@ -670,7 +670,7 @@
 .error-monitor { display: grid; gap: 0.9rem; margin: 0 1rem; }
 .error-monitor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.8rem; }
 .error-monitor-heading h2 { font-family: var(--font-display); }
-.error-monitor-heading > button, .error-monitor-resolve {
+.error-monitor-heading button, .error-monitor-resolve {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -685,7 +685,7 @@
   cursor: pointer;
   transition: transform var(--duration-fast) var(--ease-out);
 }
-.error-monitor-heading > button:active, .error-monitor-resolve:active { transform: scale(.94); }
+.error-monitor-heading button:active, .error-monitor-resolve:active { transform: scale(.94); }
 .error-monitor-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
 .error-monitor-summary article { padding: 0.8rem; border: 0; border-radius: 1.1rem; background: var(--color-surface-secondary); }
 .error-monitor-summary article.warning { background: var(--color-warning-soft); color: var(--color-warning); }
