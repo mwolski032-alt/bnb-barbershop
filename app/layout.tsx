@@ -12,6 +12,7 @@ import "./telegram-feel.css";
 import "./offline.css";
 import ClientErrorMonitor from "./components/client-error-monitor";
 import TapFeedback from "./components/tap-feedback";
+import ImageGuard from "./components/image-guard";
 
 export const metadata: Metadata = {
   title: "BNB Barbershop | Rezerwacje",
@@ -66,6 +67,7 @@ export default function RootLayout({
       <body className="antialiased">
         <ClientErrorMonitor>{children}</ClientErrorMonitor>
         <TapFeedback />
+        <ImageGuard />
       </body>
     </html>
   );
