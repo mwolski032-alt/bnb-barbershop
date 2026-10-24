@@ -289,6 +289,9 @@ export type BarberProfile = {
   email: string;
   active: boolean;
   access: Record<BarberAdminSection, boolean>;
+  /** Set when the owner added the barber by e-mail; `claimedAt` when that person first signed in. */
+  invitedAt?: number;
+  claimedAt?: number;
   createdAt?: number;
   updatedAt?: number;
 };

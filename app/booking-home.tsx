@@ -91,6 +91,7 @@ import BookingHero from "./components/booking-hero";
 import SalonHome from "./components/salon-home";
 import BookingWizard from "./components/booking-wizard";
 import { instagramUrl } from "../shared/shopfront.mjs";
+import { buildInvitedMember, isInviteEmail, makeBarberId } from "../shared/team-invite.mjs";
 import { withViewTransition } from "./lib/view-transition";
 import { confirmAction } from "./lib/confirm-action";
 import ProfileAvatar from "./components/profile-avatar";
@@ -250,6 +251,19 @@ function PwaUpdateNotice({
     </aside>
   );
 }
+
+/** Stands in for a team member while the "add a barber" form is open. */
+const NEW_TEAM_MEMBER_ID = "__new__";
+const newTeamMemberPlaceholder: BarberProfile = {
+  id: NEW_TEAM_MEMBER_ID,
+  name: "Nowy barber",
+  label: "",
+  accent: "blue",
+  userId: "",
+  email: "",
+  active: false,
+  access: { schedule: false, clients: false, analytics: false, work: false, services: false, profile: true },
+};
 
 export function BookingHome() {
   const [currentDate, setCurrentDate] = useState(() => new Date());
@@ -869,9 +883,12 @@ export function BookingHome() {
     smsClient?.appointments.find((appointment) => appointment.id === smsComposer?.appointmentId) ??
     null;
   const editingService = services.find((service) => service.id === editingServiceId) ?? null;
-  const editingTeamMember = teamDialogMemberId
-    ? teamMembers.find((member) => member.id === teamDialogMemberId) ?? null
-    : null;
+  const addingTeamMember = teamDialogMemberId === NEW_TEAM_MEMBER_ID;
+  const editingTeamMember = addingTeamMember
+    ? newTeamMemberPlaceholder
+    : teamDialogMemberId
+      ? teamMembers.find((member) => member.id === teamDialogMemberId) ?? null
+      : null;
   const activeTeamMembersCount = teamMembers.filter((member) => member.active).length;
   const hasSelectedBarber = Boolean(selectedBarber);
   const hasSelectedDay = selectedKey === selectedDayKey && availableTimes.length > 0;
@@ -2973,6 +2990,77 @@ export function BookingHome() {
     setSalonOpen(true);
   };
 
+  const openTeamMemberCreateDialog = () => {
+    setTeamMemberDraft({ name: "", email: "" });
+    setTeamFeedback(null);
+    setTeamDialogMemberId(NEW_TEAM_MEMBER_ID);
+  };
+
+  // A barber who never signed in has nothing to lose: the card and its empty profile are simply removed.
+  const removeTeamInvite = async (member: BarberProfile) => {
+    if (!isOwner || isTeamSaving || member.userId) return;
+    if (!(await confirmAction({
+      title: `Usunąć zaproszenie dla ${member.name}?`,
+      message: "Barber nie zalogował się jeszcze do panelu, więc nic nie zostanie utracone. Zaproszenie możesz dodać ponownie.",
+      confirmLabel: "Usuń zaproszenie", cancelLabel: "Zostaw", tone: "danger",
+    }))) return;
+    try {
+      setIsTeamSaving(true);
+      setTeamFeedback(null);
+      showActionFeedback("remove_team_invite", "pending", "Usuwam zaproszenie…");
+      await update(ref(realtimeDb), {
+        [`team/barbers/${member.id}`]: null,
+        [`barbers/${member.id}/profile`]: null,
+      });
+      setTeamFeedback({ kind: "success", message: "Zaproszenie zostało usunięte." });
+      showActionFeedback("remove_team_invite", "success", "Zaproszenie zostało usunięte.");
+    } catch {
+      setTeamFeedback({ kind: "error", message: "Nie udało się usunąć zaproszenia." });
+      showActionFeedback("remove_team_invite", "error", "Nie udało się usunąć zaproszenia.");
+    } finally {
+      setIsTeamSaving(false);
+    }
+  };
+
+  // The owner adds a barber by e-mail: a waiting card is saved, and the server links it to the Google account
+  // the first time that person signs in with this address (see claimWaitingBarberCard).
+  const createTeamMember = async () => {
+    const name = teamMemberDraft.name.trim();
+    const email = teamMemberDraft.email.trim().toLocaleLowerCase("pl");
+    if (name.length < 2 || !isInviteEmail(email)) {
+      setTeamFeedback({ kind: "error", message: "Podaj imię wyświetlane oraz poprawny adres e-mail, na który barber się zaloguje." });
+      return;
+    }
+    if (teamMembers.some((member) => member.email === email)) {
+      setTeamFeedback({ kind: "error", message: "Ten adres e-mail jest już przypisany do innego barbera." });
+      return;
+    }
+
+    const now = Date.now();
+    const id = makeBarberId(name, teamMembers.map((member) => member.id));
+    const member = normalizeTeamMember(id, buildInvitedMember({ id, name, email, index: teamMembers.length, now }) as Partial<BarberProfile>, teamMembers.length);
+    try {
+      setIsTeamSaving(true);
+      setTeamFeedback(null);
+      showActionFeedback("save_team_member", "pending", "Dodaję barbera…");
+      await update(ref(realtimeDb), {
+        [`team/barbers/${id}`]: { ...member, invitedAt: now },
+        [`barbers/${id}/profile/displayName`]: name,
+        [`barbers/${id}/profile/email`]: email,
+        [`barbers/${id}/profile/updatedAt`]: now,
+      });
+      setTeamDialogMemberId(null);
+      const message = `Dodano: ${name}. Poproś o zalogowanie się przez Google na ${email}.`;
+      setTeamFeedback({ kind: "success", message });
+      showActionFeedback("save_team_member", "success", message);
+    } catch {
+      setTeamFeedback({ kind: "error", message: "Nie udało się dodać barbera." });
+      showActionFeedback("save_team_member", "error", "Nie udało się dodać barbera.");
+    } finally {
+      setIsTeamSaving(false);
+    }
+  };
+
   const openTeamMemberEditDialog = (member: BarberProfile) => {
     setTeamMemberDraft({
       name: member.name,
@@ -2984,6 +3072,10 @@ export function BookingHome() {
 
   const saveTeamMember = async () => {
     if (!isOwner || isTeamSaving) return;
+    if (teamDialogMemberId === NEW_TEAM_MEMBER_ID) {
+      await createTeamMember();
+      return;
+    }
 
     const name = teamMemberDraft.name.trim();
     const email = teamMemberDraft.email.trim().toLocaleLowerCase("pl");
@@ -3001,6 +3093,14 @@ export function BookingHome() {
         kind: "error",
         message: "Podaj imię oraz poprawny adres e-mail albo pozostaw go pusty.",
       });
+      return;
+    }
+    if (!existingMember.userId && !email) {
+      setTeamFeedback({ kind: "error", message: "Ten barber jeszcze się nie zalogował, więc potrzebuje adresu e-mail." });
+      return;
+    }
+    if (email && teamMembers.some((member) => member.id !== existingMember.id && member.email === email)) {
+      setTeamFeedback({ kind: "error", message: "Ten adres e-mail jest już przypisany do innego barbera." });
       return;
     }
 
@@ -4970,6 +5070,8 @@ export function BookingHome() {
                   accessLabels={teamAccessLabels}
                   onActiveChange={(member, active) => void updateTeamMemberActive(member, active)}
                   onEditMember={openTeamMemberEditDialog}
+                  onAddMember={openTeamMemberCreateDialog}
+                  onRemoveInvite={(member) => void removeTeamInvite(member)}
                   onOpenBarberPanel={openOwnerBarberPanel}
                   onAccessChange={(member, section, enabled) =>
                     void updateTeamMemberAccess(member, section, enabled)
@@ -5710,8 +5812,8 @@ export function BookingHome() {
                 <span className="team-icon" />
               </span>
               <div>
-                <p className="eyebrow">Edycja konta</p>
-                <h2 id="team-member-dialog-title">{editingTeamMember.name}</h2>
+                <p className="eyebrow">{addingTeamMember ? "Nowy barber" : "Edycja konta"}</p>
+                <h2 id="team-member-dialog-title">{addingTeamMember ? "Dodaj barbera" : editingTeamMember.name}</h2>
               </div>
             </div>
 
@@ -5746,10 +5848,13 @@ export function BookingHome() {
                   }
                   autoComplete="email"
                   placeholder="barber@gmail.com"
+                  required={addingTeamMember || !editingTeamMember.userId}
                 />
               </label>
               <p className="team-account-help">
-                E-mail jest opcjonalny i służy do powiadomień o wizytach. Dostęp Google jest przypisany na stałe.
+                {addingTeamMember || !editingTeamMember.userId
+                  ? "Barber ma zalogować się przez Google na ten adres. Po pierwszym logowaniu konto połączy się samo, a Ty wybierzesz, do czego ma dostęp. Na początku widzi tylko swój profil."
+                  : "E-mail służy do powiadomień o wizytach. Dostęp Google jest przypisany na stałe."}
               </p>
 
               {teamFeedback ? (
@@ -5770,7 +5875,7 @@ export function BookingHome() {
                   disabled={isTeamSaving}
                   aria-busy={isDirectActionPending("save_team_member")}
                 >
-                  {isTeamSaving ? "Zapisywanie..." : "Zapisz zmiany"}
+                  {isTeamSaving ? "Zapisywanie..." : addingTeamMember ? "Dodaj barbera" : "Zapisz zmiany"}
                 </button>
               </div>
             </form>

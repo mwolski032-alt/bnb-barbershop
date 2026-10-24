@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { claimInvite, findPendingInvite } from "../../shared/team-invite.mjs";
 
 export const databaseUrl =
   process.env.FIREBASE_DATABASE_URL ??
@@ -326,6 +327,29 @@ export const writeAppointmentsIfUnchanged = async (appointments, etag, accessTok
 export const readTeamMember = async (barberId, accessToken) =>
   (await readDatabase(`team/barbers/${encodeURIComponent(barberId)}`, accessToken)) ?? {};
 
+// The owner added this person by e-mail. The first time they sign in with Google using that address, the card
+// is linked to their account and switched on, so they become a barber without anyone touching the database.
+// Any failure here only means "not a barber yet": signing in never breaks because of it.
+const claimWaitingBarberCard = async (user, accessToken) => {
+  try {
+    if (!user.email || user.emailVerified !== true) return null;
+    const members = (await readDatabase("team/barbers", accessToken)) ?? {};
+    const invite = findPendingInvite(members, user.email, user.emailVerified);
+    if (!invite?.id) return null;
+    const path = `team/barbers/${encodeURIComponent(invite.id)}`;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const { etag, value } = await readDatabaseWithEtag(path, accessToken);
+      // Somebody else linked it first, or the card changed: look again from the current state.
+      if (String(value?.userId ?? "").trim()) return value.userId === user.uid ? { id: invite.id, member: value } : null;
+      const member = claimInvite({ ...value, id: invite.id }, user.uid);
+      if (await writeDatabaseIfUnchanged(path, member, etag, accessToken)) return { id: invite.id, member };
+    }
+  } catch {
+    // See above.
+  }
+  return null;
+};
+
 export const getAdminContext = async (user, accessToken) => {
   const [ownerValue, assignedBarbers] = await Promise.all([
     readDatabase("team/owner", accessToken),
@@ -343,9 +367,13 @@ export const getAdminContext = async (user, accessToken) => {
     };
   }
 
-  const assignments = Object.entries(assignedBarbers ?? {}).filter(
+  let assignments = Object.entries(assignedBarbers ?? {}).filter(
     ([, member]) => member?.userId === user.uid,
   );
+  if (assignments.length === 0) {
+    const claimed = await claimWaitingBarberCard(user, accessToken);
+    if (claimed) assignments = [[claimed.id, claimed.member]];
+  }
   if (assignments.length === 0) {
     return {
       role: "client",

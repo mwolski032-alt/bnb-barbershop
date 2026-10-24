@@ -18,8 +18,8 @@ test("the app never uses the browser's own confirm or alert boxes", () => {
 
 test("destructive admin actions ask through the in-app dialog and wait for the answer", () => {
   const home = read("app/booking-home.tsx");
-  // Includes disabling a barber account, removing someone from the waitlist and refusing a client's new term.
-  assert.equal((home.match(/await confirmAction\(/g) ?? []).length, 7);
+  // Includes disabling a barber account, removing someone from the waitlist, refusing a client's new term and deleting a barber's invitation.
+  assert.equal((home.match(/await confirmAction\(/g) ?? []).length, 8);
   const manager = read("app/components/salon-manager.tsx");
   assert.match(manager, /await confirmAction\(\{ title: "Usunąć zdjęcie z galerii\?"/);
   const lib = read("app/lib/confirm-action.tsx");

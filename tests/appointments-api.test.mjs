@@ -151,6 +151,21 @@ globalThis.fetch = async (input, options = {}) => {
         users: [{ localId: mateuszUid, email: "barber@example.com", emailVerified: true }],
       });
     }
+    if (idToken === "invited-barber-token") {
+      return Response.json({
+        users: [{ localId: "invited-uid", email: "New.Barber@Example.com", emailVerified: true }],
+      });
+    }
+    if (idToken === "unverified-invited-token") {
+      return Response.json({
+        users: [{ localId: "unverified-uid", email: "new.barber@example.com", emailVerified: false }],
+      });
+    }
+    if (idToken === "second-invited-token") {
+      return Response.json({
+        users: [{ localId: "second-uid", email: "new.barber@example.com", emailVerified: true }],
+      });
+    }
     return new Response("Unauthorized", { status: 401 });
   }
   if (url.startsWith(databaseUrl)) {
@@ -403,4 +418,70 @@ test("active barber can confirm a rescheduled appointment in own calendar", asyn
   );
   assert.equal(response.status, 200, await response.text());
   assert.equal(database.appointments.own.status, "confirmed");
+});
+
+const invitedCard = (overrides = {}) => ({
+  id: "invited",
+  name: "Nowy",
+  label: "Barber 3",
+  accent: "blue",
+  userId: "",
+  email: "new.barber@example.com",
+  active: false,
+  access: { schedule: false, clients: false, analytics: false, work: false, services: false, profile: true },
+  ...overrides,
+});
+
+test("a barber added by e-mail becomes a barber at the first Google sign-in with that address", async () => {
+  database.team.barbers.invited = invitedCard();
+  try {
+    const response = await request("GET", null, "invited-barber-token");
+    const body = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(body));
+    assert.equal(body.context.role, "barber");
+    assert.equal(body.context.barberId, "invited");
+    assert.equal(body.context.access.profile, true);
+    assert.equal(body.context.access.schedule, false);
+    assert.equal(database.team.barbers.invited.userId, "invited-uid");
+    assert.equal(database.team.barbers.invited.active, true);
+    assert.equal(typeof database.team.barbers.invited.claimedAt, "number");
+    assert.equal(database.team.barbers.invited.email, "new.barber@example.com");
+
+    // Signing in again changes nothing, and somebody else with the same address cannot take the card over.
+    const again = await (await request("GET", null, "invited-barber-token")).json();
+    assert.equal(again.context.role, "barber");
+    const intruder = await (await request("GET", null, "second-invited-token")).json();
+    assert.equal(intruder.context.role, "client");
+    assert.equal(database.team.barbers.invited.userId, "invited-uid");
+  } finally {
+    delete database.team.barbers.invited;
+  }
+});
+
+test("a waiting barber card is not claimed by an unverified address or another e-mail", async () => {
+  database.team.barbers.invited = invitedCard();
+  try {
+    const unverified = await (await request("GET", null, "unverified-invited-token")).json();
+    assert.equal(unverified.context.role, "client");
+    const other = await (await request("GET", null, "valid-client-token")).json();
+    assert.equal(other.context.role, "client");
+    assert.equal(database.team.barbers.invited.userId, "");
+    assert.equal(database.team.barbers.invited.active, false);
+  } finally {
+    delete database.team.barbers.invited;
+  }
+});
+
+test("two waiting cards with the same e-mail are never claimed", async () => {
+  database.team.barbers.invited = invitedCard();
+  database.team.barbers.invited2 = invitedCard({ id: "invited2" });
+  try {
+    const body = await (await request("GET", null, "invited-barber-token")).json();
+    assert.equal(body.context.role, "client");
+    assert.equal(database.team.barbers.invited.userId, "");
+    assert.equal(database.team.barbers.invited2.userId, "");
+  } finally {
+    delete database.team.barbers.invited;
+    delete database.team.barbers.invited2;
+  }
 });

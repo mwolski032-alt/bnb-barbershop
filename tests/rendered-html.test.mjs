@@ -570,7 +570,7 @@ test("merges days and services into one permission-aware work workspace", async 
   assert.match(styles, /\.work-workspace-panel\.active/);
 });
 
-test("keeps the fixed owner-managed team and role-aware admin avatars", async () => {
+test("keeps the owner-managed team and role-aware admin avatars", async () => {
   const [bookingHome, settingsScreen, styles] = await Promise.all([
     readBookingModules(),
     readFile(new URL("../app/components/screens/admin-settings-screen.tsx", import.meta.url), "utf8"),
@@ -594,7 +594,9 @@ test("keeps the fixed owner-managed team and role-aware admin avatars", async ()
   assert.match(bookingHome, /setSessionContext\(result\.context as SessionContext\)/);
   assert.match(bookingHome, /sessionContext\?\.role === "barber"/);
   assert.doesNotMatch(bookingHome, /fixedBarberUserIds|ownerUserIds/);
-  assert.doesNotMatch(bookingHome, /Dodaj barbera/);
+  // The owner adds a barber by e-mail (see team-invite.test.mjs); nobody types a Firebase user id.
+  assert.match(bookingHome, /const createTeamMember = async/);
+  assert.match(settingsScreen, /\+ Dodaj barbera/);
   assert.doesNotMatch(bookingHome, /createTeamInvitation/);
   assert.doesNotMatch(bookingHome, /Identyfikator użytkownika Firebase/);
   assert.match(styles, /\.team-member-card/);

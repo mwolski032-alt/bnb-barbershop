@@ -121,6 +121,10 @@ type TeamScreenProps = {
   onEditMember: (member: BarberProfile) => void;
   onOpenBarberPanel: (barberId: string, section: "schedule" | "analytics") => void;
   onAccessChange: (member: BarberProfile, section: BarberAdminSection, enabled: boolean) => void;
+  /** Opens the form that adds a barber by e-mail. */
+  onAddMember: () => void;
+  /** Deletes a barber who has not signed in yet. */
+  onRemoveInvite: (member: BarberProfile) => void;
 };
 
 type ProfileScreenProps = {
@@ -900,6 +904,9 @@ function TeamSettingsScreen(props: TeamScreenProps) {
             <p className="section-label">Stały skład</p>
             <strong>Konta i zakres dostępu</strong>
           </div>
+          <button className="team-add-button" type="button" disabled={props.isSaving} onClick={props.onAddMember}>
+            + Dodaj barbera
+          </button>
         </div>
 
         {props.feedback && !props.editedMemberId ? (
@@ -909,8 +916,10 @@ function TeamSettingsScreen(props: TeamScreenProps) {
         <div className="team-member-list">
           {props.members.map((member) => {
             const profile = props.profiles[member.id] ?? emptyBarberDetails;
+            // Added by e-mail and not signed in yet: the card is linked to the Google account on the first sign-in.
+            const waiting = !member.userId;
             return (
-              <article className={`team-member-card ${member.active ? "active" : "inactive"}`} key={member.id}>
+              <article className={`team-member-card ${member.active ? "active" : "inactive"}${waiting ? " waiting" : ""}`} key={member.id}>
                 <header className="team-member-header">
                   <ProfileAvatar
                     className={`team-member-avatar ${member.accent}`}
@@ -926,21 +935,27 @@ function TeamSettingsScreen(props: TeamScreenProps) {
                     <input
                       type="checkbox"
                       checked={member.active}
-                      disabled={props.isSaving}
+                      disabled={props.isSaving || waiting}
                       onChange={(event) => props.onActiveChange(member, event.target.checked)}
                     />
                     <span aria-hidden="true" />
-                    {member.active ? "Aktywne" : "Wyłączone"}
+                    {waiting ? "Oczekuje" : member.active ? "Aktywne" : "Wyłączone"}
                   </label>
                 </header>
 
                 <div className="team-member-account">
                   <span>
                     <small>Konto Google</small>
-                    <strong>Połączone</strong>
+                    <strong>{waiting ? "Czeka na pierwsze logowanie" : "Połączone"}</strong>
+                    {waiting ? <em>Barber ma zalogować się przez Google na {member.email || "podany adres"}.</em> : null}
                   </span>
                   <div className="team-member-account-actions">
                     <button type="button" onClick={() => props.onEditMember(member)}>Edytuj dane</button>
+                    {waiting ? (
+                      <button className="danger" type="button" disabled={props.isSaving} onClick={() => props.onRemoveInvite(member)}>
+                        Usuń zaproszenie
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
