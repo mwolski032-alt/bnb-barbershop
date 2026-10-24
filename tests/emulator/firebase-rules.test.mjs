@@ -113,7 +113,7 @@ before(async () => {
       },
       barbers: {
         mateusz: {
-          profile: { displayName: "Mateusz" },
+          profile: { displayName: "Mateusz", bio: "Fryzjer", phone: "500600700", email: "mateusz@example.com" },
           services: {
             cut: {
               id: "cut",
@@ -125,7 +125,7 @@ before(async () => {
           workSettings: { availability: {} },
         },
         kacper: {
-          profile: { displayName: "Kacper" },
+          profile: { displayName: "Kacper", bio: "Broda", phone: "500600800", email: "kacper@example.com" },
           services: {
             cut: {
               id: "cut",
@@ -411,3 +411,58 @@ test("Firebase rules: even a valid writer cannot change team privileges, tokens 
     assert.equal(result.status, 401, `${path}: ${await result.text()}`);
   }
 });
+
+// Earlier tests switch Mateusz off and leave him so; these two say what state they need and put it back.
+const withMateuszActive = async (active, run) => {
+  let previous;
+  await environment.withSecurityRulesDisabled(async (context) => {
+    previous = (await get(ref(context.database(), "team/barbers/mateusz/active"))).val();
+  });
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await update(ref(context.database(), "team/barbers/mateusz"), { active });
+  });
+  try {
+    await run();
+  } finally {
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await update(ref(context.database(), "team/barbers/mateusz"), { active: previous });
+    });
+  }
+};
+
+test("Firebase rules: a barber's phone and e-mail are private, the rest of the profile is public", () => withMateuszActive(true, async () => {
+  const publicFields = ["displayName", "bio"];
+  const privateFields = ["phone", "email"];
+
+  // Any signed-in client: the public fields, the services and the work settings, but never the whole profile
+  // or the barber's record as a whole (which would include the phone and e-mail).
+  const client = databaseFor(clientUid);
+  for (const field of publicFields) await assertSucceeds(get(ref(client, `barbers/mateusz/profile/${field}`)));
+  for (const field of privateFields) await assertFails(get(ref(client, `barbers/mateusz/profile/${field}`)));
+  await assertFails(get(ref(client, "barbers/mateusz/profile")));
+  await assertFails(get(ref(client, "barbers/mateusz")));
+  await assertFails(get(ref(client, "barbers")));
+  await assertSucceeds(get(ref(client, "barbers/mateusz/services")));
+  await assertSucceeds(get(ref(client, "barbers/mateusz/workSettings")));
+
+  // Somebody who is not signed in reads none of it (the public salon page uses the server for that).
+  const anonymous = environment.unauthenticatedContext().database();
+  await assertFails(get(ref(anonymous, "barbers/mateusz/profile/displayName")));
+  await assertFails(get(ref(anonymous, "barbers/mateusz/profile/phone")));
+
+  // The owner and the barber himself read the whole profile; another barber reads only the public part.
+  const wholeOwner = await assertSucceeds(get(ref(databaseFor(ownerUid), "barbers/mateusz/profile")));
+  assert.equal(wholeOwner.val().phone, "500600700");
+  const wholeSelf = await assertSucceeds(get(ref(databaseFor(mateuszUid), "barbers/mateusz/profile")));
+  assert.equal(wholeSelf.val().email, "mateusz@example.com");
+  const other = databaseFor(kacperUid);
+  await assertFails(get(ref(other, "barbers/mateusz/profile")));
+  await assertFails(get(ref(other, "barbers/mateusz/profile/phone")));
+  await assertSucceeds(get(ref(other, "barbers/mateusz/profile/displayName")));
+}));
+
+test("Firebase rules: a switched-off barber no longer reads the whole profile", () => withMateuszActive(false, async () => {
+  await assertFails(get(ref(databaseFor(mateuszUid), "barbers/mateusz/profile")));
+  await assertSucceeds(get(ref(databaseFor(mateuszUid), "barbers/mateusz/profile/displayName")));
+  await assertSucceeds(get(ref(databaseFor(ownerUid), "barbers/mateusz/profile")));
+}));

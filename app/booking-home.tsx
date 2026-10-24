@@ -108,6 +108,7 @@ import { usePushLinkActions, useReminderAnswer } from "./hooks/use-push-link-act
 import { useKnownPhone } from "./hooks/use-known-phone";
 import PhotoCropDialog from "./components/photo-crop-dialog";
 import { useBackNavigation } from "./hooks/use-back-navigation";
+import { listenToBarberProfile } from "./lib/barber-profile-listener";
 import { useAutoGrow } from "./hooks/use-auto-grow";
 import OfflineBanner from "./components/offline-banner";
 import { useOfflineQueue, useOnlineStatus } from "./hooks/use-offline-queue";
@@ -2085,19 +2086,20 @@ export function BookingHome() {
     const visibleProfiles = isBarber && step === "admin"
       ? teamMembers.filter((barber) => barber.id === signedInBarberId)
       : teamMembers;
+    // The whole profile (with the barber's phone and e-mail) is for the owner and for the barber himself;
+    // everyone else gets the public fields only, which is all the database allows them to read.
+    const canReadWholeProfile = Boolean(isOwner) || (isBarber && step === "admin");
     const unsubscribeProfiles = visibleProfiles.map((barber) =>
-      onValue(ref(realtimeDb, `barbers/${barber.id}/profile`), (snapshot) => {
+      listenToBarberProfile(realtimeDb, barber.id, canReadWholeProfile, (profile) => {
         setBarberProfiles((current) => ({
           ...current,
-          [barber.id]: normalizeBarberDetails(
-            snapshot.val() as Partial<BarberDetails> | null,
-          ),
+          [barber.id]: normalizeBarberDetails(profile as Partial<BarberDetails> | null),
         }));
       }),
     );
 
     return () => unsubscribeProfiles.forEach((unsubscribe) => unsubscribe());
-  }, [activeUser, isBarber, signedInBarberId, step, teamMembers]);
+  }, [activeUser, isBarber, isOwner, signedInBarberId, step, teamMembers]);
 
   useEffect(() => {
     const defaultProfile = teamMembers.find((barber) => barber.id === activeBarberId);
