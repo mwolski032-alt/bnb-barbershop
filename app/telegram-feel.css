@@ -56,7 +56,7 @@
 /* Dialogs and sheets sit on a backdrop that is already blurred; blurring them again would cost a full-screen
    pass on every frame of their entrance for no visible gain. */
 .admin-bottom-nav { background: color-mix(in srgb, var(--color-surface) 80%, transparent); }
-.agenda-sheet { background-color: color-mix(in srgb, var(--color-surface) 90%, transparent); }
+/* The agenda visit sheet stays solid: its backdrop is not blurred, so a see-through sheet shows the dark bottom navigation and the page text behind it. */
 .action-feedback-toast { background-color: color-mix(in srgb, var(--color-surface) 86%, transparent); }
 .salon-dialog { background-color: color-mix(in srgb, var(--color-surface) 92%, transparent); }
 .appointment-detail-sheet, .appointment-list-modal { background-color: color-mix(in srgb, var(--color-surface) 92%, transparent); }
