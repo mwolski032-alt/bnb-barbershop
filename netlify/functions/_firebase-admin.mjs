@@ -328,7 +328,8 @@ export const readTeamMember = async (barberId, accessToken) =>
   (await readDatabase(`team/barbers/${encodeURIComponent(barberId)}`, accessToken)) ?? {};
 
 // The owner added this person by e-mail. The first time they sign in with Google using that address, the card
-// is linked to their account and switched on, so they become a barber without anyone touching the database.
+// is linked to their account, so the barber exists in the database without anyone touching it. The card stays
+// switched off: the owner switches it on in the team screen, and only then does the barber get the panel.
 // Any failure here only means "not a barber yet": signing in never breaks because of it.
 const claimWaitingBarberCard = async (user, accessToken) => {
   try {

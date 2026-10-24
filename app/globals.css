@@ -1,6 +1,13 @@
 @import "tailwindcss";
 @import "./theme.css";
 
+/* A ConfirmButton after its first tap ("Na pewno?"): red, whatever style the button had before. */
+button[data-armed="true"] {
+  border-color: transparent !important;
+  background: var(--color-error) !important;
+  color: var(--color-brand-white) !important;
+}
+
 /* Pictures cannot be picked up with the mouse or saved from the long-press menu (see ImageGuard). */
 img {
   -webkit-user-drag: none;
@@ -4909,7 +4916,7 @@ body[data-bnb-screen^="wlasciciel"] .pwa-update-notice {
   opacity: 0.5;
 }
 
-.team-member-card.waiting .team-member-account em {
+.team-member-account em {
   display: block;
   margin-top: 0.2rem;
   color: var(--color-text-secondary);

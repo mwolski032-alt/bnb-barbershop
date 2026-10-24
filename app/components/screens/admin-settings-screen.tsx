@@ -55,6 +55,7 @@ type BarberProfile = {
   email: string;
   active: boolean;
   access: Record<BarberAdminSection, boolean>;
+  claimedAt?: number;
   createdAt?: number;
   updatedAt?: number;
 };
@@ -948,6 +949,7 @@ function TeamSettingsScreen(props: TeamScreenProps) {
                     <small>Konto Google</small>
                     <strong>{waiting ? "Czeka na pierwsze logowanie" : "Połączone"}</strong>
                     {waiting ? <em>Barber ma zalogować się przez Google na {member.email || "podany adres"}.</em> : null}
+                    {!waiting && member.claimedAt && !member.active ? <em>Zalogował się. Włącz konto, żeby mógł pracować i pojawił się u klientów.</em> : null}
                   </span>
                   <div className="team-member-account-actions">
                     <button type="button" onClick={() => props.onEditMember(member)}>Edytuj dane</button>

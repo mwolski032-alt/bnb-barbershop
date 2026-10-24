@@ -9,7 +9,8 @@ test("the visit sheet in the calendar offers editing of the date, time and price
   assert.match(agenda, /props\.canManageSchedule && \(canEdit \|\| isCompleted\)/);
   assert.match(agenda, /isCompleted \? "Popraw cenę" : "Edytuj"/);
   // Cancelling stays limited to open visits.
-  assert.match(agenda, /props\.canManageSchedule && canEdit \? \(\s*<button\s+className="danger"/);
+  // Cancelling asks "Na pewno?" on the same button (a second tap) instead of opening a dialog.
+  assert.match(agenda, /props\.canManageSchedule && canEdit \? \(\s*<ConfirmButton\s+className="danger"/);
 });
 
 test("a returning client's phone number fills the booking and waitlist forms and survives a booking", () => {

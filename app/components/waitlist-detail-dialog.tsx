@@ -5,6 +5,7 @@ import { CalendarPlus, Clock3, MessageSquare, Phone, Trash2 } from "lucide-react
 import type { WaitlistEntry } from "../lib/booking-types";
 import { waitlistTimePreferenceLabels } from "../lib/booking-labels";
 import { dateFromKey, dayKey, getPhoneDigits } from "../lib/booking-selectors";
+import ConfirmButton from "./confirm-button";
 import ProfileAvatar from "./profile-avatar";
 import SalonDialog from "./salon-dialog";
 
@@ -134,16 +135,16 @@ export default function WaitlistDetailDialog({ entry, today, canManageSchedule, 
                   <a href={`sms:+48${digits}`}><MessageSquare aria-hidden="true" />SMS</a>
                 </>
               ) : null}
-              <button
-                type="button"
+              <ConfirmButton
                 className="is-danger"
                 disabled={removing}
                 aria-busy={removing}
-                onClick={() => { onRemove(entry); close(); }}
+                confirmLabel="Na pewno usunąć?"
+                onConfirm={() => { onRemove(entry); close(); }}
               >
                 <Trash2 aria-hidden="true" />
                 Usuń z listy
-              </button>
+              </ConfirmButton>
             </div>
           </div>
         </>

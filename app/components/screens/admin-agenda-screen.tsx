@@ -35,6 +35,7 @@ import {
   normalizeAppointmentStatus,
   timeToMinutes,
 } from "../../lib/booking-selectors";
+import ConfirmButton from "../confirm-button";
 import ProfileAvatar from "../profile-avatar";
 import WaitlistDetailDialog from "../waitlist-detail-dialog";
 
@@ -514,16 +515,16 @@ export default function AdminAgendaScreen(props: AgendaScreenProps) {
                     Potwierdź nowy termin
                   </button>
                   {canRefuse ? (
-                    <button
+                    <ConfirmButton
                       className="agenda-sheet-refuse"
-                      type="button"
                       disabled={props.isActionPending(`refuse_admin:${selectedAppointment.id}`)}
                       aria-busy={props.isActionPending(`refuse_admin:${selectedAppointment.id}`)}
-                      onClick={() => runAndClose(() => props.onRefuseAppointment(selectedAppointment))}
+                      confirmLabel="Na pewno odmówić?"
+                      onConfirm={() => runAndClose(() => props.onRefuseAppointment(selectedAppointment))}
                     >
                       <X aria-hidden="true" />
                       Odmawiam
-                    </button>
+                    </ConfirmButton>
                   ) : null}
                 </div>
               </div>
@@ -573,14 +574,14 @@ export default function AdminAgendaScreen(props: AgendaScreenProps) {
                 </button>
               ) : null}
               {props.canManageSchedule && canEdit ? (
-                <button
+                <ConfirmButton
                   className="danger"
-                  type="button"
-                  onClick={() => runAndClose(() => props.onCancelAppointment(selectedAppointment.id))}
+                  confirmLabel="Na pewno?"
+                  onConfirm={() => runAndClose(() => props.onCancelAppointment(selectedAppointment.id))}
                 >
                   <X aria-hidden="true" />
                   Odwołaj
-                </button>
+                </ConfirmButton>
               ) : null}
             </div>
           </section>

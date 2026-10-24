@@ -432,24 +432,33 @@ const invitedCard = (overrides = {}) => ({
   ...overrides,
 });
 
-test("a barber added by e-mail becomes a barber at the first Google sign-in with that address", async () => {
+test("a barber added by e-mail is linked at the first Google sign-in, but works only once the owner switches the card on", async () => {
   database.team.barbers.invited = invitedCard();
   try {
     const response = await request("GET", null, "invited-barber-token");
     const body = await response.json();
     assert.equal(response.status, 200, JSON.stringify(body));
-    assert.equal(body.context.role, "barber");
-    assert.equal(body.context.barberId, "invited");
-    assert.equal(body.context.access.profile, true);
-    assert.equal(body.context.access.schedule, false);
+    // Linked in the database as a barber, but switched off: no panel yet.
+    assert.equal(body.context.role, "client");
+    assert.equal(body.context.assignedRole, "barber");
+    assert.equal(body.context.active, false);
     assert.equal(database.team.barbers.invited.userId, "invited-uid");
-    assert.equal(database.team.barbers.invited.active, true);
+    assert.equal(database.team.barbers.invited.active, false);
     assert.equal(typeof database.team.barbers.invited.claimedAt, "number");
     assert.equal(database.team.barbers.invited.email, "new.barber@example.com");
 
     // Signing in again changes nothing, and somebody else with the same address cannot take the card over.
     const again = await (await request("GET", null, "invited-barber-token")).json();
-    assert.equal(again.context.role, "barber");
+    assert.equal(again.context.role, "client");
+    assert.equal(again.context.active, false);
+
+    // The owner switches the card on: now the same account is a barber with the access the owner gave.
+    database.team.barbers.invited.active = true;
+    const working = await (await request("GET", null, "invited-barber-token")).json();
+    assert.equal(working.context.role, "barber");
+    assert.equal(working.context.barberId, "invited");
+    assert.equal(working.context.access.profile, true);
+    assert.equal(working.context.access.schedule, false);
     const intruder = await (await request("GET", null, "second-invited-token")).json();
     assert.equal(intruder.context.role, "client");
     assert.equal(database.team.barbers.invited.userId, "invited-uid");

@@ -111,6 +111,7 @@ import { useBackNavigation } from "./hooks/use-back-navigation";
 import { listenToBarberProfile } from "./lib/barber-profile-listener";
 import { useAutoGrow } from "./hooks/use-auto-grow";
 import OfflineBanner from "./components/offline-banner";
+import ConfirmButton from "./components/confirm-button";
 import { useOfflineQueue, useOnlineStatus } from "./hooks/use-offline-queue";
 import {
   clearOfflineAppointments,
@@ -3052,7 +3053,7 @@ export function BookingHome() {
         [`barbers/${id}/profile/updatedAt`]: now,
       });
       setTeamDialogMemberId(null);
-      const message = `Dodano: ${name}. Poproś o zalogowanie się przez Google na ${email}.`;
+      const message = `Dodano: ${name}. Niech zaloguje się przez Google na ${email}, a potem włącz jego konto.`;
       setTeamFeedback({ kind: "success", message });
       showActionFeedback("save_team_member", "success", message);
     } catch {
@@ -3494,9 +3495,9 @@ export function BookingHome() {
     }
   };
 
-  const removeAdminWaitlistEntry = async (entry: WaitlistEntry) => {
+  const removeAdminWaitlistEntry = async (entry: WaitlistEntry, { confirmed = false } = {}) => {
     if (isWaitlistSaving) return;
-    if (!(await confirmAction({
+    if (!confirmed && !(await confirmAction({
       title: `Usunąć ${entry.clientName} z listy rezerwowej?`,
       message: "Klient nie dostanie już powiadomienia o wolnym terminie.",
       confirmLabel: "Usuń z listy", cancelLabel: "Zostaw", tone: "danger",
@@ -3611,10 +3612,10 @@ export function BookingHome() {
   };
 
   // The barber refuses the new term a client picked: the visit goes back to its old term and the client is asked to pick another.
-  const refuseClientRescheduledAppointment = async (appointment: AdminAppointment) => {
+  const refuseClientRescheduledAppointment = async (appointment: AdminAppointment, { confirmed = false } = {}) => {
     if (isSaving || !appointment.previousDateKey) return;
     const oldTerm = `${dayFormatter.format(dateFromKey(appointment.previousDateKey))}, ${appointment.previousStartTime}`;
-    if (!(await confirmAction({
+    if (!confirmed && !(await confirmAction({
       title: "Odmówić nowego terminu?",
       message: `Wizyta wróci do terminu ${oldTerm}, a ${appointment.clientName} dostanie prośbę o wybranie innego. Wizyta nie zostanie odwołana.`,
       confirmLabel: "Odmawiam",
@@ -3936,9 +3937,9 @@ export function BookingHome() {
     );
   };
 
-  const declineAdminAppointment = async (appointmentId: string) => {
+  const declineAdminAppointment = async (appointmentId: string, { confirmed = false } = {}) => {
     const appointment = adminAppointments.find((item) => item.id === appointmentId);
-    if (!(await confirmAction({
+    if (!confirmed && !(await confirmAction({
       title: `Odwołać wizytę ${appointment?.clientName ?? "klienta"}?`,
       message: "Termin zostanie zwolniony. Tej operacji nie można cofnąć.",
       confirmLabel: "Odwołaj wizytę", cancelLabel: "Zostaw", tone: "danger",
@@ -4321,9 +4322,9 @@ export function BookingHome() {
     }
   };
 
-  const markAdminAppointmentNoShow = async (appointment: AdminAppointment) => {
+  const markAdminAppointmentNoShow = async (appointment: AdminAppointment, { confirmed = false } = {}) => {
     if (!isAdmin || isSaving || !isPotentialNoShow(appointment, currentDate)) return;
-    if (!(await confirmAction({
+    if (!confirmed && !(await confirmAction({
       title: `Oznaczyć nieobecność klienta ${appointment.clientName}?`,
       message: "Wizyta zostanie zapisana jako nieodbyta.",
       confirmLabel: "Oznacz nieobecność", tone: "danger",
@@ -4968,11 +4969,12 @@ export function BookingHome() {
                   onEditAppointment={openAdminAppointmentEdit}
                   onOpenClient={setSelectedAdminClientId}
                   onOpenSms={openSmsComposer}
-                  onCancelAppointment={(appointmentId) => void declineAdminAppointment(appointmentId)}
+                  // The agenda's buttons ask "Na pewno?" themselves (a second tap), so no dialog on top.
+                  onCancelAppointment={(appointmentId) => void declineAdminAppointment(appointmentId, { confirmed: true })}
                   onConfirmAppointment={(appointment) => void confirmClientRescheduledAppointment(appointment.id)}
-                  onRefuseAppointment={(appointment) => void refuseClientRescheduledAppointment(appointment)}
+                  onRefuseAppointment={(appointment) => void refuseClientRescheduledAppointment(appointment, { confirmed: true })}
                   onBookWaitlist={openWaitlistBooking}
-                  onRemoveWaitlist={(entry) => void removeAdminWaitlistEntry(entry)}
+                  onRemoveWaitlist={(entry) => void removeAdminWaitlistEntry(entry, { confirmed: true })}
                 />
               </Suspense>
             ) : null}
@@ -5655,15 +5657,15 @@ export function BookingHome() {
                     Rezerwuję
                   </button>
                 ) : activeClientWaitlistEntry ? (
-                  <button
+                  <ConfirmButton
                     className="secondary"
-                    type="button"
                     disabled={isWaitlistSaving}
                     aria-busy={isActionPending(`leave_waitlist:${activeClientWaitlistEntry.id}`)}
-                    onClick={() => void leaveClientWaitlist(activeClientWaitlistEntry)}
+                    confirmLabel="Na pewno wypisać?"
+                    onConfirm={() => void leaveClientWaitlist(activeClientWaitlistEntry)}
                   >
                     Wypisz mnie
-                  </button>
+                  </ConfirmButton>
                 ) : (
                   <button type="button" onClick={openWaitlistDialog}>
                     Dołącz
@@ -5855,7 +5857,7 @@ export function BookingHome() {
               </label>
               <p className="team-account-help">
                 {addingTeamMember || !editingTeamMember.userId
-                  ? "Barber ma zalogować się przez Google na ten adres. Po pierwszym logowaniu konto połączy się samo, a Ty wybierzesz, do czego ma dostęp. Na początku widzi tylko swój profil."
+                  ? "Barber ma zalogować się przez Google na ten adres. Po pierwszym logowaniu konto połączy się samo, ale zostanie wyłączone, dopóki go nie włączysz w Zespole. Dopiero wtedy dostanie panel (na początku tylko swój profil) i pojawi się u klientów."
                   : "E-mail służy do powiadomień o wizytach. Dostęp Google jest przypisany na stałe."}
               </p>
 
@@ -6456,15 +6458,15 @@ export function BookingHome() {
                         </button>
                       ) : null}
                       {canAccessAdminSchedule && potentialNoShow ? (
-                        <button
+                        <ConfirmButton
                           className="no-show"
-                          type="button"
                           disabled={isSaving || isActionPending(`mark_no_show_admin:${appointment.id}`)}
                           aria-busy={isActionPending(`mark_no_show_admin:${appointment.id}`)}
-                          onClick={() => void markAdminAppointmentNoShow(appointment)}
+                          confirmLabel="Na pewno?"
+                          onConfirm={() => void markAdminAppointmentNoShow(appointment, { confirmed: true })}
                         >
                           Nieobecność
-                        </button>
+                        </ConfirmButton>
                       ) : null}
                       {getPhoneDigits(selectedAdminClient.phone).length === 9 ? (
                         <button
@@ -7305,14 +7307,14 @@ export function BookingHome() {
                         : "Zmień"}
                     </button>
                     {!selectedClientOpenedFromConfirmationNotification ? (
-                      <button
-                        className="danger"
-                        type="button"
-                        disabled={isSaving}
-                        onClick={() => setPendingClientCancellationId(selectedClientAppointment.id)}
-                      >
-                        Odwołaj wizytę
-                      </button>
+                      <ConfirmButton
+                  className="danger"
+                  disabled={isSaving}
+                  confirmLabel="Na pewno odwołać?"
+                  onConfirm={() => void cancelClientAppointment(selectedClientAppointment.id)}
+                >
+                  Odwołaj wizytę
+                </ConfirmButton>
                     ) : null}
                   </>
                 )}

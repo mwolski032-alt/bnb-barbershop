@@ -1,6 +1,7 @@
 // The owner adds a barber by e-mail and a display name. The card waits without a Google account (`userId` is
-// empty); the first time that person signs in with Google using that e-mail, the server links the account and
-// turns the card on. Pure functions, covered by unit tests, shared by the owner's panel and the sign-in check.
+// empty); the first time that person signs in with Google using that e-mail, the server links the account. The
+// card stays switched off until the owner switches it on: only then can the barber work and appear on the booking page.
+// Pure functions, covered by unit tests, shared by the owner's panel and the sign-in check.
 
 export const BARBER_ID_PATTERN = /^[a-zA-Z0-9_-]{1,80}$/;
 export const ADMIN_SECTIONS = ["schedule", "clients", "analytics", "work", "services", "profile"];
@@ -42,7 +43,7 @@ export const buildInvitedMember = ({ id, name, email, index = 0, now = Date.now(
   accent: index % 2 === 0 ? "blue" : "mint",
   userId: "",
   email: normalizeInviteEmail(email),
-  // Off until the person signs in: a barber with no account must not appear on the booking page.
+  // Off until the owner switches it on, also after the first sign-in: nobody appears on the booking page unasked.
   active: false,
   access: { ...NEW_BARBER_ACCESS },
   invitedAt: now,
@@ -67,11 +68,10 @@ export const findPendingInvite = (members, email, emailVerified) => {
   return matches.length === 1 ? { id: matches[0][0] } : { conflict: true };
 };
 
-/** The card after the first sign-in: linked to the account and switched on. */
+/** The card after the first sign-in: linked to the account, with `active` left as the owner has it (off). */
 export const claimInvite = (member, uid, now = Date.now()) => ({
   ...member,
   userId: uid,
-  active: true,
   claimedAt: now,
   updatedAt: now,
 });

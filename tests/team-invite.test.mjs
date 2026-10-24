@@ -65,17 +65,21 @@ test("only a verified sign-in with the waiting address finds the card", () => {
   assert.deepEqual(findPendingInvite(doubled, "new@example.com", true), { conflict: true });
 });
 
-test("claiming links the account and switches the card on, keeping the owner's choices", () => {
+test("claiming links the account but leaves the card off, keeping the owner's choices", () => {
   const card = buildInvitedMember({ id: "jan-ab12", name: "Jan", email: "jan@example.com", now: 1 });
   const claimed = claimInvite({ ...card, access: { ...card.access, schedule: true } }, "uid-1", 99);
   assert.equal(claimed.userId, "uid-1");
-  assert.equal(claimed.active, true);
+  assert.equal(claimed.active, false, "only the owner switches a barber on");
   assert.equal(claimed.claimedAt, 99);
+  // A card the owner has already switched on stays on.
+  assert.equal(claimInvite({ ...card, active: true }, "uid-1", 99).active, true);
   assert.equal(claimed.access.schedule, true);
   assert.equal(claimed.email, "jan@example.com");
 });
 
 test("the owner's team screen adds and removes invitations, and the server claims on sign-in", async () => {
+  assert.match(await read("app/booking-home.tsx"), /ale zostanie wyłączone, dopóki go nie włączysz w Zespole/);
+  assert.match(await read("app/components/screens/admin-settings-screen.tsx"), /Zalogował się\. Włącz konto/);
   const home = await read("app/booking-home.tsx");
   const screen = await read("app/components/screens/admin-settings-screen.tsx");
   const admin = await read("netlify/functions/_firebase-admin.mjs");
