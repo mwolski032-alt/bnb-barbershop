@@ -154,7 +154,7 @@
 .salon-review-nudge::after { content: ""; position: absolute; inset: 0; pointer-events: none; transform: translateX(-120%); background: linear-gradient(105deg, transparent 35%, var(--color-star-glow) 50%, transparent 65%); opacity: .7; }
 @media (max-width: 480px) { .salon-review-nudge { padding: 10px 14px; gap: 10px; } .salon-review-nudge-stars svg { width: 16px; height: 16px; } .salon-review-nudge-copy strong { font-size: 16px; } }
 .salon-reviews-entry::after { content: ""; position: absolute; inset: 0; pointer-events: none; transform: translateX(-120%); background: linear-gradient(105deg, transparent 35%, var(--color-star-glow) 50%, transparent 65%); opacity: .55; }
-.salon-reviews-dialog { position: relative; width: min(600px, calc(100% - 24px)); background: radial-gradient(120% 60% at 50% 0%, var(--color-warning-soft), var(--color-surface) 62%); }
+.salon-reviews-dialog { width: min(600px, calc(100% - 24px)); background: radial-gradient(120% 60% at 50% 0%, var(--color-warning-soft), var(--color-surface) 62%); }
 .salon-reviews-dialog .salon-dialog-content { position: relative; max-height: calc(100dvh - 24px); overflow-y: auto; overflow-x: hidden; }
 .reviews-sparkles { position: absolute; inset: 0 0 auto 0; height: 190px; pointer-events: none; overflow: hidden; }
 .reviews-sparkles i { position: absolute; left: var(--x); top: var(--y); width: calc(14px * var(--s)); height: calc(14px * var(--s)); background: var(--color-star-bright); clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); opacity: 0; }
