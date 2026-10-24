@@ -107,6 +107,7 @@ import { usePushLinkActions, useReminderAnswer } from "./hooks/use-push-link-act
 import { useKnownPhone } from "./hooks/use-known-phone";
 import PhotoCropDialog from "./components/photo-crop-dialog";
 import { useBackNavigation } from "./hooks/use-back-navigation";
+import { useAutoGrow } from "./hooks/use-auto-grow";
 import OfflineBanner from "./components/offline-banner";
 import { useOfflineQueue, useOnlineStatus } from "./hooks/use-offline-queue";
 import {
@@ -404,6 +405,7 @@ export function BookingHome() {
   const [selectedAdminClientId, setSelectedAdminClientId] = useState<string | null>(null);
   const [settlingAppointmentId, setSettlingAppointmentId] = useState<string | null>(null);
   const [smsComposer, setSmsComposer] = useState<SmsComposerState | null>(null);
+  const smsMessageRef = useAutoGrow(smsComposer?.message ?? "");
   const [editingAvailabilityKey, setEditingAvailabilityKey] = useState<string | null>(null);
   const [pendingAvailabilityRemovalKey, setPendingAvailabilityRemovalKey] = useState<string | null>(
     null,
@@ -1915,9 +1917,6 @@ export function BookingHome() {
       if (typeof memory.calendarClientSearch === "string") {
         setCalendarClientSearch(memory.calendarClientSearch.slice(0, 120));
       }
-      setExpandedAvailabilityMonth(
-        isMonthKeyValue(memory.expandedAvailabilityMonth) ? memory.expandedAvailabilityMonth : null,
-      );
       if (memory.scrollPositions && typeof memory.scrollPositions === "object") {
         viewScrollPositionsRef.current = Object.fromEntries(
           Object.entries(memory.scrollPositions).filter(
@@ -4905,10 +4904,6 @@ export function BookingHome() {
                   isSavingService={isSaving}
                   isActionPending={isDirectActionPending}
                   onResetAvailability={resetAvailabilityEditor}
-                  onSetAvailabilityPreset={(startTime, endTime) => {
-                    setWorkFeedback(null);
-                    setAvailabilityDraft((current) => ({ ...current, startTime, endTime }));
-                  }}
                   onChangeAvailabilityDates={changeAvailabilityDates}
                   onUpdateAvailability={updateAvailabilityDraft}
                   onSaveAvailability={() => void addAvailabilityRange()}
@@ -6508,6 +6503,7 @@ export function BookingHome() {
             <label className="sms-message-field">
               <span>Treść wiadomości</span>
               <textarea
+                ref={smsMessageRef}
                 value={smsComposer.message}
                 maxLength={480}
                 autoFocus

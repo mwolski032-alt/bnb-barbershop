@@ -93,7 +93,6 @@ type WorkScreenProps = {
   isSavingService: boolean;
   isActionPending: (key: string) => boolean;
   onResetAvailability: () => void;
-  onSetAvailabilityPreset: (startTime: string, endTime: string) => void;
   onChangeAvailabilityDates: (dates: string[]) => void;
   onUpdateAvailability: (field: "startTime" | "endTime", value: string) => void;
   onSaveAvailability: () => void;
@@ -193,12 +192,6 @@ const formatServicePrice = (value: string) => {
 const WEEKDAY_SHORT = ["Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"];
 const WEEKDAY_PLURAL = ["poniedziałki", "wtorki", "środy", "czwartki", "piątki", "soboty", "niedziele"];
 
-const AVAILABILITY_PRESETS = [
-  { label: "Cały dzień", startTime: "09:00", endTime: "17:00" },
-  { label: "Rano", startTime: "08:00", endTime: "14:00" },
-  { label: "Po południu", startTime: "14:00", endTime: "20:00" },
-];
-
 const SERVICE_TEMPLATES = [
   { name: "Strzyżenie", price: "70", durationMinutes: "45" },
   { name: "Broda", price: "40", durationMinutes: "30" },
@@ -249,6 +242,12 @@ function WorkSettingsScreen(props: WorkScreenProps) {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [serviceFormOpen, setServiceFormOpen] = useState(false);
   const serviceFormRef = useRef<HTMLElement | null>(null);
+
+  // The list of available days always opens collapsed, on entering the screen and on switching its tabs.
+  const { onToggleAvailabilityMonth, workspaceTab } = props;
+  useEffect(() => {
+    onToggleAvailabilityMonth(null);
+  }, [onToggleAvailabilityMonth, workspaceTab]);
 
   const selected = useMemo(() => new Set(draft.dates), [draft.dates]);
   const sortedDates = useMemo(() => [...draft.dates].sort(), [draft.dates]);
@@ -540,24 +539,6 @@ function WorkSettingsScreen(props: WorkScreenProps) {
 
               <div className="wk-block">
                 <h3 className="wk-step-title"><b>2</b>Wybierz godziny</h3>
-                <div className="work-preset-grid">
-                  {AVAILABILITY_PRESETS.map((preset) => {
-                    const active = draft.startTime === preset.startTime && draft.endTime === preset.endTime;
-                    return (
-                      <button
-                        className={active ? "active" : ""}
-                        key={preset.label}
-                        type="button"
-                        onClick={() => props.onSetAvailabilityPreset(preset.startTime, preset.endTime)}
-                        aria-pressed={active}
-                      >
-                        <strong>{preset.label}</strong>
-                        <span>{preset.startTime}–{preset.endTime}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
                 <div className="wk-time-stepper">
                   <span>Od</span>
                   <button

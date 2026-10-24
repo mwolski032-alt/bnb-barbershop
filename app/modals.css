@@ -341,7 +341,7 @@
 .sms-template-picker button:active { transform: scale(.95); }
 .sms-composer-icon { border-radius: 50%; background: var(--color-primary-soft); color: var(--color-primary); }
 .sms-composer-heading h2 { white-space: normal; }
-.sms-message-field textarea { min-height: 8rem; }
+.sms-message-field textarea { min-height: 8rem; resize: none; overflow: hidden; }
 
 /* ---------- Dialogs opened through confirmAction and the photo cropper ---------- */
 .salon-dialog.salon-confirm,

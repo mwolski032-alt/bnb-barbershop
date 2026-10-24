@@ -403,7 +403,8 @@
   background: var(--color-surface);
   overflow: hidden;
 }
-.availability-window-list { display: grid; gap: 0.5rem; padding: 0.3rem 0.7rem 0.8rem; }
+.availability-window-list { display: none; gap: 0.5rem; padding: 0.3rem 0.7rem 0.8rem; }
+.availability-month.expanded .availability-window-list { display: grid; }
 .availability-window-row {
   display: grid;
   gap: 0.55rem;
@@ -711,12 +712,13 @@
 .action-feedback-toast {
   border: 0;
   border-radius: var(--radius-pill);
-  background: var(--color-text);
-  color: var(--color-brand-white);
+  background: var(--color-surface);
+  color: var(--color-text);
   box-shadow: var(--shadow-floating);
 }
-.action-feedback-toast .action-feedback-icon { color: var(--color-brand-white); }
-.action-feedback-toast.success .action-feedback-icon { color: #8fe0b2; }
+.action-feedback-toast .action-feedback-icon { color: var(--color-primary); }
+.action-feedback-toast.success .action-feedback-icon { color: var(--color-success); }
+.action-feedback-toast.error { color: var(--color-brand-white); }
 .action-feedback-toast.error { background: var(--color-error); }
 .action-feedback-toast.error .action-feedback-icon { color: var(--color-brand-white); }
 
