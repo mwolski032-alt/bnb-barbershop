@@ -58,7 +58,6 @@
 .salon-header nav button:not(:disabled):hover, .salon-footer button:not(:disabled):hover { background-color: var(--color-primary-soft); }
 .salon-header nav button:active:not(:disabled), .salon-footer button:active:not(:disabled) { transform: scale(.95); }
 .salon-account-pill { border: 0; background: var(--color-surface-secondary); }
-.salon-header .salon-notification { border: 0; background: var(--color-surface-secondary); }
 .salon-header .salon-account-pill button { border-left: 0; border-radius: var(--radius-pill); }
 
 /* Hero. */

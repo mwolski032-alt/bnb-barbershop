@@ -823,8 +823,6 @@ test("places the gallery above the landing copy and keeps explicit mobile status
   // The barber credit on gallery photos is covered by gallery-barber.test.mjs.
   assert.match(home, /\/brand\/bnb-mark\.png/);
   assert.match(styles, /\.salon-brand\s*\{[^}]*aspect-ratio:\s*16\/9/s);
-  assert.match(styles, /\.salon-header \.salon-notification\.enabled\s*\{[^}]*background:\s*var\(--color-primary\)/s);
-  assert.match(styles, /\.salon-header \.salon-notification\.disabled[^\{]*\{[^}]*background:\s*var\(--color-error\)/s);
   assert.match(styles, /\.salon-header nav\s*\{[^}]*border-top:\s*1px solid var\(--color-border-strong\)/s);
 });
 

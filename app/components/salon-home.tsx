@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { onValue, ref } from "firebase/database";
-import { ArrowUpRight, AtSign, MapPin, Clock3, Bell, ChevronDown, LogOut, Star, Scissors } from "lucide-react";
+import { ArrowUpRight, AtSign, MapPin, Clock3, ChevronDown, LogOut, Star, Scissors } from "lucide-react";
 import { realtimeDb } from "../lib/firebase";
 import {
   emptyReviewSummary,
@@ -210,17 +210,13 @@ export default function SalonHome(props: Props) {
           {!props.signedIn && <button type="button" disabled={props.busy} onClick={props.onLogin ?? (() => props.onBook())}>Zaloguj się <ArrowUpRight aria-hidden="true" /></button>}
         </nav>
         {props.account && <div className="salon-session" aria-label="Zalogowane konto">
-          {props.notification && <button type="button" className={`salon-notification ${props.notification.status}`} aria-label={props.notification.label} title={props.notification.label}
-            aria-pressed={props.notification.enabled} aria-busy={props.notification.busy} disabled={props.notification.busy || props.notification.status === "checking"} onClick={props.onNotifications}>
-            <Bell aria-hidden="true" /><span aria-hidden="true" />
-          </button>}
           <div className="salon-account-pill">
             {props.accountPanel
               ? <button type="button" className="salon-account-open" onClick={() => { dismissHint(); setAccountOpen(true); }} aria-label="Moje konto: zdjęcie, imię, telefon i wylogowanie">
                 <span className="salon-account-avatar-wrap" data-hint={showHint || undefined}>
                   <ProfileAvatar className="salon-account-avatar" name={props.account.name} photoUrl={props.account.photoUrl} />
                 </span>
-                <strong>{props.account.name}</strong>
+                <strong><span className="salon-account-full">{props.account.name}</span><span className="salon-account-first">{props.account.name.trim().split(/\s+/)[0]}</span></strong>
                 <span className="salon-account-cta">Konto <ChevronDown aria-hidden="true" /></span>
               </button>
               : <>

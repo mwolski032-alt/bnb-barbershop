@@ -96,7 +96,15 @@
 .salon-account-hint p { position: relative; margin: 0; font-size: 14px; line-height: 1.35; }
 .salon-account-hint button { position: relative; justify-self: end; padding: 5px 12px; border: 0; border-radius: 999px; background: rgb(255 255 255 / 18%); color: inherit; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 @keyframes account-hint-in { from { opacity: 0; transform: translateY(-8px) scale(.94); } }
-@media (max-width: 700px) { .salon-account-open > strong { display: none; } .salon-account-hint { right: -4px; } }
+/* Wide screens show the full name; narrow ones the first word only, on one line, never wrapped or ellipsised. */
+.salon-account-open > strong { max-width: 170px; overflow: hidden; text-overflow: ellipsis; font-size: 14px; font-weight: 500; white-space: nowrap; }
+.salon-account-first { display: none; }
+@media (max-width: 700px) {
+  .salon-account-open > strong { max-width: 92px; overflow: hidden; text-overflow: clip; }
+  .salon-account-full { display: none; }
+  .salon-account-first { display: inline; }
+  .salon-account-hint { right: -4px; }
+}
 
 /* "Wyloguj" lives in the account dialog, under "Zapisz zmiany". */
 .account-logout { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; border: 1px solid #b3261e; border-radius: 999px; background: transparent; color: #b3261e; font: inherit; font-weight: 600; cursor: pointer; transition: background var(--duration-base), color var(--duration-base), transform var(--duration-base) var(--ease-out); }
