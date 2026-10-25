@@ -83,7 +83,7 @@
 
 /* Account pill on the home page: it must read as a button, and say what it is for. */
 .salon-session { position: relative; }
-.salon-account-pill:has(.salon-account-open) { padding: 4px 6px 4px 5px; transition: box-shadow var(--duration-base), transform var(--duration-base) var(--ease-out); }
+.salon-account-pill:has(.salon-account-open) { padding: 3px 6px 3px 4px; transition: box-shadow var(--duration-base), transform var(--duration-base) var(--ease-out); }
 .salon-account-pill:has(.salon-account-open):hover { box-shadow: 0 6px 18px -8px rgb(1 66 65 / 55%); }
 .salon-account-avatar-wrap { position: relative; display: grid; flex: none; }
 .salon-account-cta { display: inline-flex; align-items: center; gap: 2px; padding: 6px 10px; border-radius: 999px; background: var(--color-primary); color: var(--color-on-primary); font-size: 12px; font-weight: 600; letter-spacing: .02em; }
@@ -112,3 +112,11 @@
 .account-logout:active:not(:disabled) { transform: scale(.98); }
 .account-logout svg { width: 18px; height: 18px; }
 @media (prefers-reduced-motion: reduce) { .salon-account-avatar-wrap[data-hint]::after { animation: none; } }
+
+/* The account pill is exactly as tall as the B'n'B logo next to it (the logo is 16:9, 80px wide, 76px on phones). */
+.salon-header { --chip-height: 45px; }
+@media (max-width: 700px) { .salon-header { --chip-height: 42.75px; } }
+.salon-account-pill { box-sizing: border-box; height: var(--chip-height); min-height: 0; padding-block: 3px; }
+.salon-account-pill .salon-account-avatar { width: calc(var(--chip-height) - 8px); height: calc(var(--chip-height) - 8px); flex-basis: calc(var(--chip-height) - 8px); }
+.salon-header .salon-account-pill button { min-height: 0; }
+.salon-account-cta { padding-block: 5px; }

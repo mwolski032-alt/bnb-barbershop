@@ -15,7 +15,7 @@ import {
   GIVE_UP_AFTER_DAYS,
   findRebookCandidates,
   formatRebookNudge,
-  getClientInterval,
+  REBOOK_AFTER_DAYS,
 } from "../shared/rebook.mjs";
 import {
   buildPublicReviews,
@@ -107,21 +107,20 @@ test("Warsaw time follows daylight saving", () => {
   assert.equal(getWarsawParts(new Date("2026-12-01T23:30:00Z")).dateKey, "2026-12-02");
 });
 
-test("a client is nudged by their own rhythm, once per visit cycle, and never while a visit is booked", () => {
+test("a client is nudged three weeks after the last visit, once per visit cycle, and never while a visit is booked", () => {
   const completed = (userId, dateKey, extra = {}) => ({ userId, dateKey, status: "completed", barberId: "mateusz", ...extra });
   const today = { todayKey: "2026-10-10" };
-  assert.equal(getClientInterval(["2026-01-01"]), 28);
-  assert.equal(getClientInterval(["2026-01-01", "2026-01-15", "2026-01-29"]), 14);
-  assert.equal(getClientInterval(["2026-01-01", "2026-06-01"]), 56);
+  assert.equal(REBOOK_AFTER_DAYS, 21);
 
   const due = findRebookCandidates({ a: completed("u1", "2026-09-01") }, {}, today);
   assert.deepEqual(due.map((candidate) => candidate.uid), ["u1"]);
-  // Not due yet.
-  assert.equal(findRebookCandidates({ a: completed("u1", "2026-09-25") }, {}, today).length, 0);
-  // Weekly regular: not nudged a week after the last visit, due after two weeks (the shortest interval).
+  // Not due yet: 20 days after the visit is too early, 21 days is the day.
+  assert.equal(findRebookCandidates({ a: completed("u1", "2026-09-20") }, {}, today).length, 0);
+  assert.equal(findRebookCandidates({ a: completed("u1", "2026-09-19") }, {}, today).length, 1);
+  // A weekly regular is not nudged a week after the last visit either.
   const regular = { a: completed("u2", "2026-09-19"), b: completed("u2", "2026-09-26"), c: completed("u2", "2026-10-03") };
   assert.equal(findRebookCandidates(regular, {}, today).length, 0);
-  assert.equal(findRebookCandidates(regular, {}, { todayKey: "2026-10-17" }).length, 1);
+  assert.equal(findRebookCandidates(regular, {}, { todayKey: "2026-10-24" }).length, 1);
   // Already booked.
   assert.equal(findRebookCandidates({ a: completed("u1", "2026-09-01"), b: { userId: "u1", dateKey: "2026-10-20", status: "confirmed", barberId: "mateusz" } }, {}, today).length, 0);
   // Nudged after the last visit: not again. Nudged before it: new cycle.
@@ -134,9 +133,9 @@ test("a client is nudged by their own rhythm, once per visit cycle, and never wh
 });
 
 test("the nudge speaks in weeks and names the barber", () => {
-  assert.match(formatRebookNudge(28, "Mateusz").body, /^Minęło już 4 tygodnie od ostatniej wizyty u Mateusz\./);
+  assert.match(formatRebookNudge(28, "Mateusz").body, /^Minęły już 4 tygodnie od ostatniej wizyty u Mateusz\./);
   assert.match(formatRebookNudge(35).body, /^Minęło już 5 tygodni od ostatniej wizyty\./);
-  assert.match(formatRebookNudge(7).body, /1 tydzień/);
+  assert.match(formatRebookNudge(7).body, /^Minął już 1 tydzień/);
 });
 
 test("review input needs a whole rating from 1 to 5 and trims the text", () => {

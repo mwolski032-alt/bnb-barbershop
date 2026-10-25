@@ -5814,7 +5814,7 @@ export function BookingHome() {
           </form>
         </section>
       ) : (
-        <SuccessScreen summary={bookingSummary} ready={successReady} />
+        <SuccessScreen summary={bookingSummary} ready={successReady} push={{ status: pushDeviceStatus, busy: isPushDeviceUpdating, onEnable: () => void handlePushDeviceToggle() }} />
       )}
 
       {cropFile ? (
