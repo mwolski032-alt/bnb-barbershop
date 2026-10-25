@@ -22,6 +22,7 @@ import GalleryLightbox from "./gallery-lightbox";
 import GalleryMosaic from "./gallery-mosaic";
 import { buildLabel } from "../lib/build-info";
 import AccountSwitcher from "./account-switcher";
+import BarberWorks from "./barber-works";
 import ClientAccount, { type AccountStats } from "./client-account";
 import type { ClientProfile } from "../lib/client-profile";
 import { useReveal } from "../hooks/use-reveal";
@@ -84,6 +85,8 @@ export default function SalonHome(props: Props) {
   const bookAfterClose = useRef<string | null>(null);
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  // One barber's own photos, opened from their profile: the viewer then walks only through those.
+  const [works, setWorks] = useState<{ photos: SalonImage[]; index: number } | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   // A small bubble points at the account pill until the client has opened it once (remembered on this device).
   const [hintSeen, setHintSeen] = useState(true);
@@ -152,6 +155,7 @@ export default function SalonHome(props: Props) {
   // The phone's Back button closes the topmost dialog of this page (photo viewer, all photos, barber profile).
   useBackNavigation([
     { active: lightbox !== null, close: () => setLightbox(null) },
+    { active: works !== null, close: () => setWorks(null) },
     { active: accountOpen, close: () => setAccountOpen(false) },
     { active: galleryOpen, close: () => setGalleryOpen(false) },
     { active: reviewsOpen, close: () => setReviewsOpen(false) },
@@ -309,6 +313,7 @@ export default function SalonHome(props: Props) {
       <button className="salon-cta" type="button" disabled={props.busy} aria-busy={props.busy} onClick={() => { bookAfterClose.current = profile.id; close(); }}>
         {props.busy ? "Chwileczkę…" : "Umów wizytę"}<ArrowUpRight aria-hidden="true" />
       </button>
+      <BarberWorks name={profile.displayName} photos={gallery.filter(photo => photo.barberId === profile.id)} onOpen={(photos, index) => setWorks({ photos, index })} />
     </>}</SalonDialog>}
     {reviewFormOpen && props.reviewPrompt && <SalonDialog title="Zostaw opinię" onClose={() => setReviewFormOpen(false)}>{() =>
       <ReviewPrompt key={props.reviewPrompt!.appointmentId} appointmentId={props.reviewPrompt!.appointmentId} barberName={props.reviewPrompt!.barberName}
@@ -320,6 +325,7 @@ export default function SalonHome(props: Props) {
       <div className="salon-gallery-all-heading"><span className="salon-overline">GALERIA B&apos;N&apos;B</span><h2>Wszystkie zdjęcia</h2></div>
       <GalleryMosaic photos={gallery} barberName={photoBarber} onOpen={index => { setGalleryOpen(false); setLightbox(index); }} />
     </SalonDialog>}
+    {works && <GalleryLightbox photos={works.photos} index={Math.min(works.index, works.photos.length - 1)} onIndex={index => setWorks(current => current && { ...current, index })} onClose={() => setWorks(null)} author={photoAuthor} />}
     {lightbox !== null && gallery.length > 0 && <GalleryLightbox photos={gallery} index={Math.min(lightbox, gallery.length - 1)} onIndex={setLightbox} onClose={() => setLightbox(null)} author={photoAuthor} />}
   </main>;
 }

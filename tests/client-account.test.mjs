@@ -64,3 +64,10 @@ test("the owner's account switcher sits first in the home page menu, for owner a
   assert.match(read("app/components/salon-home.tsx"), /<nav aria-label="Menu główne">\s*\{props\.admin && <AccountSwitcher \/>\}/);
   assert.match(read("netlify/functions/account-switch.mjs"), /if \(!group\.isOwner\) return jsonResponse\(\{ error: "Only the owner can link accounts" \}, 403\)/);
 });
+
+test("a barber's profile ends with their own works, opened in a viewer that walks only through them", () => {
+  const home = read("app/components/salon-home.tsx");
+  assert.match(home, /<BarberWorks name=\{profile\.displayName\} photos=\{gallery\.filter\(photo => photo\.barberId === profile\.id\)\}/);
+  assert.match(home, /\{works && <GalleryLightbox photos=\{works\.photos\}/);
+  assert.match(home, /\{ active: works !== null, close: \(\) => setWorks\(null\) \}/);
+});
