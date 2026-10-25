@@ -37,7 +37,7 @@
 }
 
 /* ---- Viewer: cinematic ---- */
-.salon-lightbox { background: #02100f; }
+.salon-dialog.salon-lightbox { border-radius: 0; background: #02100f; } /* beats the 28px radius every dialog gets in client-modern.css */
 .lightbox-stage { padding: max(64px, env(safe-area-inset-top)) 0 max(150px, calc(env(safe-area-inset-bottom) + 130px)); }
 /* Every photo spans the full width; only transform and opacity animate, so the slide stays on the GPU. */
 .lightbox-frame { display: block; width: 100%; max-height: 100%; overflow: hidden; border-radius: 0; will-change: transform, opacity; animation: lightbox-slide-next 620ms cubic-bezier(.16, 1, .3, 1) both; }
@@ -47,11 +47,11 @@
 .salon-lightbox .lightbox-photo { display: block; width: 100%; max-width: none; height: auto; max-height: calc(100dvh - 230px); border-radius: 0; box-shadow: none; object-fit: cover; animation: none; }
 .lightbox-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 45%, transparent 55%, rgb(2 16 15 / 55%) 100%); }
 
-/* Who did the haircut, like an Instagram story header: avatar with a ring and the name, under the counter. */
-.lightbox-author { position: absolute; top: calc(max(22px, env(safe-area-inset-top)) + 62px); left: 22px; z-index: 2; display: flex; align-items: center; gap: 10px; margin: 0; color: #fff; font-size: 15px; font-weight: 600; text-shadow: 0 1px 8px rgb(0 0 0 / 60%); animation: lightbox-author-in 520ms var(--ease-out) both; }
+/* Who did the haircut, like an Instagram story header: avatar with a ring and the name, centred above the thumbnail strip. */
+.lightbox-author { position: absolute; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 84px); left: 0; right: 0; z-index: 2; display: flex; align-items: center; justify-content: center; gap: 10px; pointer-events: none; margin: 0; color: #fff; font-size: 15px; font-weight: 600; text-shadow: 0 1px 8px rgb(0 0 0 / 60%); animation: lightbox-author-in 520ms var(--ease-out) both; }
 .lightbox-author .lightbox-author-photo { width: 40px; height: 40px; flex: none; border: 2px solid #02100f; border-radius: 50%; overflow: hidden; box-shadow: 0 0 0 2px var(--color-secondary), 0 0 0 4px var(--color-star-bright); }
 .lightbox-author-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
-@keyframes lightbox-author-in { from { opacity: 0; transform: translateX(-12px); } }
+@keyframes lightbox-author-in { from { opacity: 0; transform: translateY(12px); } }
 
 .salon-lightbox .lightbox-counter { top: max(22px, env(safe-area-inset-top)); bottom: auto; left: 22px; padding: 0; background: none; color: #fff; font-family: var(--font-display); font-size: 1.1rem; letter-spacing: .1em; transform: none; }
 .lightbox-counter b { font-size: 2.6rem; font-weight: 300; }
@@ -67,7 +67,6 @@
 @media (max-width: 700px) {
   .lightbox-strip button { width: 44px; height: 44px; border-radius: 8px; }
   .lightbox-stage { padding-bottom: max(130px, calc(env(safe-area-inset-bottom) + 110px)); }
-  .lightbox-author { left: 16px; }
   .salon-lightbox .lightbox-photo { max-height: calc(100dvh - 210px); }
 }
 @media (prefers-reduced-motion: reduce) {
