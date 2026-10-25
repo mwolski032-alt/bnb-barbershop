@@ -89,3 +89,13 @@ test("unpairing removes the account from the list and from switching", async () 
     assert.equal((await call("owner-token", { action: "switch", uid: "barber-uid" })).status, 403);
   } finally { restore(); }
 });
+
+test("the switcher's avatars keep their round size and phones get a compact header and crop buttons", async () => {
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync(new URL("../app/client-account.css", import.meta.url), "utf8");
+  // The avatar is a span too, so the text column needs its own class or it stretches into an ellipse.
+  assert.match(css, /\.acct-switch-text \{ display: grid; flex: 1;/);
+  assert.doesNotMatch(css, /\.acct-switch-row > button:first-child > span \{/);
+  assert.match(css, /@media \(max-width: 440px\) \{[^}]*\.acct-switch-label \{ display: none; \}/);
+  assert.match(css, /\.salon-dialog\.photo-crop \.salon-confirm-actions \{ flex-direction: row;/);
+});

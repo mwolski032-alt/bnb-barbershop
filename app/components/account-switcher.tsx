@@ -46,7 +46,7 @@ export default function AccountSwitcher() {
         <button type="button" role="menuitem" className={account.current ? "is-current" : ""} disabled={Boolean(busy)} aria-current={account.current || undefined}
           onClick={() => account.current ? setOpen(false) : void run(account.uid, () => switchAccount(account.uid))}>
           <ProfileAvatar className="acct-switch-avatar" name={account.name || account.email} photoUrl={account.photoUrl} />
-          <span><strong>{account.name || account.email}</strong><small>{ROLE_LABEL[account.role]}</small></span>
+          <span className="acct-switch-text"><strong>{account.name || account.email}</strong><small>{ROLE_LABEL[account.role]}</small></span>
           {busy === account.uid ? <i className="acct-switch-spinner" aria-label="Przełączam" /> : account.current ? <Check aria-hidden="true" /> : null}
         </button>
         {data.canLink && account.role !== "owner" && <button type="button" className="acct-switch-unlink" aria-label={`Odepnij konto ${account.name || account.email}`} disabled={Boolean(busy)}

@@ -138,7 +138,7 @@
 .acct-switch-row > button:first-child { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px; border: 0; border-radius: 16px; background: none; color: var(--color-text); font: inherit; text-align: left; cursor: pointer; transition: background var(--duration-base); }
 .acct-switch-row > button:first-child:hover:not(:disabled) { background: var(--color-surface-secondary); }
 .acct-switch-row > button.is-current { background: var(--color-secondary-soft); }
-.acct-switch-row > button:first-child > span { display: grid; flex: 1; min-width: 0; }
+.acct-switch-text { display: grid; flex: 1; min-width: 0; }
 .acct-switch-row strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .acct-switch-row small { color: var(--color-text-muted); font-size: 11.5px; }
 .acct-switch-row > button:first-child > svg { flex: none; width: 18px; height: 18px; color: var(--color-secondary); }
@@ -152,3 +152,22 @@
 @keyframes acct-spin { to { transform: rotate(360deg); } }
 .acct-switch-error { margin: 4px 6px 2px; color: #b3261e; font-size: 12.5px; }
 @media (prefers-reduced-motion: reduce) { .acct-switch-menu, .acct-switch-row, .acct-switch-add, .acct-switch-spinner { animation: none; } }
+
+/* Phones: a compact header menu, and a crop dialog whose buttons sit side by side instead of two full-width bars. */
+@media (max-width: 700px) {
+  .salon-header nav { gap: 8px; font-size: 13px; }
+  .salon-header nav > button { white-space: nowrap; padding-inline: 4px; }
+}
+@media (max-width: 440px) {
+  .acct-switch-label { display: none; }
+  .acct-switch-button { padding-right: 8px; }
+  .salon-header nav > button > svg { display: none; }
+}
+@media (max-width: 480px) {
+  .salon-dialog.photo-crop .salon-dialog-content { padding: 22px 16px 16px; }
+  .salon-dialog.photo-crop .salon-confirm-actions { flex-direction: row; gap: 10px; }
+  .salon-dialog.photo-crop .salon-confirm-actions > button { flex: 1; width: auto; min-height: 44px; padding: 8px 14px; font-size: 15px; }
+  .salon-dialog.photo-crop .salon-confirm-actions .salon-cta { flex: 1.4; width: auto; min-height: 44px; padding: 8px 14px; }
+  .salon-dialog.photo-crop .salon-confirm-actions .salon-ghost { order: -1; }
+  .photo-crop-zoom { margin-bottom: 14px; }
+}
