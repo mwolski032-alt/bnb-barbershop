@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { AdminAppointment } from "../lib/booking-types";
 import { formatPhoneNumber } from "../lib/booking-format";
-import { getPhoneDigits, normalizeAppointmentStatus } from "../lib/booking-selectors";
-import { subscribeClientProfile, type ClientProfile } from "../lib/client-profile";
+import { getAppointmentSortValue, getPhoneDigits, normalizeAppointmentStatus } from "../lib/booking-selectors";
+import { saveClientProfile, subscribeClientProfile, type ClientProfile } from "../lib/client-profile";
 
 type FormState = { fullName: string; phone: string };
 type SignedInUser = { uid: string; displayName?: string | null; email?: string | null; photoURL?: string | null };
@@ -21,10 +21,26 @@ export function useClientAccount({ user, ownAppointments, upcoming, barbers, set
 }) {
   const uid = user?.uid ?? "";
   const [profile, setProfile] = useState<ClientProfile>({});
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => {
+    setLoaded(false);
     if (!uid) { setProfile({}); return undefined; }
-    return subscribeClientProfile(uid, setProfile);
+    return subscribeClientProfile(uid, (value) => { setProfile(value); setLoaded(true); });
   }, [uid]);
+
+  // The phone number typed for a first booking becomes the account's phone, once. Clearing it later sticks.
+  const knownPhone = useMemo(() => {
+    const latest = ownAppointments
+      .filter((appointment) => appointment.userId === uid && getPhoneDigits(appointment.phone ?? "").length === 9)
+      .sort((first, second) => getAppointmentSortValue(second).localeCompare(getAppointmentSortValue(first)))[0];
+    return latest ? getPhoneDigits(latest.phone ?? "") : "";
+  }, [ownAppointments, uid]);
+  useEffect(() => {
+    if (!uid || !loaded || profile.phone || !knownPhone) return;
+    const key = `bnb-phone-synced:${uid}`;
+    try { if (localStorage.getItem(key) === "1") return; localStorage.setItem(key, "1"); } catch { return; }
+    saveClientProfile(uid, { ...profile, phone: knownPhone }).catch(() => { try { localStorage.removeItem(key); } catch { /* Retried next time. */ } });
+  }, [uid, loaded, profile, knownPhone]);
 
   useEffect(() => {
     if (!uid) return;

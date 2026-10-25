@@ -21,6 +21,7 @@ import GalleryPhoto from "./gallery-photo";
 import GalleryLightbox from "./gallery-lightbox";
 import GalleryMosaic from "./gallery-mosaic";
 import { buildLabel } from "../lib/build-info";
+import AccountSwitcher from "./account-switcher";
 import ClientAccount, { type AccountStats } from "./client-account";
 import type { ClientProfile } from "../lib/client-profile";
 import { useReveal } from "../hooks/use-reveal";
@@ -190,6 +191,7 @@ export default function SalonHome(props: Props) {
       }}><img src="/brand/bnb-mark.png" alt="B'n'B" /></button>
       <div className="salon-header-actions">
         <nav aria-label="Menu główne">
+          {props.admin && <AccountSwitcher />}
           {props.signedIn && <button
             type="button"
             className="salon-visits-button"

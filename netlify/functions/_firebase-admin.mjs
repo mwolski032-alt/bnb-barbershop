@@ -430,3 +430,23 @@ export const jsonResponse = (body, status = 200) =>
       "X-Content-Type-Options": "nosniff",
     },
   });
+
+/** A Firebase custom sign-in token for an existing account. Only call it for a uid the caller may become. */
+export const createCustomToken = (uid) => {
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = normalizePrivateKey();
+  if (!clientEmail || !privateKey) throw new Error("Missing Firebase service account variables.");
+  const now = Math.floor(Date.now() / 1000);
+  const unsigned = `${base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }))}.${base64Url(
+    JSON.stringify({
+      iss: clientEmail,
+      sub: clientEmail,
+      aud: "https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit",
+      iat: now,
+      exp: now + 3600,
+      uid,
+    }),
+  )}`;
+  const signature = crypto.createSign("RSA-SHA256").update(unsigned).sign(privateKey, "base64");
+  return `${unsigned}.${signature.replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "")}`;
+};

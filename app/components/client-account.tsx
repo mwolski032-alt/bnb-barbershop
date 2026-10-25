@@ -4,7 +4,8 @@ import { Bell, Camera, Check, Lock, LogOut, RotateCcw } from "lucide-react";
 import { formatPhoneNumber } from "../lib/booking-format";
 import { getPhoneDigits } from "../lib/booking-selectors";
 import { useCountUp } from "../hooks/use-count-up";
-import { prepareAvatar, type ClientProfile } from "../lib/client-profile";
+import { AVATAR_TYPES, shrinkAvatar, type ClientProfile } from "../lib/client-profile";
+import PhotoCropDialog from "./photo-crop-dialog";
 import ProfileAvatar from "./profile-avatar";
 import SalonDialog from "./salon-dialog";
 
@@ -41,6 +42,7 @@ export default function ClientAccount(props: Props) {
   const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState("");
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [cropFile, setCropFile] = useState<File | null>(null);
   const card = useRef<HTMLDivElement>(null);
   const file = useRef<HTMLInputElement>(null);
 
@@ -81,8 +83,8 @@ export default function ClientAccount(props: Props) {
         <input ref={file} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={event => {
           const picked = event.target.files?.[0]; event.target.value = "";
           if (!picked) return;
-          setPhotoBusy(true); setError("");
-          prepareAvatar(picked).then(setPhoto).catch(failure => setError(failure instanceof Error ? failure.message : "Nie udało się przygotować zdjęcia.")).finally(() => setPhotoBusy(false));
+          if (!AVATAR_TYPES.includes(picked.type) || picked.size > 10 * 1024 * 1024) { setError("Wybierz zdjęcie JPG, PNG lub WebP do 10 MB."); return; }
+          setError(""); setCropFile(picked);
         }} />
         <span className="salon-overline">MOJE KONTO</span>
         <h2>{trimmed || props.authName}</h2>
@@ -131,5 +133,8 @@ export default function ClientAccount(props: Props) {
         </button>}
       </form>
     </div>
+    {cropFile && <PhotoCropDialog file={cropFile} onCancel={() => setCropFile(null)}
+      onConfirm={cropped => { setCropFile(null); setPhotoBusy(true); shrinkAvatar(cropped).then(setPhoto).catch(failure => setError(failure instanceof Error ? failure.message : "Nie udało się przygotować zdjęcia.")).finally(() => setPhotoBusy(false)); }}
+      onError={message => { setCropFile(null); setError(message); }} />}
   </SalonDialog>;
 }

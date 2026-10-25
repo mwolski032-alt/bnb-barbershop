@@ -13,14 +13,16 @@
 .account-who { position: relative; display: grid; justify-items: center; gap: 4px; padding: 48px 20px 8px; text-align: center; }
 .account-who h2 { margin: 2px 0 0; color: var(--color-text); font-family: var(--font-display); font-size: 1.7rem; overflow-wrap: anywhere; animation: account-rise 700ms var(--ease-out) 150ms backwards; }
 .account-who .salon-overline { margin-top: 12px; animation: account-rise 700ms var(--ease-out) 100ms backwards; }
-.account-avatar { position: relative; display: grid; place-items: center; width: 116px; height: 116px; padding: 0; border: 0; border-radius: 50%; background: conic-gradient(from 0deg, var(--color-secondary), var(--color-star-bright), #2aa6a0, var(--color-secondary)); cursor: pointer; animation: account-pop 800ms var(--ease-out) backwards, account-ring 6s linear infinite; }
-.account-avatar::before { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--color-surface); }
-.account-avatar .account-avatar-photo { position: relative; width: 100px; height: 100px; border-radius: 50%; overflow: hidden; font-size: 2.4rem; }
+.account-avatar { position: relative; display: grid; place-items: center; width: 116px; height: 116px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; animation: account-pop 800ms var(--ease-out) backwards; }
+/* The colourful ring turns on its own layer; the picture sits above it and is never tinted or rotated. */
+.account-avatar::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(from 0deg, var(--color-secondary), var(--color-star-bright), #2aa6a0, var(--color-secondary)); animation: account-ring 6s linear infinite; }
+.account-avatar::before { content: ""; position: absolute; inset: 4px; z-index: 1; border-radius: 50%; background: var(--color-surface); }
+.account-avatar .account-avatar-photo { position: relative; z-index: 2; width: 100px; height: 100px; border-radius: 50%; overflow: hidden; font-size: 2.4rem; }
 .account-avatar-photo img { width: 100%; height: 100%; object-fit: cover; }
-.account-avatar-edit { position: absolute; right: 2px; bottom: 2px; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--color-primary); color: #fff; box-shadow: 0 4px 12px rgb(0 0 0 / 28%); transition: transform var(--duration-base) var(--ease-out); }
+.account-avatar-edit { position: absolute; z-index: 3; right: 2px; bottom: 2px; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--color-primary); color: #fff; box-shadow: 0 4px 12px rgb(0 0 0 / 28%); transition: transform var(--duration-base) var(--ease-out); }
 .account-avatar:hover .account-avatar-edit { transform: scale(1.15) rotate(-8deg); }
 .account-avatar-edit svg { width: 17px; height: 17px; }
-@keyframes account-ring { to { filter: hue-rotate(360deg); } }
+@keyframes account-ring { to { transform: rotate(360deg); } }
 @keyframes account-pop { from { opacity: 0; transform: scale(.5) rotate(-12deg); } }
 @keyframes account-rise { from { opacity: 0; transform: translateY(14px); } }
 .account-link { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 0; background: none; color: var(--color-text-secondary); font: inherit; font-size: 13px; cursor: pointer; }
@@ -76,7 +78,7 @@
 .salon-account-open:hover { transform: translateY(-1px); }
 .salon-account-open:hover .salon-account-avatar { box-shadow: 0 0 0 3px var(--color-secondary-soft), 0 0 0 5px var(--color-secondary); }
 
-@media (prefers-reduced-motion: reduce) { .account-hero i, .account-avatar { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .account-hero i, .account-avatar, .account-avatar::after { animation: none; } }
 
 /* Which update this is: tiny, bottom right, under the footer. */
 .salon-build { margin: 8px 6px 0; color: var(--color-text-muted); font-size: 10px; letter-spacing: .02em; text-align: right; opacity: .75; font-variant-numeric: tabular-nums; user-select: all; }
@@ -120,3 +122,33 @@
 .salon-account-pill .salon-account-avatar { width: calc(var(--chip-height) - 8px); height: calc(var(--chip-height) - 8px); flex-basis: calc(var(--chip-height) - 8px); }
 .salon-header .salon-account-pill button { min-height: 0; }
 .salon-account-cta { padding-block: 5px; }
+
+/* Account switcher: the owner (and the accounts paired with theirs) hop between accounts from the home page header. */
+.acct-switch { position: relative; margin-right: auto; }
+.acct-switch-button { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 3px 12px 3px 4px; border: 1px solid var(--color-border-strong); border-radius: 999px; background: var(--color-surface); color: var(--color-primary); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: box-shadow var(--duration-base), transform var(--duration-base) var(--ease-out); }
+.acct-switch-button:hover { box-shadow: 0 6px 16px -8px rgb(1 66 65 / 55%); transform: translateY(-1px); }
+.acct-switch-button > svg { width: 16px; height: 16px; transition: transform var(--duration-slow) var(--ease-out); }
+.acct-switch-button[aria-expanded="true"] > svg { transform: rotate(180deg); }
+.acct-switch .acct-switch-avatar { display: grid; place-items: center; width: 32px; height: 32px; flex: none; overflow: hidden; border-radius: 50%; background: var(--color-primary-soft); color: var(--color-primary); font-size: 13px; }
+.acct-switch-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.acct-switch-menu { position: absolute; top: calc(100% + 8px); left: 0; z-index: 30; display: grid; gap: 4px; min-width: 250px; max-width: min(320px, calc(100vw - 32px)); padding: 8px; border: 1px solid var(--color-border); border-radius: 22px; background: var(--color-surface); box-shadow: 0 22px 44px -18px rgb(1 46 45 / 55%); transform-origin: 24px -8px; animation: acct-menu-in 420ms var(--ease-out); }
+@keyframes acct-menu-in { from { opacity: 0; transform: translateY(-8px) scale(.9); } }
+.acct-switch-row { display: flex; align-items: center; gap: 4px; animation: acct-row-in 420ms var(--ease-out) backwards; }
+@keyframes acct-row-in { from { opacity: 0; transform: translateX(-12px); } }
+.acct-switch-row > button:first-child { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px; border: 0; border-radius: 16px; background: none; color: var(--color-text); font: inherit; text-align: left; cursor: pointer; transition: background var(--duration-base); }
+.acct-switch-row > button:first-child:hover:not(:disabled) { background: var(--color-surface-secondary); }
+.acct-switch-row > button.is-current { background: var(--color-secondary-soft); }
+.acct-switch-row > button:first-child > span { display: grid; flex: 1; min-width: 0; }
+.acct-switch-row strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.acct-switch-row small { color: var(--color-text-muted); font-size: 11.5px; }
+.acct-switch-row > button:first-child > svg { flex: none; width: 18px; height: 18px; color: var(--color-secondary); }
+.acct-switch-unlink { display: grid; place-items: center; width: 30px; height: 30px; flex: none; border: 0; border-radius: 50%; background: none; color: var(--color-text-muted); cursor: pointer; }
+.acct-switch-unlink:hover:not(:disabled) { background: #fbe4e1; color: #b3261e; }
+.acct-switch-unlink svg { width: 14px; height: 14px; }
+.acct-switch-add { display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px dashed var(--color-border-strong); border-radius: 16px; background: none; color: var(--color-primary); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; animation: acct-row-in 420ms var(--ease-out) backwards; transition: background var(--duration-base); }
+.acct-switch-add:hover:not(:disabled) { background: var(--color-primary-soft); }
+.acct-switch-add svg { width: 18px; height: 18px; }
+.acct-switch-spinner { width: 18px; height: 18px; flex: none; border: 2px solid var(--color-border); border-top-color: var(--color-secondary); border-radius: 50%; animation: acct-spin 700ms linear infinite; }
+@keyframes acct-spin { to { transform: rotate(360deg); } }
+.acct-switch-error { margin: 4px 6px 2px; color: #b3261e; font-size: 12.5px; }
+@media (prefers-reduced-motion: reduce) { .acct-switch-menu, .acct-switch-row, .acct-switch-add, .acct-switch-spinner { animation: none; } }

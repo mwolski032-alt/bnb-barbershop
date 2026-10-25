@@ -27,32 +27,24 @@ export const subscribeClientProfile = (uid: string, onChange: (profile: ClientPr
 export const saveClientProfile = (uid: string, profile: ClientProfile) =>
   set(ref(realtimeDb, `clientProfiles/${uid}`), { ...clean(profile), updatedAt: Date.now() });
 
-/** Crop the picked file to a centred square and shrink it until it fits the stored limit. */
-export async function prepareAvatar(file: Blob): Promise<string> {
-  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 10 * 1024 * 1024) {
-    throw new Error("Wybierz zdjęcie JPG, PNG lub WebP do 10 MB.");
-  }
-  const url = URL.createObjectURL(file);
-  try {
-    const image = new Image();
-    image.src = url;
-    await image.decode();
-    const side = Math.min(image.naturalWidth, image.naturalHeight);
-    if (!side) throw new Error("Nie udało się odczytać zdjęcia.");
-    for (const size of [AVATAR_SIZE, 192, 128]) {
-      const canvas = document.createElement("canvas");
-      canvas.width = size; canvas.height = size;
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("Nie udało się przygotować zdjęcia.");
-      context.imageSmoothingQuality = "high";
-      context.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, 0, 0, size, size);
-      for (const quality of [0.85, 0.7, 0.55]) {
-        const dataUrl = canvas.toDataURL("image/webp", quality);
-        if (dataUrl.startsWith("data:image/webp;base64,") && dataUrl.length <= AVATAR_MAX_CHARS) return dataUrl;
-      }
+export const AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+/** Shrink an already cropped square picture (a data URL) until it fits the stored limit. Colours are kept as they are. */
+export async function shrinkAvatar(dataUrl: string): Promise<string> {
+  const image = new Image();
+  image.src = dataUrl;
+  await image.decode();
+  for (const size of [AVATAR_SIZE, 192, 128]) {
+    const canvas = document.createElement("canvas");
+    canvas.width = size; canvas.height = size;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Nie udało się przygotować zdjęcia.");
+    context.imageSmoothingQuality = "high";
+    context.drawImage(image, 0, 0, size, size);
+    for (const quality of [0.85, 0.7, 0.55]) {
+      const result = canvas.toDataURL("image/webp", quality);
+      if (result.startsWith("data:image/webp;base64,") && result.length <= AVATAR_MAX_CHARS) return result;
     }
-    throw new Error("Zdjęcie jest zbyt złożone. Wybierz inne.");
-  } finally {
-    URL.revokeObjectURL(url);
   }
+  throw new Error("Zdjęcie jest zbyt złożone. Wybierz inne.");
 }
