@@ -1306,7 +1306,10 @@ const handler = async (request, timings = {}) => {
       proposed.userId = user.uid;
       proposed.clientId = user.uid;
       proposed.clientEmail = user.email;
-      proposed.clientPhotoUrl = user.photoUrl;
+      // A picture the client chose in their account replaces the one from their Google profile.
+      const chosenPhoto = await readDatabase(`clientProfiles/${encodeURIComponent(user.uid)}/photoUrl`, accessToken).catch(() => null);
+      const clientPhotoUrl = typeof chosenPhoto === "string" && chosenPhoto.startsWith("data:image/webp;base64,") ? chosenPhoto : user.photoUrl;
+      proposed.clientPhotoUrl = clientPhotoUrl;
       proposed.status = "confirmed";
       if (proposed.clientName.length < 3 || proposed.phone.replace(/\D/g, "").length !== 9) {
         return jsonResponse({ ok: false, error: "Nieprawidłowe dane klienta." }, 400);
@@ -1321,7 +1324,7 @@ const handler = async (request, timings = {}) => {
         lastName: cleanText(body.client?.lastName || nameParts.slice(1).join(" "), 80),
         email: user.email,
         phone: cleanText(body.client?.phone || proposed.phone, 32),
-        photoUrl: user.photoUrl,
+        photoUrl: clientPhotoUrl,
         userId: user.uid,
       });
       const createResult = await mutateAppointmentOperation(

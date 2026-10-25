@@ -1,0 +1,79 @@
+/* "Moje konto" dialog. Motion collapses to nothing when the system asks for less motion (theme.css zeroes the durations). */
+.salon-dialog.account-dialog { width: min(520px, calc(100% - 20px)); overflow: hidden; background: var(--color-surface); }
+.account-dialog .salon-dialog-content { max-height: calc(100dvh - 20px); padding: 0; overflow-y: auto; }
+.account-card { --rx: 0deg; --ry: 0deg; position: relative; transform: perspective(1100px) rotateX(var(--rx)) rotateY(var(--ry)); transition: transform var(--duration-slow) var(--ease-out); }
+
+.account-hero { position: absolute; inset: 0 0 auto; height: 190px; overflow: hidden; background: linear-gradient(135deg, var(--color-primary), #012e2d); }
+.account-hero i { position: absolute; width: 220px; height: 220px; border-radius: 50%; filter: blur(46px); opacity: .75; animation: account-drift 9s ease-in-out infinite alternate; }
+.account-hero i:nth-child(1) { left: -50px; top: -80px; background: var(--color-secondary); }
+.account-hero i:nth-child(2) { right: -60px; top: -30px; background: var(--color-star-bright); animation-delay: -3s; opacity: .5; }
+.account-hero i:nth-child(3) { left: 38%; top: 60px; background: #2aa6a0; animation-delay: -6s; opacity: .55; }
+@keyframes account-drift { to { transform: translate(40px, 30px) scale(1.2); } }
+
+.account-who { position: relative; display: grid; justify-items: center; gap: 4px; padding: 48px 20px 8px; text-align: center; }
+.account-who h2 { margin: 2px 0 0; color: var(--color-text); font-family: var(--font-display); font-size: 1.7rem; overflow-wrap: anywhere; animation: account-rise 700ms var(--ease-out) 150ms backwards; }
+.account-who .salon-overline { margin-top: 12px; animation: account-rise 700ms var(--ease-out) 100ms backwards; }
+.account-avatar { position: relative; display: grid; place-items: center; width: 116px; height: 116px; padding: 0; border: 0; border-radius: 50%; background: conic-gradient(from 0deg, var(--color-secondary), var(--color-star-bright), #2aa6a0, var(--color-secondary)); cursor: pointer; animation: account-pop 800ms var(--ease-out) backwards, account-ring 6s linear infinite; }
+.account-avatar::before { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--color-surface); }
+.account-avatar .account-avatar-photo { position: relative; width: 100px; height: 100px; border-radius: 50%; overflow: hidden; font-size: 2.4rem; }
+.account-avatar-photo img { width: 100%; height: 100%; object-fit: cover; }
+.account-avatar-edit { position: absolute; right: 2px; bottom: 2px; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--color-primary); color: #fff; box-shadow: 0 4px 12px rgb(0 0 0 / 28%); transition: transform var(--duration-base) var(--ease-out); }
+.account-avatar:hover .account-avatar-edit { transform: scale(1.15) rotate(-8deg); }
+.account-avatar-edit svg { width: 17px; height: 17px; }
+@keyframes account-ring { to { filter: hue-rotate(360deg); } }
+@keyframes account-pop { from { opacity: 0; transform: scale(.5) rotate(-12deg); } }
+@keyframes account-rise { from { opacity: 0; transform: translateY(14px); } }
+.account-link { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 0; background: none; color: var(--color-text-secondary); font: inherit; font-size: 13px; cursor: pointer; }
+.account-link svg { width: 14px; height: 14px; }
+.account-link:hover { color: var(--color-secondary); }
+
+.account-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 12px 18px 4px; }
+.account-stat { display: grid; gap: 2px; padding: 12px 8px; border: 1px solid var(--color-border); border-radius: 18px; background: var(--color-surface-secondary); text-align: center; animation: account-rise 600ms var(--ease-out) backwards; }
+.account-stat:nth-child(2) { animation-delay: 90ms; } .account-stat:nth-child(3) { animation-delay: 180ms; }
+.account-stat strong { color: var(--color-primary); font-family: var(--font-display); font-size: 1.35rem; font-variant-numeric: tabular-nums; line-height: 1.15; overflow-wrap: anywhere; }
+.account-stat span { color: var(--color-text-muted); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+
+.account-form { display: grid; gap: 14px; padding: 16px 18px 22px; }
+.account-form > * { animation: account-rise 600ms var(--ease-out) backwards; }
+.account-form > :nth-child(2) { animation-delay: 70ms; } .account-form > :nth-child(3) { animation-delay: 140ms; } .account-form > :nth-child(4) { animation-delay: 210ms; } .account-form > :nth-child(5) { animation-delay: 280ms; }
+.account-form label, .account-barbers { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; color: var(--color-text-secondary); font-size: 13px; font-weight: 600; }
+.account-barbers legend { padding: 0 0 6px; }
+.account-form input { min-height: 48px; padding: 10px 14px; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 16px; transition: border-color var(--duration-base), box-shadow var(--duration-base); }
+.account-form input:focus { border-color: var(--color-secondary); outline: 0; box-shadow: 0 0 0 4px var(--color-secondary-soft); }
+.account-form input[aria-invalid="true"] { border-color: #b3261e; }
+.account-form small { color: var(--color-text-muted); font-size: 12px; font-weight: 400; }
+.account-readonly span { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 10px 14px; border: 1px dashed var(--color-border); border-radius: 14px; background: var(--color-surface-secondary); color: var(--color-text-secondary); font-weight: 400; overflow-wrap: anywhere; }
+.account-readonly svg { flex: none; width: 16px; height: 16px; opacity: .7; }
+
+.account-barbers > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.account-barbers button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 5px 14px 5px 5px; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 14px; cursor: pointer; transition: transform var(--duration-slow) var(--ease-out), background var(--duration-base), border-color var(--duration-base); }
+.account-barbers button:hover { transform: translateY(-2px); }
+.account-barbers button[aria-pressed="true"] { border-color: var(--color-secondary); background: var(--color-secondary-soft); transform: scale(1.04); }
+.account-barbers .account-barber-photo { width: 34px; height: 34px; border-radius: 50%; overflow: hidden; font-size: .9rem; }
+.account-barber-photo img { width: 100%; height: 100%; object-fit: cover; }
+
+.account-notify { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 16px; background: var(--color-surface); color: var(--color-text); font: inherit; text-align: left; cursor: pointer; }
+.account-notify > svg { flex: none; width: 22px; height: 22px; color: var(--color-primary); }
+.account-notify > span { display: grid; flex: 1; gap: 2px; }
+.account-notify small { color: var(--color-text-muted); }
+.account-notify > i { position: relative; flex: none; width: 46px; height: 26px; border-radius: 999px; background: var(--color-border); transition: background var(--duration-base); }
+.account-notify > i::after { content: ""; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 30%); transition: transform var(--duration-slow) var(--ease-out); }
+.account-notify[aria-pressed="true"] > i { background: var(--color-primary); }
+.account-notify[aria-pressed="true"] > i::after { transform: translateX(20px); }
+
+.account-save { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 52px; overflow: visible; }
+.account-save:disabled:not(.saved):not(.saving) { opacity: .5; }
+.account-save.saved { background: #1f7a4d; }
+.account-save svg { width: 18px; height: 18px; }
+.account-confetti { position: absolute; left: 50%; top: 50%; pointer-events: none; }
+.account-confetti i { position: absolute; width: 8px; height: 8px; border-radius: 2px; background: var(--color-star-bright); animation: account-burst 900ms var(--ease-out) forwards; }
+.account-confetti i[data-hue="1"] { background: var(--color-secondary); border-radius: 50%; }
+.account-confetti i[data-hue="2"] { background: #2aa6a0; }
+@keyframes account-burst { from { opacity: 1; transform: translate(0, 0) rotate(0); } to { opacity: 0; transform: translate(var(--x), var(--y)) rotate(320deg); } }
+
+/* The account pill on the home page opens this dialog. */
+.salon-account-open { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; transition: transform var(--duration-base) var(--ease-out); }
+.salon-account-open:hover { transform: translateY(-1px); }
+.salon-account-open:hover .salon-account-avatar { box-shadow: 0 0 0 3px var(--color-secondary-soft), 0 0 0 5px var(--color-secondary); }
+
+@media (prefers-reduced-motion: reduce) { .account-hero i, .account-avatar { animation: none; } }

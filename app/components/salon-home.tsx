@@ -20,6 +20,8 @@ import ProfileAvatar from "./profile-avatar";
 import GalleryPhoto from "./gallery-photo";
 import GalleryLightbox from "./gallery-lightbox";
 import GalleryMosaic from "./gallery-mosaic";
+import ClientAccount, { type AccountStats } from "./client-account";
+import type { ClientProfile } from "../lib/client-profile";
 import { useReveal } from "../hooks/use-reveal";
 import { useBackNavigation } from "../hooks/use-back-navigation";
 import type { SalonImage } from "./salon-manager";
@@ -41,6 +43,8 @@ type Props = {
   notice?: { kind: "pending" | "success" | "error"; message: string } | null;
   signingOut?: boolean; onNotifications?: () => void; onSignOut?: () => void;
   onRepeatVisit?: () => void;
+  /** The signed-in client's own account: shown in a dialog opened from the account pill. */
+  accountPanel?: { email: string; authName: string; authPhotoUrl?: string | null; profile: ClientProfile; stats: AccountStats; onSave: (profile: ClientProfile) => Promise<void> } | null;
 };
 
 // The salon page can be unmounted and mounted again while the session is verified. Keeping
@@ -78,6 +82,7 @@ export default function SalonHome(props: Props) {
   const bookAfterClose = useRef<string | null>(null);
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [reviews, setReviews] = useState<Review[]>(() => shared.reviews);
   const [reviewSummary, setReviewSummary] = useState<ReviewSummary>(() => shared.reviewSummary);
   const [reviewsOpen, setReviewsOpen] = useState(false);
@@ -140,6 +145,7 @@ export default function SalonHome(props: Props) {
   // The phone's Back button closes the topmost dialog of this page (photo viewer, all photos, barber profile).
   useBackNavigation([
     { active: lightbox !== null, close: () => setLightbox(null) },
+    { active: accountOpen, close: () => setAccountOpen(false) },
     { active: galleryOpen, close: () => setGalleryOpen(false) },
     { active: reviewsOpen, close: () => setReviewsOpen(false) },
     { active: reviewFormOpen, close: () => setReviewFormOpen(false) },
@@ -149,7 +155,10 @@ export default function SalonHome(props: Props) {
   // A photo credits a barber only when the owner chose one; otherwise nothing is shown, as before.
   const photoBarber = (photo: SalonImage) => barbers.find(barber => barber.id === photo.barberId)?.displayName ?? "";
   const photoAuthor = (photo: SalonImage) => { const barber = barbers.find(item => item.id === photo.barberId); return barber ? { name: barber.displayName, photoUrl: barber.photoUrl } : null; };
-  const book = <button className="salon-cta" type="button" onClick={() => props.onBook()} disabled={props.busy} aria-busy={props.busy}>
+  // "Umów wizytę" starts with the client's favourite barber when they chose one in "Moje konto".
+  const favoriteId = props.signedIn ? props.accountPanel?.profile.favoriteBarberId : undefined;
+  const bookDefault = () => props.onBook(favoriteId && barbers.some(barber => barber.id === favoriteId) ? favoriteId : undefined);
+  const book = <button className="salon-cta" type="button" onClick={bookDefault} disabled={props.busy} aria-busy={props.busy}>
     {props.busy ? "Chwileczkę…" : "Umów wizytę"}<ArrowUpRight aria-hidden="true" />
   </button>;
   const galleryShowcase = gallery.length > 0 ? <div className="salon-gallery">
@@ -200,8 +209,13 @@ export default function SalonHome(props: Props) {
             <Bell aria-hidden="true" /><span aria-hidden="true" />
           </button>}
           <div className="salon-account-pill">
-            <ProfileAvatar className="salon-account-avatar" name={props.account.name} photoUrl={props.account.photoUrl} />
-            <strong>{props.account.name}</strong>
+            {props.accountPanel
+              ? <button type="button" className="salon-account-open" onClick={() => setAccountOpen(true)} aria-label="Moje konto">
+                <ProfileAvatar className="salon-account-avatar" name={props.account.name} photoUrl={props.account.photoUrl} />
+                <strong>{props.account.name}</strong>
+              </button>
+              : <><ProfileAvatar className="salon-account-avatar" name={props.account.name} photoUrl={props.account.photoUrl} />
+                <strong>{props.account.name}</strong></>}
             <button type="button" onClick={props.onSignOut} disabled={props.signingOut} aria-busy={props.signingOut} aria-label="Wyloguj">
               <span>{props.signingOut ? "Wylogowuję…" : "Wyloguj"}</span><LogOut aria-hidden="true" />
             </button>
@@ -265,7 +279,7 @@ export default function SalonHome(props: Props) {
     </section>}
     <footer className="salon-footer" data-reveal><span>B&apos;n&apos;B Barbershop</span>{props.onInstall && !props.installed ? <button type="button" onClick={props.onInstall} disabled={props.installing} aria-busy={props.installing}>{props.installing ? "Otwieram instalację…" : "Zainstaluj aplikację"} <ArrowUpRight aria-hidden="true" /></button> : null}</footer>
     <div className={`salon-dock ${dockVisible ? "is-visible" : ""}`} aria-hidden={!dockVisible}>
-      <button type="button" tabIndex={dockVisible ? 0 : -1} onClick={() => props.onBook()} disabled={props.busy}>Umów wizytę<ArrowUpRight aria-hidden="true" /></button>
+      <button type="button" tabIndex={dockVisible ? 0 : -1} onClick={bookDefault} disabled={props.busy}>Umów wizytę<ArrowUpRight aria-hidden="true" /></button>
     </div>
     {profile && <SalonDialog title={`Profil: ${profile.displayName}`} onClose={() => {
       const barberId = bookAfterClose.current;
@@ -286,6 +300,7 @@ export default function SalonHome(props: Props) {
       <ReviewPrompt key={props.reviewPrompt!.appointmentId} appointmentId={props.reviewPrompt!.appointmentId} barberName={props.reviewPrompt!.barberName}
         onSubmitted={() => { const barberId = props.reviewPrompt!.barberId; window.setTimeout(() => { setReviewFormOpen(false); props.onReviewed?.(barberId); fetchPublicReviews().then(data => { shared.reviews = data.reviews; shared.reviewSummary = data.summary; shared.reviewsFetchedAt = Date.now(); setReviews(data.reviews); setReviewSummary(data.summary); }).catch(() => undefined); }, 2600); }} />
     }</SalonDialog>}
+    {accountOpen && props.accountPanel && <ClientAccount {...props.accountPanel} barbers={barbers} notification={props.notification} onNotifications={props.onNotifications} onClose={() => setAccountOpen(false)} />}
     {reviewsOpen && <ReviewsDialog reviews={reviews} summary={reviewSummary} barbers={barbers} onClose={() => setReviewsOpen(false)} />}
     {galleryOpen && <SalonDialog title="Wszystkie zdjęcia B'n'B" onClose={() => setGalleryOpen(false)} gallery>
       <div className="salon-gallery-all-heading"><span className="salon-overline">GALERIA B&apos;N&apos;B</span><h2>Wszystkie zdjęcia</h2></div>

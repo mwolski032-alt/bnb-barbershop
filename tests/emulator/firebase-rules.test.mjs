@@ -82,6 +82,24 @@ test("a barber the owner switched Galeria on for adds and deletes only their own
   await assertSucceeds(set(ref(owner, "shopfront/gallery/5"), null));
 });
 
+test("a client reads and writes only their own account profile, with validated fields", async () => {
+  const mine = databaseFor(clientUid);
+  const path = `clientProfiles/${clientUid}`;
+  const avatar = "data:image/webp;base64,AAAA";
+  await assertSucceeds(set(ref(mine, path), { displayName: "Jan Kowalski", phone: "500600700", photoUrl: avatar, favoriteBarberId: "mateusz", updatedAt: 1 }));
+  await assertSucceeds(get(ref(mine, path)));
+  await assertFails(get(ref(databaseFor(mateuszUid), path)));
+  await assertFails(get(ref(environment.unauthenticatedContext().database(), path)));
+  await assertFails(set(ref(databaseFor(mateuszUid), path), { displayName: "Hacked" }));
+  await assertFails(set(ref(mine, `${path}/phone`), "12345"));
+  await assertFails(set(ref(mine, `${path}/phone`), "500 600 700"));
+  await assertFails(set(ref(mine, `${path}/photoUrl`), "https://evil.example/x.webp"));
+  await assertFails(set(ref(mine, `${path}/photoUrl`), `data:image/webp;base64,${"A".repeat(60001)}`));
+  await assertFails(set(ref(mine, `${path}/displayName`), "J"));
+  await assertFails(set(ref(mine, `${path}/role`), "owner"));
+  await assertSucceeds(set(ref(mine, path), null));
+});
+
 test("gallery records for stored photos accept only same-origin photo paths", async () => {
   const owner = databaseFor(ownerUid);
   const id = "123e4567-e89b-42d3-a456-426614174000";

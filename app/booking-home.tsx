@@ -107,6 +107,8 @@ import DayPicker from "./components/day-picker";
 import { useEndOfDayPrompt } from "./hooks/use-end-of-day-prompt";
 import { usePushLinkActions, useReminderAnswer } from "./hooks/use-push-link-actions";
 import { useKnownPhone } from "./hooks/use-known-phone";
+import { saveClientProfile } from "./lib/client-profile";
+import { useClientAccount } from "./hooks/use-client-account";
 import PhotoCropDialog from "./components/photo-crop-dialog";
 import { useBackNavigation } from "./hooks/use-back-navigation";
 import { listenToBarberProfile } from "./lib/barber-profile-listener";
@@ -777,7 +779,9 @@ export function BookingHome() {
   const reschedulingClientBarber = reschedulingAppointment
     ? clientBarberOptions.find((barber) => barber.id === reschedulingAppointment.barberId) ?? null
     : null;
-  const clientFirstName = (activeUser?.displayName ?? "Kliencie").trim().split(/\s+/)[0] || "Kliencie";
+  const clientBarberNames = useMemo(() => clientBarberOptions.map((barber) => ({ id: barber.id, name: barber.name })), [clientBarberOptions]);
+  const clientAccount = useClientAccount({ user: activeUser, ownAppointments: ownClientAppointments, upcoming: clientAppointments, barbers: clientBarberNames, setForm });
+  const clientFirstName = clientAccount.name.trim().split(/\s+/)[0] || "Kliencie";
   const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const canShiftToPreviousMonth = visibleMonth.getTime() > currentMonthStart.getTime();
   const selectedClientAppointment =
@@ -4675,9 +4679,14 @@ export function BookingHome() {
     <SalonHome
       busy={!authReady || isSigningIn || Boolean(activeUser && !sessionReady)}
       signedIn={Boolean(activeUser)} admin={isAdmin} error={authError}
-      account={activeUser ? {
-        name: activeUser.displayName ?? activeUser.email ?? "Użytkownik",
-        photoUrl: activeUser.photoURL,
+      account={activeUser ? { name: clientAccount.name, photoUrl: clientAccount.photoUrl } : null}
+      accountPanel={activeUser && !isOwner ? {
+        email: activeUser.email ?? "",
+        authName: activeUser.displayName ?? activeUser.email ?? "",
+        authPhotoUrl: activeUser.photoURL,
+        profile: clientAccount.profile,
+        stats: clientAccount.stats,
+        onSave: (profile) => saveClientProfile(activeUser.uid, profile),
       } : null}
       notification={activeUser && !isOwner ? {
         label: pushDeviceLabel,
@@ -5224,10 +5233,10 @@ export function BookingHome() {
                 <div className="session-pill">
                   <ProfileAvatar
                     className="session-avatar"
-                    name={activeUser.displayName ?? activeUser.email ?? "Klient"}
-                    photoUrl={activeUser.photoURL}
+                    name={clientAccount.name}
+                    photoUrl={clientAccount.photoUrl}
                   />
-                  <strong>{activeUser.displayName ?? activeUser.email ?? "Klient"}</strong>
+                  <strong>{clientAccount.name}</strong>
                   <button
                     type="button"
                     disabled={isSigningOut}

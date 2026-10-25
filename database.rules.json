@@ -46,6 +46,18 @@
         }
       }
     },
+    "clientProfiles": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "displayName": { ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 60" },
+        "phone": { ".validate": "newData.isString() && newData.val().matches(/^[0-9]{9}$/)" },
+        "photoUrl": { ".validate": "newData.isString() && newData.val().length <= 60000 && newData.val().matches(/^data:image\\/webp;base64,[A-Za-z0-9+\\/=]+$/)" },
+        "favoriteBarberId": { ".validate": "newData.isString() && newData.val().matches(/^[a-zA-Z0-9_-]{1,80}$/)" },
+        "updatedAt": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
     "shopfront": {
       ".read": true,
       "settings": {
