@@ -86,8 +86,6 @@
 .salon-account-pill:has(.salon-account-open) { padding: 4px 6px 4px 5px; transition: box-shadow var(--duration-base), transform var(--duration-base) var(--ease-out); }
 .salon-account-pill:has(.salon-account-open):hover { box-shadow: 0 6px 18px -8px rgb(1 66 65 / 55%); }
 .salon-account-avatar-wrap { position: relative; display: grid; flex: none; }
-.salon-account-badge { position: absolute; right: -3px; bottom: -3px; display: grid; place-items: center; width: 17px; height: 17px; border: 2px solid var(--color-surface-secondary); border-radius: 50%; background: var(--color-secondary); color: #fff; }
-.salon-account-badge svg { width: 8px; height: 8px; }
 .salon-account-cta { display: inline-flex; align-items: center; gap: 2px; padding: 6px 10px; border-radius: 999px; background: var(--color-primary); color: var(--color-on-primary); font-size: 12px; font-weight: 600; letter-spacing: .02em; }
 .salon-account-cta svg { width: 14px; height: 14px; transition: transform var(--duration-base) var(--ease-out); }
 .salon-account-open:hover .salon-account-cta svg { transform: translateY(2px); }

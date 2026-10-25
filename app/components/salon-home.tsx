@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { onValue, ref } from "firebase/database";
-import { ArrowUpRight, AtSign, MapPin, Clock3, Bell, ChevronDown, LogOut, Pencil, Star, Scissors } from "lucide-react";
+import { ArrowUpRight, AtSign, MapPin, Clock3, Bell, ChevronDown, LogOut, Star, Scissors } from "lucide-react";
 import { realtimeDb } from "../lib/firebase";
 import {
   emptyReviewSummary,
@@ -219,7 +219,6 @@ export default function SalonHome(props: Props) {
               ? <button type="button" className="salon-account-open" onClick={() => { dismissHint(); setAccountOpen(true); }} aria-label="Moje konto: zdjęcie, imię, telefon i wylogowanie">
                 <span className="salon-account-avatar-wrap" data-hint={showHint || undefined}>
                   <ProfileAvatar className="salon-account-avatar" name={props.account.name} photoUrl={props.account.photoUrl} />
-                  <span className="salon-account-badge" aria-hidden="true"><Pencil /></span>
                 </span>
                 <strong>{props.account.name}</strong>
                 <span className="salon-account-cta">Konto <ChevronDown aria-hidden="true" /></span>
