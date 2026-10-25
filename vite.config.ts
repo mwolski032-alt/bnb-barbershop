@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import vinext from "vinext";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
@@ -7,6 +8,18 @@ const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
 
 const { d1, r2 } = hostingConfig;
+
+// Shown in small print on the salon page so the owner can tell which update a phone is running.
+// Netlify provides COMMIT_REF while building; locally the current git commit is used.
+const gitCommit = () => {
+  try { return execSync("git rev-parse HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return ""; }
+};
+const define = {
+  __BNB_BUILD__: JSON.stringify({
+    commit: (process.env.COMMIT_REF || gitCommit()).slice(0, 7),
+    builtAt: new Date().toISOString(),
+  }),
+};
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
@@ -44,7 +57,8 @@ export default defineConfig(async ({ command }) => {
     const tailwindcss = (await import("@tailwindcss/vite")).default;
 
     return {
-      envPrefix: ["VITE_", "NEXT_PUBLIC_"],
+      define,
+    envPrefix: ["VITE_", "NEXT_PUBLIC_"],
       plugins: [tailwindcss(), vinext()],
     };
   }
@@ -54,7 +68,8 @@ export default defineConfig(async ({ command }) => {
     const tailwindcss = (await import("@tailwindcss/vite")).default;
 
     return {
-      envPrefix: ["VITE_", "NEXT_PUBLIC_"],
+      define,
+    envPrefix: ["VITE_", "NEXT_PUBLIC_"],
       server: isCodexSeatbeltSandbox
         ? { watch: { useFsEvents: false, usePolling: true } }
         : undefined,
@@ -66,6 +81,7 @@ export default defineConfig(async ({ command }) => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    define,
     envPrefix: ["VITE_", "NEXT_PUBLIC_"],
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }

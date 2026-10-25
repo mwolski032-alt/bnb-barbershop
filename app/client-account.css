@@ -77,3 +77,6 @@
 .salon-account-open:hover .salon-account-avatar { box-shadow: 0 0 0 3px var(--color-secondary-soft), 0 0 0 5px var(--color-secondary); }
 
 @media (prefers-reduced-motion: reduce) { .account-hero i, .account-avatar { animation: none; } }
+
+/* Which update this is: tiny, bottom right, under the footer. */
+.salon-build { margin: 8px 6px 0; color: var(--color-text-muted); font-size: 10px; letter-spacing: .02em; text-align: right; opacity: .75; font-variant-numeric: tabular-nums; user-select: all; }

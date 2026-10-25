@@ -20,6 +20,7 @@ import ProfileAvatar from "./profile-avatar";
 import GalleryPhoto from "./gallery-photo";
 import GalleryLightbox from "./gallery-lightbox";
 import GalleryMosaic from "./gallery-mosaic";
+import { buildLabel } from "../lib/build-info";
 import ClientAccount, { type AccountStats } from "./client-account";
 import type { ClientProfile } from "../lib/client-profile";
 import { useReveal } from "../hooks/use-reveal";
@@ -278,6 +279,7 @@ export default function SalonHome(props: Props) {
       {settings.openingHours && <p><Clock3 aria-hidden="true" /><span>{settings.openingHours}</span></p>}
     </section>}
     <footer className="salon-footer" data-reveal><span>B&apos;n&apos;B Barbershop</span>{props.onInstall && !props.installed ? <button type="button" onClick={props.onInstall} disabled={props.installing} aria-busy={props.installing}>{props.installing ? "Otwieram instalację…" : "Zainstaluj aplikację"} <ArrowUpRight aria-hidden="true" /></button> : null}</footer>
+    {buildLabel() && <p className="salon-build" aria-label="Wersja aplikacji">{buildLabel()}</p>}
     <div className={`salon-dock ${dockVisible ? "is-visible" : ""}`} aria-hidden={!dockVisible}>
       <button type="button" tabIndex={dockVisible ? 0 : -1} onClick={bookDefault} disabled={props.busy}>Umów wizytę<ArrowUpRight aria-hidden="true" /></button>
     </div>
