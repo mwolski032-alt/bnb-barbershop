@@ -30,13 +30,15 @@ const resolveGroup = async (user, accessToken) => {
 
 const describe = async (uid, record, ownerUid, accessToken) => {
   const assigned = uid === ownerUid ? null : await readDatabaseQuery("team/barbers", { orderBy: "userId", equalTo: uid }, accessToken).catch(() => null);
-  const barber = Object.values(assigned ?? {}).find((member) => member?.userId === uid);
+  const match = Object.entries(assigned ?? {}).find(([, member]) => member?.userId === uid);
+  // A barber is shown with the name and picture of their barber profile, not those of their Google account.
+  const profile = match ? await readDatabase(`barbers/${encodeURIComponent(match[0])}/profile`, accessToken).catch(() => null) : null;
   return {
     uid,
-    name: uid === ownerUid ? record.name : barber?.name || record.name,
+    name: uid === ownerUid ? record.name : profile?.displayName || match?.[1]?.name || record.name,
     email: record.email,
-    photoUrl: record.photoUrl,
-    role: uid === ownerUid ? "owner" : barber ? "barber" : "client",
+    photoUrl: uid === ownerUid ? record.photoUrl : profile?.photoUrl || record.photoUrl,
+    role: uid === ownerUid ? "owner" : match ? "barber" : "client",
   };
 };
 

@@ -30,6 +30,7 @@ function installFetch(db) {
       return Response.json(body);
     }
     if (path === "team/owner") return Response.json({ userId: "owner-uid", active: true });
+    if (path === "barbers/mateusz/profile") return Response.json({ displayName: "Mateusz W.", photoUrl: "data:image/webp;base64,BARBER" });
     if (path === "team/barbers") return Response.json({ mateusz: { name: "Mateusz", userId: "barber-uid", active: true } });
     if (path === "accountLinks") {
       const links = {};
@@ -69,6 +70,10 @@ test("a paired account is listed and switchable in both directions; strangers ar
     assert.deepEqual(fromOwner.accounts.map((account) => [account.uid, account.role, account.current]), [["owner-uid", "owner", true], ["barber-uid", "barber", false]]);
     const fromBarber = await (await call("barber-token", { action: "list" })).json();
     assert.equal(fromBarber.canLink, false);
+    // The paired barber appears with the picture and name of their barber profile.
+    const barberEntry = fromOwner.accounts.find((account) => account.uid === "barber-uid");
+    assert.equal(barberEntry.photoUrl, "data:image/webp;base64,BARBER");
+    assert.equal(barberEntry.name, "Mateusz W.");
     assert.equal(fromBarber.accounts.length, 2);
 
     assert.equal(uidOf((await (await call("owner-token", { action: "switch", uid: "barber-uid" })).json()).token), "barber-uid");
