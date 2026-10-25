@@ -148,6 +148,7 @@ export default function SalonHome(props: Props) {
 
   // A photo credits a barber only when the owner chose one; otherwise nothing is shown, as before.
   const photoBarber = (photo: SalonImage) => barbers.find(barber => barber.id === photo.barberId)?.displayName ?? "";
+  const photoAuthor = (photo: SalonImage) => { const barber = barbers.find(item => item.id === photo.barberId); return barber ? { name: barber.displayName, photoUrl: barber.photoUrl } : null; };
   const book = <button className="salon-cta" type="button" onClick={() => props.onBook()} disabled={props.busy} aria-busy={props.busy}>
     {props.busy ? "Chwileczkę…" : "Umów wizytę"}<ArrowUpRight aria-hidden="true" />
   </button>;
@@ -290,6 +291,6 @@ export default function SalonHome(props: Props) {
       <div className="salon-gallery-all-heading"><span className="salon-overline">GALERIA B&apos;N&apos;B</span><h2>Wszystkie zdjęcia</h2></div>
       <GalleryMosaic photos={gallery} barberName={photoBarber} onOpen={index => { setGalleryOpen(false); setLightbox(index); }} />
     </SalonDialog>}
-    {lightbox !== null && gallery.length > 0 && <GalleryLightbox photos={gallery} index={Math.min(lightbox, gallery.length - 1)} onIndex={setLightbox} onClose={() => setLightbox(null)} caption={photo => photoBarber(photo) ? `Barber: ${photoBarber(photo)}` : ""} />}
+    {lightbox !== null && gallery.length > 0 && <GalleryLightbox photos={gallery} index={Math.min(lightbox, gallery.length - 1)} onIndex={setLightbox} onClose={() => setLightbox(null)} author={photoAuthor} />}
   </main>;
 }

@@ -40,6 +40,6 @@ test("the owner picks the barber when adding a photo or later, and an unassigned
   assert.match(manager, /Bez przypisania/);
   const home = read("app/components/salon-home.tsx");
   assert.match(home, /barbers\.find\(barber => barber\.id === photo\.barberId\)\?\.displayName \?\? ""/);
-  assert.match(home, /photoBarber\(photo\) \? `Barber: \$\{photoBarber\(photo\)\}` : ""/);
-  assert.match(read("app/components/gallery-lightbox.tsx"), /\{text && <p className="lightbox-caption">/);
+  assert.match(home, /author=\{photoAuthor\}/);
+  assert.match(read("app/components/gallery-lightbox.tsx"), /\{by && <p key=\{photo\.id\} className="lightbox-author">/);
 });

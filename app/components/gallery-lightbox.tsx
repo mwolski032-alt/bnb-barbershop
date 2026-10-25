@@ -3,16 +3,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { galleryImageSources } from "../../shared/gallery-images.mjs";
 import GalleryPhoto from "./gallery-photo";
+import ProfileAvatar from "./profile-avatar";
 import SalonDialog from "./salon-dialog";
 import type { SalonImage } from "./salon-manager";
 
 const SWIPE_DISTANCE = 48;
 
-/** `caption` returns the text under a photo (the barber who did the haircut), or "" for none. */
-type Props = { photos: SalonImage[]; index: number; onIndex: (index: number) => void; onClose: () => void; caption?: (photo: SalonImage) => string };
+/** `author` returns the barber who did the haircut (shown like an Instagram story header), or null for none. */
+export type PhotoAuthor = { name: string; photoUrl?: string | null };
+type Props = { photos: SalonImage[]; index: number; onIndex: (index: number) => void; onClose: () => void; author?: (photo: SalonImage) => PhotoAuthor | null };
 
 /** Full-screen viewer: arrow keys, swipe, previous/next buttons and a position counter. */
-export default function GalleryLightbox({ photos, index, onIndex, onClose, caption }: Props) {
+export default function GalleryLightbox({ photos, index, onIndex, onClose, author }: Props) {
   const count = photos.length;
   const [direction, setDirection] = useState<"next" | "prev">("next");
   const swipe = useRef<{ x: number; y: number } | null>(null);
@@ -49,7 +51,7 @@ export default function GalleryLightbox({ photos, index, onIndex, onClose, capti
   const photo = photos[index];
   if (!photo) return null;
   const source = galleryImageSources(photo);
-  const text = caption?.(photo) ?? "";
+  const by = author?.(photo) ?? null;
   return <SalonDialog title={photo.alt || "Zdjęcie galerii"} onClose={onClose} wide>
     <div
       className="lightbox-stage"
@@ -73,10 +75,9 @@ export default function GalleryLightbox({ photos, index, onIndex, onClose, capti
         />
       </span>
     </div>
-    {text && <p className="lightbox-caption">
-      <span key={photo.id} role="img" aria-label={text}>
-        {[...text].map((letter, position) => <span key={position} aria-hidden="true" style={{ animationDelay: `${position * 28}ms` }}>{letter === " " ? " " : letter}</span>)}
-      </span>
+    {by && <p key={photo.id} className="lightbox-author">
+      <ProfileAvatar className="lightbox-author-photo" name={by.name} photoUrl={by.photoUrl} />
+      <span>{by.name}</span>
     </p>}
     {count > 1 && <>
       <button type="button" className="lightbox-arrow prev" aria-label="Poprzednie zdjęcie" onClick={() => go(-1)}><ChevronLeft /></button>
