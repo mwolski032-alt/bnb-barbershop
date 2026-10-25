@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
-import { Bell, Camera, Check, Lock, RotateCcw } from "lucide-react";
+import { Bell, Camera, Check, Lock, LogOut, RotateCcw } from "lucide-react";
 import { formatPhoneNumber } from "../lib/booking-format";
 import { getPhoneDigits } from "../lib/booking-selectors";
 import { useCountUp } from "../hooks/use-count-up";
@@ -21,6 +21,8 @@ type Props = {
   notification?: { label: string; enabled: boolean; busy: boolean; status: string } | null;
   onNotifications?: () => void;
   onSave: (profile: ClientProfile) => Promise<void>;
+  onSignOut?: () => void;
+  signingOut?: boolean;
   onClose: () => void;
 };
 
@@ -124,6 +126,9 @@ export default function ClientAccount(props: Props) {
           {state === "saved" ? <><Check aria-hidden="true" /> Zapisano</> : state === "saving" ? "Zapisuję…" : "Zapisz zmiany"}
           {state === "saved" && <span className="account-confetti" aria-hidden="true">{confetti.map((piece, index) => <i key={index} data-hue={piece.hue} style={{ "--x": `${piece.x}px`, "--y": `${piece.y}px` } as CSSProperties} />)}</span>}
         </button>
+        {props.onSignOut && <button type="button" className="account-logout" onClick={props.onSignOut} disabled={props.signingOut} aria-busy={props.signingOut}>
+          <LogOut aria-hidden="true" /> {props.signingOut ? "Wylogowuję…" : "Wyloguj"}
+        </button>}
       </form>
     </div>
   </SalonDialog>;

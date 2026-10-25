@@ -80,3 +80,29 @@
 
 /* Which update this is: tiny, bottom right, under the footer. */
 .salon-build { margin: 8px 6px 0; color: var(--color-text-muted); font-size: 10px; letter-spacing: .02em; text-align: right; opacity: .75; font-variant-numeric: tabular-nums; user-select: all; }
+
+/* Account pill on the home page: it must read as a button, and say what it is for. */
+.salon-session { position: relative; }
+.salon-account-pill:has(.salon-account-open) { padding: 4px 6px 4px 5px; transition: box-shadow var(--duration-base), transform var(--duration-base) var(--ease-out); }
+.salon-account-pill:has(.salon-account-open):hover { box-shadow: 0 6px 18px -8px rgb(1 66 65 / 55%); }
+.salon-account-avatar-wrap { position: relative; display: grid; flex: none; }
+.salon-account-badge { position: absolute; right: -3px; bottom: -3px; display: grid; place-items: center; width: 17px; height: 17px; border: 2px solid var(--color-surface-secondary); border-radius: 50%; background: var(--color-secondary); color: #fff; }
+.salon-account-badge svg { width: 8px; height: 8px; }
+.salon-account-cta { display: inline-flex; align-items: center; gap: 2px; padding: 6px 10px; border-radius: 999px; background: var(--color-primary); color: var(--color-on-primary); font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+.salon-account-cta svg { width: 14px; height: 14px; transition: transform var(--duration-base) var(--ease-out); }
+.salon-account-open:hover .salon-account-cta svg { transform: translateY(2px); }
+.salon-account-avatar-wrap[data-hint]::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--color-secondary); animation: account-hint-pulse 1.8s ease-out infinite; pointer-events: none; }
+@keyframes account-hint-pulse { from { opacity: .9; transform: scale(.9); } to { opacity: 0; transform: scale(1.6); } }
+.salon-account-hint { position: absolute; top: calc(100% + 12px); right: 0; z-index: 5; display: grid; gap: 8px; width: max-content; max-width: 220px; padding: 12px 14px; border-radius: 16px; background: var(--color-primary); color: var(--color-on-primary); box-shadow: 0 14px 30px -12px rgb(1 46 45 / 70%); animation: account-hint-in 600ms var(--ease-out) 900ms backwards; }
+.salon-account-hint::before { content: ""; position: absolute; top: -6px; right: 28px; width: 14px; height: 14px; border-radius: 3px; background: var(--color-primary); transform: rotate(45deg); }
+.salon-account-hint p { position: relative; margin: 0; font-size: 14px; line-height: 1.35; }
+.salon-account-hint button { position: relative; justify-self: end; padding: 5px 12px; border: 0; border-radius: 999px; background: rgb(255 255 255 / 18%); color: inherit; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+@keyframes account-hint-in { from { opacity: 0; transform: translateY(-8px) scale(.94); } }
+@media (max-width: 700px) { .salon-account-open > strong { display: none; } .salon-account-hint { right: -4px; } }
+
+/* "Wyloguj" lives in the account dialog, under "Zapisz zmiany". */
+.account-logout { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; border: 1px solid #b3261e; border-radius: 999px; background: transparent; color: #b3261e; font: inherit; font-weight: 600; cursor: pointer; transition: background var(--duration-base), color var(--duration-base), transform var(--duration-base) var(--ease-out); }
+.account-logout:hover:not(:disabled) { background: #b3261e; color: #fff; }
+.account-logout:active:not(:disabled) { transform: scale(.98); }
+.account-logout svg { width: 18px; height: 18px; }
+@media (prefers-reduced-motion: reduce) { .salon-account-avatar-wrap[data-hint]::after { animation: none; } }

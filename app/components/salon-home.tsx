@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { onValue, ref } from "firebase/database";
-import { ArrowUpRight, AtSign, MapPin, Clock3, Bell, LogOut, Star, Scissors } from "lucide-react";
+import { ArrowUpRight, AtSign, MapPin, Clock3, Bell, ChevronDown, LogOut, Pencil, Star, Scissors } from "lucide-react";
 import { realtimeDb } from "../lib/firebase";
 import {
   emptyReviewSummary,
@@ -84,6 +84,11 @@ export default function SalonHome(props: Props) {
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  // A small bubble points at the account pill until the client has opened it once (remembered on this device).
+  const [hintSeen, setHintSeen] = useState(true);
+  useEffect(() => { try { setHintSeen(localStorage.getItem("bnb-account-hint") === "1"); } catch { setHintSeen(false); } }, []);
+  const dismissHint = () => { setHintSeen(true); try { localStorage.setItem("bnb-account-hint", "1"); } catch { /* The bubble just shows again next time. */ } };
+  const showHint = Boolean(props.accountPanel) && !hintSeen && !accountOpen;
   const [reviews, setReviews] = useState<Review[]>(() => shared.reviews);
   const [reviewSummary, setReviewSummary] = useState<ReviewSummary>(() => shared.reviewSummary);
   const [reviewsOpen, setReviewsOpen] = useState(false);
@@ -211,16 +216,26 @@ export default function SalonHome(props: Props) {
           </button>}
           <div className="salon-account-pill">
             {props.accountPanel
-              ? <button type="button" className="salon-account-open" onClick={() => setAccountOpen(true)} aria-label="Moje konto">
+              ? <button type="button" className="salon-account-open" onClick={() => { dismissHint(); setAccountOpen(true); }} aria-label="Moje konto: zdjęcie, imię, telefon i wylogowanie">
+                <span className="salon-account-avatar-wrap" data-hint={showHint || undefined}>
+                  <ProfileAvatar className="salon-account-avatar" name={props.account.name} photoUrl={props.account.photoUrl} />
+                  <span className="salon-account-badge" aria-hidden="true"><Pencil /></span>
+                </span>
+                <strong>{props.account.name}</strong>
+                <span className="salon-account-cta">Konto <ChevronDown aria-hidden="true" /></span>
+              </button>
+              : <>
                 <ProfileAvatar className="salon-account-avatar" name={props.account.name} photoUrl={props.account.photoUrl} />
                 <strong>{props.account.name}</strong>
-              </button>
-              : <><ProfileAvatar className="salon-account-avatar" name={props.account.name} photoUrl={props.account.photoUrl} />
-                <strong>{props.account.name}</strong></>}
-            <button type="button" onClick={props.onSignOut} disabled={props.signingOut} aria-busy={props.signingOut} aria-label="Wyloguj">
-              <span>{props.signingOut ? "Wylogowuję…" : "Wyloguj"}</span><LogOut aria-hidden="true" />
-            </button>
+                <button type="button" onClick={props.onSignOut} disabled={props.signingOut} aria-busy={props.signingOut} aria-label="Wyloguj">
+                  <span>{props.signingOut ? "Wylogowuję…" : "Wyloguj"}</span><LogOut aria-hidden="true" />
+                </button>
+              </>}
           </div>
+          {showHint && <div className="salon-account-hint" role="note">
+            <p>Tu zmienisz zdjęcie, imię i telefon.</p>
+            <button type="button" onClick={dismissHint}>Rozumiem</button>
+          </div>}
         </div>}
       </div>
     </header>
@@ -302,7 +317,7 @@ export default function SalonHome(props: Props) {
       <ReviewPrompt key={props.reviewPrompt!.appointmentId} appointmentId={props.reviewPrompt!.appointmentId} barberName={props.reviewPrompt!.barberName}
         onSubmitted={() => { const barberId = props.reviewPrompt!.barberId; window.setTimeout(() => { setReviewFormOpen(false); props.onReviewed?.(barberId); fetchPublicReviews().then(data => { shared.reviews = data.reviews; shared.reviewSummary = data.summary; shared.reviewsFetchedAt = Date.now(); setReviews(data.reviews); setReviewSummary(data.summary); }).catch(() => undefined); }, 2600); }} />
     }</SalonDialog>}
-    {accountOpen && props.accountPanel && <ClientAccount {...props.accountPanel} barbers={barbers} notification={props.notification} onNotifications={props.onNotifications} onClose={() => setAccountOpen(false)} />}
+    {accountOpen && props.accountPanel && <ClientAccount {...props.accountPanel} onSignOut={props.onSignOut} signingOut={props.signingOut} barbers={barbers} notification={props.notification} onNotifications={props.onNotifications} onClose={() => setAccountOpen(false)} />}
     {reviewsOpen && <ReviewsDialog reviews={reviews} summary={reviewSummary} barbers={barbers} onClose={() => setReviewsOpen(false)} />}
     {galleryOpen && <SalonDialog title="Wszystkie zdjęcia B'n'B" onClose={() => setGalleryOpen(false)} gallery>
       <div className="salon-gallery-all-heading"><span className="salon-overline">GALERIA B&apos;N&apos;B</span><h2>Wszystkie zdjęcia</h2></div>

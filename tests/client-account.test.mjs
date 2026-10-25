@@ -33,3 +33,14 @@ test("the salon page opens the account from the account pill and books with the 
   assert.match(home, /className="salon-account-open"/);
   assert.match(home, /props\.onBook\(favoriteId && barbers\.some/);
 });
+
+test("signing out lives in the account dialog and the pill tells people it opens their account", () => {
+  const dialog = read("app/components/client-account.tsx");
+  assert.match(dialog, /className="account-logout"/);
+  const home = read("app/components/salon-home.tsx");
+  // With an account panel the home page has no sign-out button of its own; only the owner (no panel) keeps one.
+  const withPanel = home.slice(home.indexOf('props.accountPanel\n'), home.indexOf("</>}", home.indexOf('props.accountPanel\n')));
+  assert.match(withPanel, /salon-account-cta/);
+  assert.match(withPanel, /bnb-account-hint|dismissHint/);
+  assert.match(home, /localStorage\.setItem\("bnb-account-hint", "1"\)/);
+});
