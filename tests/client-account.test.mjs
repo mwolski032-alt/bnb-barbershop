@@ -22,10 +22,10 @@ test("the account dialog shows the e-mail read-only and keeps phone and name edi
   assert.match(dialog, /autoComplete="name"/);
 });
 
-test("a picture chosen in the account replaces the Google one when a visit is booked", () => {
+test("a picture chosen in the account replaces the Google one wherever a barber sees the client", () => {
   const server = read("netlify/functions/appointments.mjs");
-  assert.match(server, /clientProfiles\/\$\{encodeURIComponent\(user\.uid\)\}\/photoUrl/);
-  assert.match(server, /proposed\.clientPhotoUrl = clientPhotoUrl;/);
+  assert.match(server, /readDatabase\("clientPhotoVersions", accessToken\)/);
+  assert.match(server, /\/api\/client-photo\//);
 });
 
 test("the salon page opens the account from the account pill and books with the favourite barber", () => {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from
 import type { AdminAppointment } from "../lib/booking-types";
 import { formatPhoneNumber } from "../lib/booking-format";
 import { getAppointmentSortValue, getPhoneDigits, normalizeAppointmentStatus } from "../lib/booking-selectors";
-import { saveClientProfile, subscribeClientProfile, type ClientProfile } from "../lib/client-profile";
+import { ensurePhotoVersion, saveClientProfile, subscribeClientProfile, type ClientProfile } from "../lib/client-profile";
 
 type FormState = { fullName: string; phone: string };
 type SignedInUser = { uid: string; displayName?: string | null; email?: string | null; photoURL?: string | null };
@@ -27,6 +27,13 @@ export function useClientAccount({ user, ownAppointments, upcoming, barbers, set
     if (!uid) { setProfile({}); return undefined; }
     return subscribeClientProfile(uid, (value) => { setProfile(value); setLoaded(true); });
   }, [uid]);
+
+  useEffect(() => {
+    if (!uid || !loaded || !profile.photoUrl) return;
+    const key = `bnb-photo-version:${uid}:${profile.updatedAt ?? 0}`;
+    try { if (sessionStorage.getItem(key) === "1") return; sessionStorage.setItem(key, "1"); } catch { return; }
+    ensurePhotoVersion(uid, profile.updatedAt || Date.now()).catch(() => undefined);
+  }, [uid, loaded, profile.photoUrl, profile.updatedAt]);
 
   // The phone number typed for a first booking becomes the account's phone, once. Clearing it later sticks.
   const knownPhone = useMemo(() => {

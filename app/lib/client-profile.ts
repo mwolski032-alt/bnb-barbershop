@@ -1,4 +1,4 @@
-import { onValue, ref, set } from "firebase/database";
+import { onValue, ref, update } from "firebase/database";
 import { realtimeDb } from "./firebase";
 
 /** What a client chose for their account. Anything missing falls back to the Google profile. */
@@ -9,6 +9,8 @@ export type ClientProfile = {
   /** A small WebP data URL, see `prepareAvatar`. */
   photoUrl?: string;
   favoriteBarberId?: string;
+  /** When the profile was last saved (set by the database, read-only here). */
+  updatedAt?: number;
 };
 
 export const AVATAR_MAX_CHARS = 60000;
@@ -22,10 +24,24 @@ const clean = (profile: ClientProfile): ClientProfile => ({
 });
 
 export const subscribeClientProfile = (uid: string, onChange: (profile: ClientProfile) => void) =>
-  onValue(ref(realtimeDb, `clientProfiles/${uid}`), snapshot => onChange(clean((snapshot.val() ?? {}) as ClientProfile)), () => onChange({}));
+  onValue(ref(realtimeDb, `clientProfiles/${uid}`), snapshot => {
+    const value = (snapshot.val() ?? {}) as ClientProfile;
+    onChange({ ...clean(value), ...(Number(value.updatedAt) ? { updatedAt: Number(value.updatedAt) } : {}) });
+  }, () => onChange({}));
 
-export const saveClientProfile = (uid: string, profile: ClientProfile) =>
-  set(ref(realtimeDb, `clientProfiles/${uid}`), { ...clean(profile), updatedAt: Date.now() });
+/** Profiles saved before pictures were shared with barbers get their version stamp the first time they load. */
+export const ensurePhotoVersion = (uid: string, updatedAt: number) =>
+  update(ref(realtimeDb), { [`clientPhotoVersions/${uid}`]: updatedAt });
+
+/** Saves the profile and, in the same write, a version stamp that tells the server the picture changed. */
+export const saveClientProfile = (uid: string, profile: ClientProfile) => {
+  const cleaned = clean(profile);
+  const now = Date.now();
+  return update(ref(realtimeDb), {
+    [`clientProfiles/${uid}`]: { ...cleaned, updatedAt: now },
+    [`clientPhotoVersions/${uid}`]: cleaned.photoUrl ? now : null,
+  });
+};
 
 export const AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"];
 

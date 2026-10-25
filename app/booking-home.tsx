@@ -4682,8 +4682,11 @@ export function BookingHome() {
     <SalonHome
       busy={!authReady || isSigningIn || Boolean(activeUser && !sessionReady)}
       signedIn={Boolean(activeUser)} admin={isAdmin} error={authError}
-      account={activeUser ? { name: clientAccount.name, photoUrl: clientAccount.photoUrl } : null}
-      accountPanel={activeUser && !isOwner ? {
+      account={activeUser ? (isBarber
+        ? { name: signedInBarberName, photoUrl: signedInBarberProfile.photoUrl || clientAccount.photoUrl }
+        : { name: clientAccount.name, photoUrl: clientAccount.photoUrl }) : null}
+      // Owner and barbers edit their picture and name in "Profil", so only clients get "Moje konto".
+      accountPanel={activeUser && !isAdmin ? {
         email: activeUser.email ?? "",
         authName: activeUser.displayName ?? activeUser.email ?? "",
         authPhotoUrl: activeUser.photoURL,

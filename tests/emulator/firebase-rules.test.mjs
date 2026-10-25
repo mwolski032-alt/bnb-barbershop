@@ -100,6 +100,15 @@ test("a client reads and writes only their own account profile, with validated f
   await assertSucceeds(set(ref(mine, path), null));
 });
 
+test("a client stamps only their own picture version, and only with a number", async () => {
+  const mine = databaseFor(clientUid);
+  await assertSucceeds(set(ref(mine, `clientPhotoVersions/${clientUid}`), 1700000000000));
+  await assertSucceeds(set(ref(mine, `clientPhotoVersions/${clientUid}`), null));
+  await assertFails(set(ref(mine, `clientPhotoVersions/${clientUid}`), "now"));
+  await assertFails(set(ref(databaseFor(mateuszUid), `clientPhotoVersions/${clientUid}`), 1));
+  await assertFails(get(ref(mine, `clientPhotoVersions/${clientUid}`)));
+});
+
 test("gallery records for stored photos accept only same-origin photo paths", async () => {
   const owner = databaseFor(ownerUid);
   const id = "123e4567-e89b-42d3-a456-426614174000";

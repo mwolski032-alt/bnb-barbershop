@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   BellRing,
   CalendarPlus,
@@ -450,7 +451,7 @@ export default function AdminAgendaScreen(props: AgendaScreenProps) {
         </button>
       ) : null}
 
-      {sheetOpen && selectedAppointment && sheetState ? (
+      {sheetOpen && selectedAppointment && sheetState ? createPortal(
         <div className={`agenda-sheet-layer ${openId ? "" : "leaving"}`} role="presentation">
           <button className="agenda-sheet-backdrop" type="button" aria-label="Zamknij" onClick={closeSheet} />
           <section
@@ -585,7 +586,8 @@ export default function AdminAgendaScreen(props: AgendaScreenProps) {
               ) : null}
             </div>
           </section>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );

@@ -641,6 +641,9 @@ const getAppointmentData = async (
     requestedBarberId,
     databaseSnapshot,
   );
+  // A picture the client chose in "Moje konto" replaces their Google one wherever a barber sees them.
+  const photoVersions = canReadAdminAppointments(admin) ? ((await readDatabase("clientPhotoVersions", accessToken).catch(() => null)) ?? {}) : {};
+  const clientPhoto = (uid, fallback) => (uid && Number(photoVersions[uid]) ? `/api/client-photo/${encodeURIComponent(uid)}?v=${Number(photoVersions[uid])}` : fallback);
   const sync = {
     uid: user.uid,
     barberId: database.occupancyBarberId || "",
@@ -683,7 +686,7 @@ const getAppointmentData = async (
       canReadAdminAppointments(admin) &&
       (admin.isOwner || appointment.barberId === admin.barberId)
     ) {
-      adminAppointments.push(appointment);
+      adminAppointments.push({ ...appointment, clientPhotoUrl: clientPhoto(appointment.userId, appointment.clientPhotoUrl) });
     }
     if (
       (!database.occupancyBarberId || appointment.barberId === database.occupancyBarberId) &&
@@ -744,7 +747,7 @@ const getAppointmentData = async (
           client?.barberIds?.[admin.barberId] === true ||
           appointmentClientIds.has(id),
       )
-      .map(([id, client]) => ({ ...client, id: cleanText(client?.id || id, 120) }));
+      .map(([id, client]) => ({ ...client, id: cleanText(client?.id || id, 120), photoUrl: clientPhoto(client?.userId, client?.photoUrl) }));
 
     return {
       context: admin,
@@ -1306,10 +1309,7 @@ const handler = async (request, timings = {}) => {
       proposed.userId = user.uid;
       proposed.clientId = user.uid;
       proposed.clientEmail = user.email;
-      // A picture the client chose in their account replaces the one from their Google profile.
-      const chosenPhoto = await readDatabase(`clientProfiles/${encodeURIComponent(user.uid)}/photoUrl`, accessToken).catch(() => null);
-      const clientPhotoUrl = typeof chosenPhoto === "string" && chosenPhoto.startsWith("data:image/webp;base64,") ? chosenPhoto : user.photoUrl;
-      proposed.clientPhotoUrl = clientPhotoUrl;
+      proposed.clientPhotoUrl = user.photoUrl;
       proposed.status = "confirmed";
       if (proposed.clientName.length < 3 || proposed.phone.replace(/\D/g, "").length !== 9) {
         return jsonResponse({ ok: false, error: "Nieprawidłowe dane klienta." }, 400);
@@ -1324,7 +1324,7 @@ const handler = async (request, timings = {}) => {
         lastName: cleanText(body.client?.lastName || nameParts.slice(1).join(" "), 80),
         email: user.email,
         phone: cleanText(body.client?.phone || proposed.phone, 32),
-        photoUrl: clientPhotoUrl,
+        photoUrl: user.photoUrl,
         userId: user.uid,
       });
       const createResult = await mutateAppointmentOperation(

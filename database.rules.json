@@ -58,6 +58,12 @@
         "$other": { ".validate": false }
       }
     },
+    "clientPhotoVersions": {
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.isNumber()"
+      }
+    },
     "shopfront": {
       ".read": true,
       "settings": {
