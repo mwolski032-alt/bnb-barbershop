@@ -109,6 +109,8 @@ import { usePushLinkActions, useReminderAnswer } from "./hooks/use-push-link-act
 import { useKnownPhone } from "./hooks/use-known-phone";
 import { saveClientProfile } from "./lib/client-profile";
 import { useClientAccount } from "./hooks/use-client-account";
+import { useNotificationNudge } from "./hooks/use-notification-nudge";
+import NotificationNudge from "./components/notification-nudge";
 import PhotoCropDialog from "./components/photo-crop-dialog";
 import { useBackNavigation } from "./hooks/use-back-navigation";
 import { listenToBarberProfile } from "./lib/barber-profile-listener";
@@ -476,6 +478,7 @@ export function BookingHome() {
   const isAdmin = isOwner || isBarber;
   const pushDeviceEnabled = pushDeviceStatus === "enabled";
   const pushDeviceLabel = pushDeviceStatusLabel[pushDeviceStatus];
+  const notificationNudge = useNotificationNudge({ ready: Boolean(activeUser) && !isOwner && sessionReady, status: pushDeviceStatus });
   const signedInBarberAccess = sessionContext?.access ?? fullBarberAccess;
   const canAccessAdminSchedule =
     Boolean(isOwner) || Boolean(isBarber && signedInBarberAccess.schedule);
@@ -4786,6 +4789,8 @@ export function BookingHome() {
   return (
     <>
       {pwaUpdateNotice}
+      {notificationNudge.open && notificationNudge.kind && <NotificationNudge kind={notificationNudge.kind} welcome={notificationNudge.welcome} enabled={pushDeviceEnabled} busy={isPushDeviceUpdating}
+        onEnable={() => void handlePushDeviceToggle()} onInstall={() => { notificationNudge.dismiss(); void handleInstallApp(); }} onClose={notificationNudge.dismiss} />}
       <main
         className={`app-shell ${
           visibleStep === "confirm" || visibleStep === "success" ? "confirm-page" : ""

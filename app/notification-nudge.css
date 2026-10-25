@@ -1,0 +1,32 @@
+/* "Włącz powiadomienia" dialog. Durations come from theme.css, which zeroes them for reduced motion. */
+.salon-dialog.nudge-dialog { width: min(420px, calc(100% - 24px)); background: var(--color-surface); overflow: hidden; }
+.nudge-dialog .salon-dialog-content { padding: 0; }
+.nudge { position: relative; display: grid; justify-items: center; gap: 10px; padding: 34px 24px 24px; text-align: center; background: radial-gradient(ellipse at 50% 0%, var(--color-secondary-soft), transparent 62%); }
+.nudge > * { animation: nudge-rise 600ms var(--ease-out) backwards; }
+.nudge > :nth-child(2) { animation-delay: 80ms; } .nudge > :nth-child(3) { animation-delay: 140ms; } .nudge > :nth-child(4) { animation-delay: 200ms; } .nudge > :nth-child(5) { animation-delay: 260ms; } .nudge > :nth-child(6) { animation-delay: 320ms; }
+@keyframes nudge-rise { from { opacity: 0; transform: translateY(14px); } }
+.nudge h2 { margin: 0; color: var(--color-text); font-family: var(--font-display); font-size: 1.65rem; line-height: 1.1; }
+.nudge p { max-width: 34ch; margin: 0; color: var(--color-text-secondary); line-height: 1.5; }
+
+.nudge-stage { position: relative; display: grid; place-items: center; width: 150px; height: 120px; }
+.nudge-stage i { position: absolute; width: 74px; height: 74px; border: 2px solid var(--color-secondary); border-radius: 50%; opacity: 0; animation: nudge-ripple 2.8s ease-out infinite; }
+.nudge-stage i:nth-child(2) { animation-delay: .9s; } .nudge-stage i:nth-child(3) { animation-delay: 1.8s; }
+@keyframes nudge-ripple { from { opacity: .7; transform: scale(.8); } to { opacity: 0; transform: scale(2.1); } }
+.nudge-bell { position: relative; display: grid; place-items: center; width: 74px; height: 74px; border-radius: 50%; background: linear-gradient(145deg, var(--color-secondary), #6d0052); color: #fff; box-shadow: 0 14px 30px -10px rgb(171 0 130 / 65%); transform-origin: 50% 12%; animation: nudge-pop 700ms var(--ease-out) backwards, nudge-ring 3.6s ease-in-out 1.2s infinite; }
+.nudge-bell svg { width: 34px; height: 34px; }
+@keyframes nudge-pop { from { opacity: 0; transform: scale(.4) rotate(-20deg); } }
+@keyframes nudge-ring { 0%, 12%, 100% { transform: rotate(0); } 3% { transform: rotate(16deg); } 6% { transform: rotate(-13deg); } 9% { transform: rotate(8deg); } }
+
+.nudge-benefits { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 4px 0 0; padding: 0; list-style: none; }
+.nudge-benefits li { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-surface); color: var(--color-primary); font-size: 12.5px; font-weight: 600; }
+.nudge-benefits svg { width: 15px; height: 15px; color: var(--color-secondary); }
+.nudge-steps { display: grid; gap: 8px; margin: 4px 0 0; padding: 0; counter-reset: step; list-style: none; text-align: left; }
+.nudge-steps li { position: relative; padding: 10px 12px 10px 44px; border-radius: 14px; background: var(--color-surface-secondary); color: var(--color-text); font-size: 14px; line-height: 1.4; counter-increment: step; }
+.nudge-steps li::before { content: counter(step); position: absolute; left: 12px; top: 50%; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--color-primary); color: #fff; font-size: 12px; font-weight: 700; transform: translateY(-50%); }
+.nudge-actions { display: grid; gap: 6px; width: 100%; margin-top: 8px; }
+.nudge-actions .salon-cta { min-height: 52px; width: 100%; }
+.nudge-later { min-height: 40px; border: 0; background: none; color: var(--color-text-muted); font: inherit; cursor: pointer; }
+.nudge-later:hover { color: var(--color-text); }
+.nudge.is-done .nudge-bell { background: linear-gradient(145deg, #2a9d6a, #1f7a4d); box-shadow: 0 14px 30px -10px rgb(31 122 77 / 65%); animation: nudge-pop 700ms var(--ease-out) backwards; }
+.nudge.is-done .nudge-stage i { border-color: #1f7a4d; }
+@media (prefers-reduced-motion: reduce) { .nudge-bell, .nudge-stage i { animation: none; } }
