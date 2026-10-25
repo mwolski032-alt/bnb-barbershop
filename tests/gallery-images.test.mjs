@@ -90,6 +90,7 @@ const memoryStore = ({ failing = false } = {}) => {
     entries,
     set: async (key, value, options) => { guard(); entries.set(key, { value: Buffer.from(value), options }); },
     get: async (key) => { guard(); const entry = entries.get(key); return entry ? entry.value.buffer.slice(entry.value.byteOffset, entry.value.byteOffset + entry.value.byteLength) : null; },
+    getMetadata: async (key) => { guard(); return entries.has(key) ? { etag: "x" } : null; },
     delete: async (key) => { guard(); entries.delete(key); },
   };
 };
@@ -97,14 +98,16 @@ const memoryStore = ({ failing = false } = {}) => {
 const webpBase64 = (size = 64) =>
   Buffer.concat([Buffer.from("RIFF"), Buffer.from([0, 0, 0, 0]), Buffer.from("WEBP"), Buffer.alloc(size)]).toString("base64");
 
-function installFetch({ uid = "owner-uid", ownerUid = "owner-uid" } = {}) {
+// `barber` seeds one team card for the signed-in user; `gallery` is what shopfront/gallery holds.
+function installFetch({ uid = "owner-uid", ownerUid = "owner-uid", barber = null, gallery = null } = {}) {
   const original = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = String(input);
     if (url.startsWith("https://oauth2.googleapis.com/token")) return Response.json({ access_token: "token" });
     if (url.includes("identitytoolkit.googleapis.com")) return Response.json({ users: [{ localId: uid }] });
     if (url.includes("/team/owner.json")) return Response.json({ userId: ownerUid, active: true });
-    if (url.includes("/team/barbers.json")) return Response.json(null);
+    if (url.includes("/team/barbers.json")) return Response.json(barber ? { [barber.id]: { id: barber.id, userId: uid, active: barber.active ?? true, access: barber.access ?? {} } } : null);
+    if (url.includes("/shopfront/gallery.json")) return Response.json(gallery);
     throw new Error(`Unexpected fetch ${url}`);
   };
   return () => { globalThis.fetch = original; };
@@ -133,6 +136,47 @@ test("anyone who is not the active owner cannot save or delete", async () => {
     assert.equal((await handler(request("POST", validBody(), { auth: "" }))).status, 403);
     assert.equal(store.entries.size, 0);
   } finally { restore(); }
+});
+
+test("a barber with the Galeria permission uploads new photos but cannot overwrite existing files", async () => {
+  const barber = { id: "mateusz", access: { gallery: true } };
+  const restore = installFetch({ uid: "barber-uid", barber }); const store = memoryStore();
+  try {
+    const handler = createWriter(() => store);
+    assert.equal((await handler(request("POST", validBody()))).status, 201);
+    assert.equal(store.entries.size, 3);
+    assert.equal((await handler(request("POST", validBody()))).status, 409, "the same id must not be overwritten");
+  } finally { restore(); }
+});
+
+test("a barber without the Galeria permission, or switched off, cannot upload or delete", async () => {
+  for (const barber of [{ id: "mateusz", access: { gallery: false } }, { id: "mateusz", access: {} }, { id: "mateusz", active: false, access: { gallery: true } }]) {
+    const restore = installFetch({ uid: "barber-uid", barber }); const store = memoryStore();
+    try {
+      const handler = createWriter(() => store);
+      assert.equal((await handler(request("POST", validBody()))).status, 403);
+      assert.equal((await handler(request("DELETE", null, { url: `https://bnb.example/api/gallery-images?id=${id}` }))).status, 403);
+      assert.equal(store.entries.size, 0);
+    } finally { restore(); }
+  }
+});
+
+test("a barber deletes only photos credited to them", async () => {
+  const barber = { id: "mateusz", access: { gallery: true } };
+  const url = `https://bnb.example/api/gallery-images?id=${id}`;
+  const seed = () => { const store = memoryStore(); for (const width of GALLERY_WIDTHS) store.entries.set(`${id}/${width}.webp`, { value: Buffer.from("x") }); return store; };
+  for (const [gallery, status, left] of [
+    [{ 0: { id, barberId: "mateusz" } }, 200, 0],
+    [{ 0: { id, barberId: "kacper" } }, 403, 3],
+    [{ 0: { id, barberId: "kacper" } }, 403, 3],
+    [null, 200, 0],
+  ]) {
+    const restore = installFetch({ uid: "barber-uid", barber, gallery }); const store = seed();
+    try {
+      assert.equal((await createWriter(() => store)(request("DELETE", null, { url }))).status, status);
+      assert.equal(store.entries.size, left);
+    } finally { restore(); }
+  }
 });
 
 test("invalid ids, non-WebP bytes and oversized files are rejected before touching the store", async () => {

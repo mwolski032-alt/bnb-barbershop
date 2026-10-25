@@ -6,8 +6,8 @@ export const GALLERY_WIDTHS = [480, 960, 1600];
 export const GALLERY_MAX_BYTES = { 480: 120_000, 960: 300_000, 1600: 600_000 };
 export const GALLERY_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const GALLERY_STORE = "gallery";
-/** The salon page and the database rules both allow this many photos (records 0 to 19). */
-export const GALLERY_MAX_PHOTOS = 20;
+/** The salon page and the database rules both allow this many photos (records 0 to 39). */
+export const GALLERY_MAX_PHOTOS = 40;
 /** Ids of the barbers a photo can be credited to: the same safe keys used for team members. */
 export const GALLERY_BARBER_PATTERN = /^[a-zA-Z0-9_-]{1,80}$/;
 export const GALLERY_CACHE_CONTROL = "public, max-age=31536000, immutable";

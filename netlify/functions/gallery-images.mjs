@@ -3,6 +3,7 @@ import {
   getAccessToken,
   getAdminContext,
   jsonResponse,
+  readDatabase,
   verifyRequestUser,
 } from "./_firebase-admin.mjs";
 import {
@@ -21,14 +22,23 @@ export const config = {
 
 const maxBodyLength = 1_700_000;
 
-// Only the active owner may change the gallery. The browser never writes to the store itself:
-// it sends the three prepared sizes here, and this function validates and saves them.
-const requireOwner = async (request) => {
+// The active owner may change the whole gallery. A barber the owner switched "Galeria" on for may add
+// photos and delete their own. The browser never writes to the store itself: it sends the three
+// prepared sizes here, and this function validates and saves them.
+const requireUploader = async (request) => {
   const user = await verifyRequestUser(request);
   if (!user) return null;
-  const context = await getAdminContext(user, await getAccessToken());
-  return context.isOwner && context.active ? user : null;
+  const accessToken = await getAccessToken();
+  const context = await getAdminContext(user, accessToken);
+  if (!context.active) return null;
+  if (context.isOwner) return { isOwner: true, barberId: "", accessToken };
+  if (context.role === "barber" && context.access?.gallery === true && context.barberId) {
+    return { isOwner: false, barberId: context.barberId, accessToken };
+  }
+  return null;
 };
+
+const readGalleryRecords = async (accessToken) => Object.values((await readDatabase("shopfront/gallery", accessToken)) ?? {});
 
 const decodeVariants = (variants) => {
   if (!variants || typeof variants !== "object") return null;
@@ -46,18 +56,26 @@ const decodeVariants = (variants) => {
 const toArrayBuffer = (bytes) => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 
 /** The store is injectable so tests can run without Netlify. */
-export const createHandler = (openStore = () => getStore({ name: GALLERY_STORE, consistency: "strong" })) =>
+export const createHandler = (
+  openStore = () => getStore({ name: GALLERY_STORE, consistency: "strong" }),
+  readGallery = readGalleryRecords,
+) =>
   async function handler(request) {
     try {
       if (request.method !== "POST" && request.method !== "DELETE") {
         return jsonResponse({ error: "Method not allowed" }, 405);
       }
-      const owner = await requireOwner(request);
-      if (!owner) return jsonResponse({ error: "Owner access required" }, 403);
+      const uploader = await requireUploader(request);
+      if (!uploader) return jsonResponse({ error: "Gallery access required" }, 403);
 
       if (request.method === "DELETE") {
         const id = new URL(request.url).searchParams.get("id") ?? "";
         if (!isGalleryId(id)) return jsonResponse({ error: "Invalid photo id" }, 400);
+        if (!uploader.isOwner) {
+          // A barber deletes only their own photos. A photo with no record is an orphan nobody can see.
+          const record = (await readGallery(uploader.accessToken)).find((item) => item?.id === id);
+          if (record && record.barberId !== uploader.barberId) return jsonResponse({ error: "Not your photo" }, 403);
+        }
         const store = openStore();
         await Promise.all(GALLERY_WIDTHS.map((width) => store.delete(galleryBlobKey(id, width))));
         return jsonResponse({ deleted: true });
@@ -79,6 +97,10 @@ export const createHandler = (openStore = () => getStore({ name: GALLERY_STORE, 
       if (!variants) return jsonResponse({ error: "Invalid photo data" }, 400);
 
       const store = openStore();
+      // A barber may only create new photos, never overwrite the files of one that already exists.
+      if (!uploader.isOwner && (await store.getMetadata(galleryBlobKey(payload.id, GALLERY_WIDTHS[0])))) {
+        return jsonResponse({ error: "Photo already exists" }, 409);
+      }
       await Promise.all(
         [...variants].map(([width, bytes]) =>
           store.set(galleryBlobKey(payload.id, width), toArrayBuffer(bytes), { metadata: { contentType: "image/webp" } })),

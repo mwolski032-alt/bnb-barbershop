@@ -45,7 +45,7 @@ type ServiceDraft = {
   durationMinutes: string;
 };
 
-type BarberAdminSection = "schedule" | "clients" | "analytics" | "work" | "services" | "profile";
+type BarberAdminSection = "schedule" | "clients" | "analytics" | "work" | "services" | "profile" | "gallery";
 
 type BarberProfile = {
   id: string;

@@ -661,7 +661,7 @@ const getAppointmentData = async (
             userId: cleanText(member?.userId, 128),
             email: cleanText(member?.email, 254).toLowerCase(),
             access: Object.fromEntries(
-              ["schedule", "clients", "analytics", "work", "services", "profile"].map(
+              ["schedule", "clients", "analytics", "work", "services", "profile", "gallery"].map(
                 (section) => [section, member?.access?.[section] === true],
               ),
             ),

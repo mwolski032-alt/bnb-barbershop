@@ -1,4 +1,4 @@
-import { CalendarDays, BarChart3, Clock3, CircleUserRound, UsersRound } from "lucide-react";
+import { CalendarDays, BarChart3, Clock3, CircleUserRound, Images, UsersRound } from "lucide-react";
 import { timeSlots } from "./booking-selectors";
 import { type BarberAdminSection, type StandaloneAdminSection, type BarberDetails, type WaitlistTimePreference, type Service, type AppointmentStatus, type AdminSection, type SmsTemplate } from "./booking-types";
 import { type AppointmentMutationAction } from "./appointments";
@@ -37,9 +37,10 @@ export const barberAdminSections: BarberAdminSection[] = [
   "work",
   "services",
   "profile",
+  "gallery",
 ];
 
-export const standaloneAdminSections: StandaloneAdminSection[] = ["analytics", "work", "profile"];
+export const standaloneAdminSections: StandaloneAdminSection[] = ["analytics", "work", "profile", "gallery"];
 
 export const fullBarberAccess: Record<BarberAdminSection, boolean> = {
   schedule: true,
@@ -48,6 +49,7 @@ export const fullBarberAccess: Record<BarberAdminSection, boolean> = {
   work: true,
   services: true,
   profile: true,
+  gallery: true,
 };
 
 export const noBarberAccess: Record<BarberAdminSection, boolean> = {
@@ -57,6 +59,7 @@ export const noBarberAccess: Record<BarberAdminSection, boolean> = {
   work: false,
   services: false,
   profile: false,
+  gallery: false,
 };
 
 export const emptyBarberDetails: BarberDetails = {
@@ -105,6 +108,7 @@ export const adminSectionLabels: Record<AdminSection, string> = {
   analytics: "Analiza",
   work: "Praca",
   profile: "Profil",
+  gallery: "Galeria",
   team: "Zespół",
 };
 
@@ -115,6 +119,7 @@ export const teamAccessLabels: Record<BarberAdminSection, string> = {
   work: "Praca",
   services: "Usługi",
   profile: "Profil",
+  gallery: "Dodawanie zdjęć do galerii",
 };
 
 export const adminNavigationLabels: Record<AdminSection, string> = {
@@ -122,6 +127,7 @@ export const adminNavigationLabels: Record<AdminSection, string> = {
   analytics: "Analiza",
   work: "Praca",
   profile: "Profil",
+  gallery: "Galeria",
   team: "Zespół",
 };
 
@@ -130,6 +136,7 @@ export const adminNavigationIcons = {
   analytics: BarChart3,
   work: Clock3,
   profile: CircleUserRound,
+  gallery: Images,
   team: UsersRound,
 } satisfies Record<AdminSection, typeof CalendarDays>;
 

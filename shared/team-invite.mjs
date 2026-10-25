@@ -4,7 +4,7 @@
 // Pure functions, covered by unit tests, shared by the owner's panel and the sign-in check.
 
 export const BARBER_ID_PATTERN = /^[a-zA-Z0-9_-]{1,80}$/;
-export const ADMIN_SECTIONS = ["schedule", "clients", "analytics", "work", "services", "profile"];
+export const ADMIN_SECTIONS = ["schedule", "clients", "analytics", "work", "services", "profile", "gallery"];
 /** A new barber can fill in their own profile and nothing else; the owner opens the other sections. */
 export const NEW_BARBER_ACCESS = Object.fromEntries(ADMIN_SECTIONS.map((section) => [section, section === "profile"]));
 

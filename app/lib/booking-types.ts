@@ -10,7 +10,8 @@ export type BarberAdminSection =
   | "analytics"
   | "work"
   | "services"
-  | "profile";
+  | "profile"
+  | "gallery";
 
 export type AdminSection = Exclude<BarberAdminSection, "clients" | "services"> | "team";
 

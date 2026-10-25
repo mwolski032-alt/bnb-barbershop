@@ -10,7 +10,7 @@ const databaseScope =
   "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/firebase.messaging";
 // Tokens are cached per scope set.
 const cachedTokens = new Map();
-const adminSections = ["schedule", "clients", "analytics", "work", "services", "profile"];
+const adminSections = ["schedule", "clients", "analytics", "work", "services", "profile", "gallery"];
 const noAdminAccess = Object.fromEntries(adminSections.map((section) => [section, false]));
 const fullAdminAccess = Object.fromEntries(adminSections.map((section) => [section, true]));
 

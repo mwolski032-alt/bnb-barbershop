@@ -11,6 +11,7 @@ export const canonicalAccessSections = [
   "work",
   "services",
   "profile",
+  "gallery",
 ];
 
 export const cleanText = (value, maxLength = 160) =>

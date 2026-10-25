@@ -209,6 +209,7 @@ const defaultAvailabilityTimes = { startTime: "09:00", endTime: "17:00" };
 
 
 const SalonManager = lazy(() => import("./components/salon-manager"));
+const BarberGallery = lazy(() => import("./components/barber-gallery"));
 
 const ErrorMonitoringPanel = lazy(() => import("./components/error-monitoring-panel"));
 const AppointmentHistoryPanel = lazy(() => import("./components/appointment-history-panel"));
@@ -266,7 +267,7 @@ const newTeamMemberPlaceholder: BarberProfile = {
   userId: "",
   email: "",
   active: false,
-  access: { schedule: false, clients: false, analytics: false, work: false, services: false, profile: true },
+  access: { schedule: false, clients: false, analytics: false, work: false, services: false, profile: true, gallery: false },
 };
 
 export function BookingHome() {
@@ -492,7 +493,8 @@ export function BookingHome() {
   };
   const visibleAdminSections: AdminSection[] = [
     ...(canAccessAdminWorkspace ? (["schedule"] as AdminSection[]) : []),
-    ...standaloneAdminSections.filter((section) => canAccessAdminSection(section)),
+    // The owner manages every photo in their own panel, so "Galeria" is a barber-only tab.
+    ...standaloneAdminSections.filter((section) => canAccessAdminSection(section) && !(isOwner && section === "gallery")),
     ...(isOwner ? (["team"] as AdminSection[]) : []),
   ];
   const activeAdminNavIndex = Math.max(0, visibleAdminSections.indexOf(adminSection));
@@ -1869,7 +1871,7 @@ export function BookingHome() {
 
     const memory = readViewMemory(activeUser.uid);
     if (memory) {
-      if (isOneOf(memory.adminSection, ["schedule", "analytics", "work", "profile", "team"])) {
+      if (isOneOf(memory.adminSection, ["schedule", "analytics", "work", "profile", "gallery", "team"])) {
         setAdminSection(memory.adminSection);
       }
       if (isOneOf(memory.adminWorkspaceTab, ["upcoming", "schedule", "clients"])) {
@@ -5080,6 +5082,12 @@ export function BookingHome() {
                   onEditService={editService}
                   onDeleteService={(serviceId) => void deleteService(serviceId)}
                 />
+              </Suspense>
+            ) : null}
+
+            {!isOwner && signedInBarberId && adminSection === "gallery" ? (
+              <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie galerii" />}>
+                <BarberGallery barberId={signedInBarberId} />
               </Suspense>
             ) : null}
 

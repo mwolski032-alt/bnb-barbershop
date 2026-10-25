@@ -35,13 +35,13 @@ test("gallery is public to read but only the active owner may add, reorder and d
     await assertFails(set(ref(db, path), photo));
   }
   const owner = databaseFor(ownerUid);
-  // The gallery holds up to 20 photos (records 0 to 19) and may credit the barber who did the haircut.
-  await assertFails(set(ref(owner, "shopfront/gallery/20"), photo));
-  await assertSucceeds(set(ref(owner, "shopfront/gallery/19"), { ...photo, order: 19, barberId: "mateusz" }));
-  await assertFails(set(ref(owner, "shopfront/gallery/19"), { ...photo, order: 20 }));
-  await assertFails(set(ref(owner, "shopfront/gallery/19"), { ...photo, order: 19, barberId: "not a key/../" }));
-  await assertFails(set(ref(owner, "shopfront/gallery/19"), { ...photo, order: 19, barberId: 5 }));
-  await assertSucceeds(set(ref(owner, "shopfront/gallery/19"), null));
+  // The gallery holds up to 40 photos (records 0 to 39) and may credit the barber who did the haircut.
+  await assertFails(set(ref(owner, "shopfront/gallery/40"), photo));
+  await assertSucceeds(set(ref(owner, "shopfront/gallery/39"), { ...photo, order: 39, barberId: "mateusz" }));
+  await assertFails(set(ref(owner, "shopfront/gallery/39"), { ...photo, order: 40 }));
+  await assertFails(set(ref(owner, "shopfront/gallery/39"), { ...photo, order: 39, barberId: "not a key/../" }));
+  await assertFails(set(ref(owner, "shopfront/gallery/39"), { ...photo, order: 39, barberId: 5 }));
+  await assertSucceeds(set(ref(owner, "shopfront/gallery/39"), null));
   await assertSucceeds(set(ref(owner, path), photo));
   await assertSucceeds(set(ref(owner, `${path}/barberId`), "mateusz"));
   await assertFails(set(ref(owner, `${path}/barberId`), "unknown-barber"));
@@ -52,6 +52,34 @@ test("gallery is public to read but only the active owner may add, reorder and d
   await assertFails(set(ref(databaseFor(mateuszUid), path), null));
   await assertFails(set(ref(databaseFor(clientUid), `${path}/order`), 2));
   await assertSucceeds(set(ref(owner, path), null));
+});
+
+test("a barber the owner switched Galeria on for adds and deletes only their own photos", async () => {
+  const photo = { id: "qa-photo", imageUrl: "data:image/webp;base64,AAAA", alt: "Salon", order: 0 };
+  const owner = databaseFor(ownerUid);
+  const setGalleryAccess = (barberId, allowed) => environment.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `team/barbers/${barberId}/access/gallery`), allowed));
+  const mateusz = databaseFor(mateuszUid);
+  const kacper = databaseFor(kacperUid);
+  // Without the permission nobody but the owner can add.
+  await assertFails(set(ref(mateusz, "shopfront/gallery/3"), { ...photo, barberId: "mateusz" }));
+  await setGalleryAccess("mateusz", true);
+  // With it the barber adds a photo credited to themselves, never to someone else or to nobody.
+  await assertSucceeds(set(ref(mateusz, "shopfront/gallery/3"), { ...photo, barberId: "mateusz" }));
+  await assertFails(set(ref(mateusz, "shopfront/gallery/4"), { ...photo, barberId: "kacper" }));
+  await assertFails(set(ref(mateusz, "shopfront/gallery/4"), photo));
+  await assertFails(set(ref(mateusz, "shopfront/gallery/40"), { ...photo, barberId: "mateusz" }));
+  // They cannot edit it, take over an occupied slot or touch another barber's photo.
+  await assertFails(set(ref(mateusz, "shopfront/gallery/3/order"), 5));
+  await assertFails(set(ref(mateusz, "shopfront/gallery/3"), { ...photo, alt: "Changed", barberId: "mateusz" }));
+  await assertSucceeds(set(ref(owner, "shopfront/gallery/5"), { ...photo, order: 1, barberId: "kacper" }));
+  await assertFails(set(ref(mateusz, "shopfront/gallery/5"), null));
+  await assertFails(set(ref(kacper, "shopfront/gallery/3"), null));
+  // Deleting their own photo works; switching the permission off stops new uploads at once.
+  await assertSucceeds(set(ref(mateusz, "shopfront/gallery/3"), null));
+  await setGalleryAccess("mateusz", false);
+  await assertFails(set(ref(mateusz, "shopfront/gallery/3"), { ...photo, barberId: "mateusz" }));
+  await assertSucceeds(set(ref(owner, "shopfront/gallery/5"), null));
 });
 
 test("gallery records for stored photos accept only same-origin photo paths", async () => {

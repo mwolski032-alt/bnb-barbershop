@@ -434,7 +434,7 @@ test("merges schedule and clients into a permission-aware nearest appointments w
   assert.match(bookingHome, /const canAccessAdminWorkspace = canAccessAdminSchedule \|\| canAccessAdminClients/);
   assert.match(
     bookingHome,
-    /standaloneAdminSections\.filter\(\(section\) => canAccessAdminSection\(section\)\)/,
+    /standaloneAdminSections\.filter\(\(section\) => canAccessAdminSection\(section\) && !\(isOwner && section === "gallery"\)\)/,
   );
   assert.match(calendarScreen, /4 najbliższe wizyty/);
   assert.match(
