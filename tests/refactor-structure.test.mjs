@@ -29,7 +29,7 @@ test("booking-home no longer declares what it now imports", () => {
   for (const name of ["formatDuration", "buildCalendarEvent", "readViewMemory", "InstallGuideDialog", "normalizeTeamMember"]) {
     assert.doesNotMatch(home, new RegExp(`^(export )?(async )?(function|const) ${name}\\b`, "m"), name);
   }
-  assert.ok(home.split("\n").length < 7500, "the main file should keep shrinking, not grow back");
+  assert.ok(home.split("\n").length < 7200, "the main file should keep shrinking, not grow back");
 });
 
 test("every panel modal is wrapped so it can fade out instead of vanishing", () => {
@@ -55,4 +55,11 @@ test("dead CSS stays out: no rule targets a class that no source file uses", () 
   for (const dead of ["work-hero", "vacation-card", "work-metrics", "work-week-strip", "vacation-chip-list"]) {
     assert.doesNotMatch(css, new RegExp(`\\.${dead}\\b`), dead);
   }
+});
+
+test("push notification state lives in its own hook, not in the main file", () => {
+  assert.ok(existsSync(new URL("../app/hooks/use-push-device.ts", import.meta.url)));
+  assert.match(read("app/hooks/use-push-device.ts"), /export function usePushDevice/);
+  assert.doesNotMatch(home, /useState<PushDeviceStatus>/);
+  assert.doesNotMatch(home, /registerPushNotifications\(/);
 });

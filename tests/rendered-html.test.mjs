@@ -502,7 +502,6 @@ test("moves the complete appointment workflow into the calendar", async () => {
   ]);
 
   assert.match(await readFile(new URL("../app/components/screens/admin-calendar-screen.tsx", import.meta.url), "utf8"), /Dodaj wizytę/);
-  assert.match(bookingHome, /const renderCalendarAppointmentActions/);
   assert.match(bookingHome, /Potwierdź/);
   assert.match(bookingHome, /Rozlicz/);
   assert.match(bookingHome, /Nieobecność/);
@@ -875,6 +874,6 @@ test("shows content-shaped loading states and closes slow actions optimistically
 
 // Architectural assertions follow the modules extracted from the former monolith.
 async function readBookingModules() {
-  const paths = ["booking-home.tsx", "lib/booking-types.ts", "lib/booking-selectors.ts", "lib/analytics.ts", "hooks/use-client-directory.ts", "hooks/use-admin-calendar.ts", "hooks/use-barber-catalog.ts", "hooks/use-appointment-synchronization.ts", "lib/booking-labels.ts", "lib/booking-format.ts", "lib/calendar-export.ts", "lib/client-sms.ts", "lib/availability-helpers.ts", "lib/team-normalizers.ts", "lib/view-memory.ts", "lib/google-redirect.ts", "lib/pwa-install.ts", "components/install-guide-dialog.tsx", "components/screens/auth-screen.tsx", "components/screens/success-screen.tsx"];
+  const paths = ["booking-home.tsx", "lib/booking-types.ts", "lib/booking-selectors.ts", "lib/analytics.ts", "hooks/use-client-directory.ts", "hooks/use-admin-calendar.ts", "hooks/use-barber-catalog.ts", "hooks/use-appointment-synchronization.ts", "hooks/use-push-device.ts", "lib/booking-labels.ts", "lib/booking-format.ts", "lib/calendar-export.ts", "lib/client-sms.ts", "lib/availability-helpers.ts", "lib/team-normalizers.ts", "lib/view-memory.ts", "lib/google-redirect.ts", "lib/pwa-install.ts", "components/install-guide-dialog.tsx", "components/screens/auth-screen.tsx", "components/screens/success-screen.tsx"];
   return (await Promise.all(paths.map(path => readFile(new URL(`../app/${path}`, import.meta.url), "utf8")))).join("\n");
 }

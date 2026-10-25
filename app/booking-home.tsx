@@ -44,7 +44,6 @@ import {
   timeToMinutes,
   getAppointmentSortValue,
   canSettleAppointment,
-  getAvailabilityForDate,
   minutesToTime,
   dayKey,
 } from "./lib/booking-selectors";
@@ -110,6 +109,7 @@ import { useKnownPhone } from "./hooks/use-known-phone";
 import { saveClientProfile } from "./lib/client-profile";
 import { useClientAccount } from "./hooks/use-client-account";
 import { useNotificationNudge } from "./hooks/use-notification-nudge";
+import { usePushDevice } from "./hooks/use-push-device";
 import NotificationNudge from "./components/notification-nudge";
 import PhotoCropDialog from "./components/photo-crop-dialog";
 import { useBackNavigation } from "./hooks/use-back-navigation";
@@ -127,7 +127,7 @@ import {
 } from "./lib/offline-store";
 import { applyQueuedActions, isQueueableAction } from "../shared/offline-queue.mjs";
 import { AppointmentApiError, createAppointmentOperationId, mutateAppointment, type AppointmentApiResult, type AppointmentMutationAction } from "./lib/appointments";
-import { disablePushNotifications, getPushNotificationDeviceStatus, isPushNotificationsLocallyDisabled, listenForForegroundPushNotifications, registerPushNotifications, type PushDeviceStatus } from "./lib/notifications";
+import { listenForForegroundPushNotifications } from "./lib/notifications";
 import { isServiceCatalogReady, resolveActiveBarberId } from "../shared/appointment-sync.mjs";
 import { useAppointmentSynchronization } from "./hooks/use-appointment-synchronization";
 import { useClientDirectory } from "./hooks/use-client-directory";
@@ -151,7 +151,6 @@ import {
   adminNavigationIcons,
   smsTemplateLabels,
   workTimeOptions,
-  pushDeviceStatusLabel,
 } from "./lib/booking-labels";
 import {
   monthFormatter,
@@ -392,7 +391,6 @@ export function BookingHome() {
     durationMinutes: number;
   } | null>(null);
   const [successReady, setSuccessReady] = useState(false);
-  const [draggedAppointmentId, setDraggedAppointmentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [pendingNotificationAppointmentId, setPendingNotificationAppointmentId] = useState("");
   // The visits on screen come from this device's memory because the server could not be reached.
@@ -439,10 +437,6 @@ export function BookingHome() {
   const [profileDraft, setProfileDraft] = useState<BarberDetails>(emptyBarberDetails);
   const [profileFeedback, setProfileFeedback] = useState<WorkFeedback | null>(null);
   const [isProfileSaving, setIsProfileSaving] = useState(false);
-  const [pushDeviceStatus, setPushDeviceStatus] = useState<PushDeviceStatus>("checking");
-  const [isPushDeviceUpdating, setIsPushDeviceUpdating] = useState(false);
-  const [pushDeviceFeedback, setPushDeviceFeedback] = useState<WorkFeedback | null>(null);
-  const [isTouchDevice, setIsTouchDevice] = useState(false);
   const bookingServiceRef = useRef<HTMLDivElement | null>(null);
   const bookingBarberRef = useRef<HTMLDivElement | null>(null);
   const bookingCalendarRef = useRef<HTMLDivElement | null>(null);
@@ -476,8 +470,8 @@ export function BookingHome() {
       : null;
   const isBarber = Boolean(signedInBarberId);
   const isAdmin = isOwner || isBarber;
-  const pushDeviceEnabled = pushDeviceStatus === "enabled";
-  const pushDeviceLabel = pushDeviceStatusLabel[pushDeviceStatus];
+  const { pushDeviceStatus, isPushDeviceUpdating, pushDeviceFeedback, pushDeviceEnabled, pushDeviceLabel, registerCurrentPushDevice, handlePushDeviceToggle } =
+    usePushDevice({ activeUser, isOwner, isAdmin, setActionFeedback });
   const notificationNudge = useNotificationNudge({ ready: Boolean(activeUser) && !isOwner && sessionReady, status: pushDeviceStatus });
   const signedInBarberAccess = sessionContext?.access ?? fullBarberAccess;
   const canAccessAdminSchedule =
@@ -649,9 +643,9 @@ export function BookingHome() {
     days.find((day) => day.monthOffset === 0) ??
     days[0];
   const selectedDayKey = dayKey(selectedDay.date);
-  const { adminClientAppointments, adminDayAppointments, upcomingAdminAppointments, nearestAdminAppointments, adminDayAvailability, adminScheduleStartMinutes, adminScheduleEndMinutes, adminScheduleSlots, adminScheduleHours, adminScheduleDays } =
+  const { adminClientAppointments, adminDayAppointments, upcomingAdminAppointments, nearestAdminAppointments, adminDayAvailability, adminScheduleDays } =
     useAdminCalendar({ adminAppointments, barberAllAppointments, adminSelectedKey, workSettings, currentDate, today });
-  const { adminClientProfiles, activeAdminClientProfiles, directoryAdminClientProfiles, filteredAdminClients, calendarBookingClients } =
+  const { adminClientProfiles, directoryAdminClientProfiles, filteredAdminClients, calendarBookingClients } =
     useClientDirectory({ activeBarberId, adminClientAppointments, clientRecords, currentDate, clientWorkspaceTab: "directory", clientSearch, clientFilter, calendarClientSearch });
   const availableTimes = useMemo(
     () => !calendarDataReady ? [] :
@@ -1060,19 +1054,6 @@ export function BookingHome() {
     wizardOpen,
     workWorkspaceTab,
   ]);
-  const currentTimeLineMinutes =
-    adminSelectedKey === dayKey(currentDate)
-      ? currentDate.getHours() * 60 + currentDate.getMinutes()
-      : null;
-  const currentTimeLineVisible =
-    currentTimeLineMinutes !== null &&
-    currentTimeLineMinutes >= adminScheduleStartMinutes &&
-    currentTimeLineMinutes <= adminScheduleEndMinutes;
-  const currentTimeLineTop =
-    currentTimeLineMinutes !== null
-      ? ((currentTimeLineMinutes - adminScheduleStartMinutes) / 15) * 2.8
-      : 0;
-
   const receiveAppointmentSnapshot = useCallback(
     (result: AppointmentApiResult<AdminAppointment>) => {
       const normalizeLoadedAppointments = (items: AdminAppointment[] = []) =>
@@ -1572,30 +1553,6 @@ export function BookingHome() {
     }, 8_000);
   }, [isPwaUpdateRefreshing]);
 
-  const registerCurrentPushDevice = useCallback(async () => {
-    if (!activeUser || isOwner) return null;
-
-    const result = await registerPushNotifications(
-      {
-        uid: activeUser.uid,
-        displayName: activeUser.displayName ?? null,
-        email: activeUser.email ?? null,
-      },
-      isAdmin,
-    ).catch(() => ({ ok: false as const, reason: "token_error" as const }));
-    setPushDeviceStatus(
-      result.ok
-        ? "enabled"
-        : result.reason === "unsupported_browser" ||
-            result.reason === "unsupported_firebase_messaging"
-          ? "unsupported"
-          : result.reason === "permission_denied" && Notification.permission === "denied"
-            ? "blocked"
-            : "error",
-    );
-    return result;
-  }, [activeUser, isAdmin, isOwner]);
-
   useEffect(() => {
     let timerId = 0;
     const updateAtNextMinute = () => {
@@ -1606,59 +1563,6 @@ export function BookingHome() {
     updateAtNextMinute();
     return () => window.clearTimeout(timerId);
   }, []);
-
-  useEffect(() => {
-    if (!activeUser || isOwner) {
-      setPushDeviceStatus("checking");
-      setPushDeviceFeedback(null);
-      return undefined;
-    }
-
-    let stopped = false;
-    const notificationUser = {
-      uid: activeUser.uid,
-      displayName: activeUser.displayName ?? null,
-      email: activeUser.email ?? null,
-    };
-    const refreshStatus = async () => {
-      const status = await getPushNotificationDeviceStatus(notificationUser);
-      if (!stopped) setPushDeviceStatus(status);
-    };
-    const refreshAfterReturn = () => {
-      if (document.visibilityState === "visible") void refreshStatus();
-    };
-
-    setPushDeviceStatus("checking");
-    void refreshStatus();
-    window.addEventListener("focus", refreshAfterReturn);
-    document.addEventListener("visibilitychange", refreshAfterReturn);
-
-    return () => {
-      stopped = true;
-      window.removeEventListener("focus", refreshAfterReturn);
-      document.removeEventListener("visibilitychange", refreshAfterReturn);
-    };
-  }, [activeUser, isOwner]);
-
-  useEffect(() => {
-    if (!pushDeviceFeedback) return undefined;
-    const timeoutId = window.setTimeout(() => setPushDeviceFeedback(null), 4500);
-    return () => window.clearTimeout(timeoutId);
-  }, [pushDeviceFeedback]);
-
-  useEffect(() => {
-    if (isPushDeviceUpdating) {
-      setActionFeedback({
-        key: "push_device",
-        kind: "pending",
-        message: "Aktualizuję powiadomienia…",
-      });
-      return;
-    }
-    if (pushDeviceFeedback) {
-      setActionFeedback({ key: "push_device", ...pushDeviceFeedback });
-    }
-  }, [isPushDeviceUpdating, pushDeviceFeedback]);
 
   useEffect(() => {
     if (!actionFeedback || actionFeedback.kind === "pending") return undefined;
@@ -1693,16 +1597,6 @@ export function BookingHome() {
       motionQuery.removeEventListener("change", updateEffectsProfile);
       document.documentElement.classList.remove("reduced-effects");
     };
-  }, []);
-
-  useEffect(() => {
-    const touchQuery = window.matchMedia("(pointer: coarse)");
-    const updateTouchMode = () => setIsTouchDevice(touchQuery.matches);
-
-    updateTouchMode();
-    touchQuery.addEventListener("change", updateTouchMode);
-
-    return () => touchQuery.removeEventListener("change", updateTouchMode);
   }, []);
 
   useEffect(() => {
@@ -1762,20 +1656,6 @@ export function BookingHome() {
       window.removeEventListener("focus", checkForUpdateOnFocus);
     };
   }, []);
-
-  useEffect(() => {
-    if (
-      !activeUser ||
-      isOwner ||
-      typeof Notification === "undefined" ||
-      Notification.permission !== "granted" ||
-      isPushNotificationsLocallyDisabled(activeUser.uid)
-    ) {
-      return;
-    }
-
-    void registerCurrentPushDevice();
-  }, [activeUser, isOwner, registerCurrentPushDevice]);
 
   useEffect(() => {
     if (!activeUser || isOwner) return undefined;
@@ -2802,12 +2682,6 @@ export function BookingHome() {
     }
   };
 
-  const shiftAdminSelectedDay = (offset: -1 | 1) => {
-    const nextDate = dateFromKey(adminSelectedKey);
-    nextDate.setDate(nextDate.getDate() + offset);
-    setAdminSelectedKey(dayKey(nextDate));
-  };
-
   const openSelectedDayInWorkEditor = () => {
     setAvailabilityDraft((current) => ({ ...current, dates: [adminSelectedKey] }));
     setEditingAvailabilityKey(null);
@@ -3343,80 +3217,6 @@ export function BookingHome() {
     }
   };
 
-  const handlePushDeviceToggle = async () => {
-    if (!activeUser || isOwner || isPushDeviceUpdating || pushDeviceStatus === "checking") return;
-
-    setIsPushDeviceUpdating(true);
-    setPushDeviceFeedback(null);
-    const notificationUser = {
-      uid: activeUser.uid,
-      displayName: activeUser.displayName ?? null,
-      email: activeUser.email ?? null,
-    };
-
-    try {
-      if (pushDeviceEnabled) {
-        const result = await disablePushNotifications(notificationUser);
-        if (!result.ok) {
-          setPushDeviceStatus("error");
-          setPushDeviceFeedback({
-            kind: "error",
-            message: "Nie udało się wyłączyć powiadomień. Spróbuj ponownie.",
-          });
-          return;
-        }
-        setPushDeviceStatus("disabled");
-        setPushDeviceFeedback({
-          kind: "success",
-          message: "Powiadomienia na tym urządzeniu są wyłączone.",
-        });
-        return;
-      }
-
-      if (
-        pushDeviceStatus === "blocked" ||
-        (typeof Notification !== "undefined" && Notification.permission === "denied")
-      ) {
-        setPushDeviceStatus("blocked");
-        setPushDeviceFeedback({
-          kind: "error",
-          message: "Odblokuj powiadomienia dla BNB Barbershop w ustawieniach telefonu.",
-        });
-        return;
-      }
-
-      if (pushDeviceStatus === "unsupported") {
-        setPushDeviceFeedback({
-          kind: "error",
-          message:
-            "Ta przeglądarka nie obsługuje powiadomień. Na iPhonie dodaj aplikację do ekranu początkowego.",
-        });
-        return;
-      }
-
-      const result = await registerCurrentPushDevice();
-      if (!result?.ok) {
-        setPushDeviceFeedback({
-          kind: "error",
-          message:
-            result?.reason === "permission_denied"
-              ? typeof Notification !== "undefined" && Notification.permission === "denied"
-                ? "Powiadomienia zostały zablokowane. Włącz je w ustawieniach telefonu."
-                : "Zezwól na powiadomienia w komunikacie systemowym."
-              : "Nie udało się włączyć powiadomień. Spróbuj ponownie.",
-        });
-        return;
-      }
-
-      setPushDeviceFeedback({
-        kind: "success",
-        message: "Powiadomienia na tym urządzeniu są włączone.",
-      });
-    } finally {
-      setIsPushDeviceUpdating(false);
-    }
-  };
-
   const selectBookingBarber = (barberId: string, scrollToServices = true) => {
     if (barberId === activeBarberId && selectedBarberId === barberId) return;
 
@@ -3775,34 +3575,6 @@ export function BookingHome() {
     }
   };
 
-  const canMoveAdminAppointment = (
-    appointment: AdminAppointment,
-    startTime: string,
-    targetDateKey = adminSelectedKey,
-  ) => {
-    const targetAvailability = getAvailabilityForDate(targetDateKey, workSettings);
-    const startMinutes = timeToMinutes(startTime);
-    if (
-      !targetAvailability ||
-      startMinutes < timeToMinutes(targetAvailability.startTime) ||
-      startMinutes + appointment.durationMinutes > timeToMinutes(targetAvailability.endTime)
-    ) {
-      return false;
-    }
-
-    return !adminAppointments.some(
-      (otherAppointment) =>
-        otherAppointment.id !== appointment.id &&
-        otherAppointment.dateKey === targetDateKey &&
-        rangesOverlap(
-          startMinutes,
-          appointment.durationMinutes,
-          timeToMinutes(otherAppointment.startTime),
-          otherAppointment.durationMinutes,
-        ),
-    );
-  };
-
   const confirmBooking = async () => {
     if (!canConfirm || !selectedTime || isSaving || !activeUser || !selectedBarber) return;
 
@@ -3934,39 +3706,6 @@ export function BookingHome() {
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const moveAdminAppointment = async (appointmentId: string, startTime: string) => {
-    const appointment = adminAppointments.find((item) => item.id === appointmentId);
-    if (!appointment || !canMoveAdminAppointment(appointment, startTime)) {
-      setDraggedAppointmentId(null);
-      return;
-    }
-
-    try {
-      await runAppointmentOperation(
-        "reschedule_admin",
-        { appointmentId, dateKey: adminSelectedKey, startTime },
-        {
-          key: `reschedule_admin:${appointmentId}`,
-          expectedVersion: appointment.version ?? 1,
-        },
-      );
-    } catch (error) {
-      setBookingError(error instanceof Error ? error.message : "Nie udało się przesunąć wizyty.");
-    } finally {
-      setDraggedAppointmentId(null);
-    }
-  };
-
-  const shiftAdminAppointment = (appointmentId: string, minutes: -15 | 15) => {
-    const appointment = adminAppointments.find((item) => item.id === appointmentId);
-    if (!appointment) return;
-
-    void moveAdminAppointment(
-      appointmentId,
-      minutesToTime(timeToMinutes(appointment.startTime) + minutes),
-    );
   };
 
   const declineAdminAppointment = async (appointmentId: string, { confirmed = false } = {}) => {
@@ -4379,109 +4118,6 @@ export function BookingHome() {
     }
   };
 
-  const renderCalendarAppointmentActions = (appointment: AdminAppointment, mobile = false) => {
-    const status = normalizeAppointmentStatus(appointment.status);
-    const isClosed = isClosedAppointmentStatus(status);
-    const potentialNoShow = isPotentialNoShow(appointment, currentDate);
-    const settlementAvailable = canSettleAppointment(appointment, currentDate);
-    const awaitsAdminConfirmation =
-      status === "rescheduled" && appointment.rescheduledBy !== "admin";
-    const canEdit = !isClosed && !potentialNoShow;
-
-    if (isClosed) {
-      return status === "completed" ? (
-        <div className={mobile ? "mobile-agenda-actions" : "appointment-actions"}>
-          <button type="button" onClick={() => openAdminAppointmentEdit(appointment)}>
-            Edytuj cenę
-          </button>
-        </div>
-      ) : null;
-    }
-
-    return (
-      <div className={mobile ? "mobile-agenda-actions" : "appointment-actions"}>
-        {awaitsAdminConfirmation ? (
-          <button
-            className="confirm"
-            type="button"
-            disabled={isSaving || isActionPending(`confirm_admin:${appointment.id}`)}
-            aria-busy={isActionPending(`confirm_admin:${appointment.id}`)}
-            onClick={() => void confirmClientRescheduledAppointment(appointment.id)}
-          >
-            Potwierdź
-          </button>
-        ) : null}
-        {settlementAvailable ? (
-          <button
-            className="settle"
-            type="button"
-            disabled={Boolean(settlingAppointmentId)}
-            aria-busy={isActionPending(`settle_admin:${appointment.id}`)}
-            onClick={() => void settleAdminAppointment(appointment)}
-          >
-            {settlingAppointmentId === appointment.id ? "Zapis..." : "Rozlicz"}
-          </button>
-        ) : null}
-        {potentialNoShow ? (
-          <button
-            className="no-show"
-            type="button"
-            disabled={isSaving || isActionPending(`mark_no_show_admin:${appointment.id}`)}
-            aria-busy={isActionPending(`mark_no_show_admin:${appointment.id}`)}
-            onClick={() => void markAdminAppointmentNoShow(appointment)}
-          >
-            Nieobecność
-          </button>
-        ) : null}
-        {canEdit ? (
-          <>
-            <button
-              type="button"
-              onClick={() => shiftAdminAppointment(appointment.id, -15)}
-              disabled={
-                isActionPending(`reschedule_admin:${appointment.id}`) ||
-                !canMoveAdminAppointment(
-                  appointment,
-                  minutesToTime(timeToMinutes(appointment.startTime) - 15),
-                )
-              }
-              aria-busy={isActionPending(`reschedule_admin:${appointment.id}`)}
-              aria-label={`Cofnij wizytę ${appointment.clientName} o 15 minut`}
-            >
-              -15
-            </button>
-            <button
-              type="button"
-              onClick={() => shiftAdminAppointment(appointment.id, 15)}
-              disabled={
-                isActionPending(`reschedule_admin:${appointment.id}`) ||
-                !canMoveAdminAppointment(
-                  appointment,
-                  minutesToTime(timeToMinutes(appointment.startTime) + 15),
-                )
-              }
-              aria-busy={isActionPending(`reschedule_admin:${appointment.id}`)}
-              aria-label={`Przesuń wizytę ${appointment.clientName} o 15 minut`}
-            >
-              +15
-            </button>
-            <button type="button" onClick={() => openAdminAppointmentEdit(appointment)}>
-              Edytuj
-            </button>
-            <button
-              className={mobile ? "decline" : "decline-button"}
-              type="button"
-              disabled={isActionPending(`cancel_admin:${appointment.id}`)}
-              aria-busy={isActionPending(`cancel_admin:${appointment.id}`)}
-              onClick={() => declineAdminAppointment(appointment.id)}
-            >
-              Anuluj
-            </button>
-          </>
-        ) : null}
-      </div>
-    );
-  };
   const selectSmsTemplate = (template: SmsTemplate) => {
     if (!smsAppointment) return;
 
