@@ -1,0 +1,73 @@
+/* The "show all photos" mosaic and the full-screen viewer. The home-page gallery is untouched. */
+
+/* ---- Mosaic ---- */
+.mosaic-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.mosaic-filters button { min-height: 40px; padding: 8px 16px; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 14px; cursor: pointer; transition: var(--transition-interactive), transform var(--duration-slow) var(--ease-out); }
+.mosaic-filters button[aria-pressed="true"] { border-color: var(--color-secondary); background: var(--color-secondary); color: var(--color-on-primary); transform: scale(1.05); }
+
+.mosaic { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: 120px; grid-auto-flow: dense; gap: 10px; perspective: 1200px; }
+.mosaic-tile { --tilt-x: 0deg; --tilt-y: 0deg; position: relative; overflow: hidden; min-width: 0; padding: 0; border: 0; border-radius: 20px; background: var(--color-surface-secondary); color: #fff; cursor: pointer;
+  opacity: 0; transform: translateY(48px) scale(.94);
+  transition: opacity 800ms var(--ease-out), transform 800ms var(--ease-out), filter var(--duration-slow), box-shadow var(--duration-base); }
+.mosaic-tile.is-visible { opacity: 1; transform: rotateX(var(--tilt-x)) rotateY(var(--tilt-y)); }
+.mosaic-tile.is-visible:hover { box-shadow: 0 26px 50px -22px rgb(1 66 65 / 70%); z-index: 1; transition-delay: 0ms !important; }
+.mosaic-tile[data-dim] { opacity: .2; filter: grayscale(1); transform: scale(.96); }
+.mosaic-tile .gallery-photo { position: absolute; inset: 0; height: 100%; }
+.mosaic-tile .gallery-photo img { width: 100%; height: 100%; aspect-ratio: auto; object-fit: cover; transition: opacity var(--duration-slow) var(--ease-out), transform 1200ms var(--ease-out); }
+.mosaic-tile:hover .gallery-photo img { transform: scale(1.12); }
+.mosaic-glare { position: absolute; inset: 0; background: radial-gradient(240px circle at var(--glare-x, 50%) var(--glare-y, 50%), rgb(255 255 255 / 34%), transparent 62%); opacity: 0; transition: opacity var(--duration-base); pointer-events: none; }
+.mosaic-tile:hover .mosaic-glare { opacity: 1; }
+.mosaic-label { position: absolute; inset: auto 0 0; display: flex; align-items: baseline; gap: 8px; padding: 34px 14px 12px; background: linear-gradient(0deg, rgb(2 16 15 / 78%), transparent); text-align: left; transform: translateY(12px); opacity: 0; transition: transform var(--duration-slow) var(--ease-out), opacity var(--duration-slow); pointer-events: none; }
+.mosaic-label b { font-family: var(--font-display); font-weight: 500; font-size: 1.1rem; }
+.mosaic-label em { font-size: 13px; font-style: normal; opacity: .85; }
+.mosaic-tile:hover .mosaic-label, .mosaic-tile:focus-visible .mosaic-label { transform: none; opacity: 1; }
+@media (hover: none) { .mosaic-label { transform: none; opacity: 1; } }
+
+/* 7-tile pattern that tiles a 6-column grid with no holes (3x6 block, then 6x2 block). */
+.mosaic-tile:nth-child(7n+1) { grid-column: span 3; grid-row: span 3; }
+.mosaic-tile:nth-child(7n+2) { grid-column: span 3; grid-row: span 2; }
+.mosaic-tile:nth-child(7n+3) { grid-column: span 3; grid-row: span 1; }
+.mosaic-tile:nth-child(7n+4), .mosaic-tile:nth-child(7n+5) { grid-column: span 2; grid-row: span 2; }
+.mosaic-tile:nth-child(7n+6), .mosaic-tile:nth-child(7n) { grid-column: span 2; grid-row: span 1; }
+@media (max-width: 700px) {
+  .mosaic { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 120px; gap: 7px; }
+  .mosaic-tile { border-radius: 14px; }
+  .mosaic-tile:nth-child(n) { grid-column: span 1; grid-row: span 1; }
+  .mosaic-tile:nth-child(5n+1) { grid-column: span 2; grid-row: span 2; }
+}
+
+/* ---- Viewer: cinematic ---- */
+.salon-lightbox { background: #02100f; }
+.lightbox-stage { padding-bottom: max(150px, calc(env(safe-area-inset-bottom) + 130px)); }
+.lightbox-frame { display: grid; max-width: 100%; max-height: 100%; border-radius: var(--radius-md); overflow: hidden; box-shadow: 0 30px 90px rgb(0 0 0 / 60%); animation: lightbox-reveal 900ms var(--ease-out) both; }
+.lightbox-frame[data-direction="prev"] { animation-name: lightbox-reveal-prev; }
+@keyframes lightbox-reveal { from { clip-path: inset(0 0 0 100% round 20px); transform: scale(1.04); } }
+@keyframes lightbox-reveal-prev { from { clip-path: inset(0 100% 0 0 round 20px); transform: scale(1.04); } }
+.salon-lightbox .lightbox-photo { max-height: calc(100dvh - 230px); border-radius: 0; box-shadow: none; animation: lightbox-breathe 14s ease-in-out infinite alternate; }
+@keyframes lightbox-breathe { from { transform: scale(1); } to { transform: scale(1.07); } }
+.lightbox-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 45%, transparent 45%, rgb(2 16 15 / 70%) 100%); }
+
+.salon-lightbox .lightbox-caption { bottom: calc(max(18px, env(safe-area-inset-bottom)) + 84px); padding: 0; background: none; color: var(--color-star-bright); font-family: var(--font-display); font-size: clamp(1.1rem, 3.4vw, 1.6rem); letter-spacing: .04em; }
+.lightbox-caption span { display: inline-block; opacity: 0; transform: translateY(26px) rotate(4deg); animation: lightbox-letter 800ms var(--ease-out) forwards; }
+@keyframes lightbox-letter { to { opacity: 1; transform: none; } }
+
+.salon-lightbox .lightbox-counter { top: max(22px, env(safe-area-inset-top)); bottom: auto; left: 22px; padding: 0; background: none; color: #fff; font-family: var(--font-display); font-size: 1.1rem; letter-spacing: .1em; transform: none; }
+.lightbox-counter b { font-size: 2.6rem; font-weight: 300; }
+.salon-lightbox .lightbox-arrow { border-color: rgb(255 255 255 / 35%); background: rgb(255 255 255 / 12%); color: #fff; backdrop-filter: blur(8px); }
+.salon-lightbox .lightbox-arrow:hover { background: var(--color-star-bright); color: var(--color-text); }
+
+.lightbox-strip { position: absolute; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); z-index: 2; display: flex; gap: 8px; max-width: min(720px, calc(100% - 32px)); padding: 6px; overflow-x: auto; scrollbar-width: none; transform: translateX(-50%); }
+.lightbox-strip::-webkit-scrollbar { display: none; }
+.lightbox-strip button { flex: none; width: 56px; height: 56px; padding: 0; overflow: hidden; border: 0; border-radius: 10px; opacity: .5; cursor: pointer; transition: opacity var(--duration-slow), transform var(--duration-slow) var(--ease-out), outline-color var(--duration-base); outline: 2px solid transparent; outline-offset: 2px; }
+.lightbox-strip button:hover { opacity: 1; transform: translateY(-4px); }
+.lightbox-strip button[aria-current] { opacity: 1; outline-color: var(--color-star-bright); transform: scale(1.1); }
+.lightbox-strip .gallery-photo, .lightbox-strip img { height: 100%; width: 100%; object-fit: cover; }
+@media (max-width: 700px) {
+  .lightbox-strip button { width: 44px; height: 44px; border-radius: 8px; }
+  .lightbox-stage { padding-bottom: max(130px, calc(env(safe-area-inset-bottom) + 110px)); }
+  .salon-lightbox .lightbox-photo { max-height: calc(100dvh - 210px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lightbox-frame, .salon-lightbox .lightbox-photo, .lightbox-caption span, .mosaic-tile { animation: none; transition-duration: 1ms; }
+  .lightbox-caption span, .mosaic-tile { opacity: 1; transform: none; }
+}

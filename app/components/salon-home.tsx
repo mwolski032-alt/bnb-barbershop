@@ -19,6 +19,7 @@ import { useCountUp } from "../hooks/use-count-up";
 import ProfileAvatar from "./profile-avatar";
 import GalleryPhoto from "./gallery-photo";
 import GalleryLightbox from "./gallery-lightbox";
+import GalleryMosaic from "./gallery-mosaic";
 import { useReveal } from "../hooks/use-reveal";
 import { useBackNavigation } from "../hooks/use-back-navigation";
 import type { SalonImage } from "./salon-manager";
@@ -287,9 +288,7 @@ export default function SalonHome(props: Props) {
     {reviewsOpen && <ReviewsDialog reviews={reviews} summary={reviewSummary} barbers={barbers} onClose={() => setReviewsOpen(false)} />}
     {galleryOpen && <SalonDialog title="Wszystkie zdjęcia B'n'B" onClose={() => setGalleryOpen(false)} gallery>
       <div className="salon-gallery-all-heading"><span className="salon-overline">GALERIA B&apos;N&apos;B</span><h2>Wszystkie zdjęcia</h2></div>
-      <div className="salon-gallery-all">{gallery.map((photo, index) => <button type="button" key={photo.id} onClick={() => { setGalleryOpen(false); setLightbox(index); }} aria-label={`Powiększ zdjęcie ${index + 1}: ${photo.alt}`}>
-        <GalleryPhoto photo={photo} sizes="(max-width: 700px) 50vw, 320px" /><span>{String(index + 1).padStart(2, "0")}</span>{photoBarber(photo) && <em className="salon-gallery-barber">{photoBarber(photo)}</em>}
-      </button>)}</div>
+      <GalleryMosaic photos={gallery} barberName={photoBarber} onOpen={index => { setGalleryOpen(false); setLightbox(index); }} />
     </SalonDialog>}
     {lightbox !== null && gallery.length > 0 && <GalleryLightbox photos={gallery} index={Math.min(lightbox, gallery.length - 1)} onIndex={setLightbox} onClose={() => setLightbox(null)} caption={photo => photoBarber(photo) ? `Barber: ${photoBarber(photo)}` : ""} />}
   </main>;
