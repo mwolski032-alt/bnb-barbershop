@@ -31,11 +31,14 @@ const PHOTO = /^data:image\/(?:webp|jpeg|png);base64,/;
 const ROUND_ICON = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/;
 
 // Name and picture version of everyone who would get the message, for the list the sender can look through.
-const describeRecipients = async ({ audience, clients, reachableUids, accessToken }) => {
+const describeRecipients = async ({ audience, clients, devices, reachableUids, accessToken }) => {
+  // Best name first: the client's card, then their own profile, then the Google name and e-mail saved with the device.
   const names = new Map();
+  const fallbacks = new Map();
   for (const client of Object.values(clients)) {
     const name = `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim();
     if (client?.userId && name) names.set(client.userId, name);
+    else if (client?.userId && client.email) fallbacks.set(client.userId, client.email);
   }
   const missing = audience.filter((uid) => !names.has(uid)).slice(0, 200);
   const [versions, profileNames] = await Promise.all([
@@ -43,6 +46,11 @@ const describeRecipients = async ({ audience, clients, reachableUids, accessToke
     Promise.all(missing.map((uid) => readDatabase(`clientProfiles/${encodeURIComponent(uid)}/displayName`, accessToken).catch(() => ""))),
   ]);
   missing.forEach((uid, index) => { if (profileNames[index]) names.set(uid, String(profileNames[index])); });
+  for (const device of devices) {
+    if (!names.has(device.uid) && device.displayName.trim()) names.set(device.uid, device.displayName.trim());
+    else if (!fallbacks.has(device.uid) && device.email) fallbacks.set(device.uid, device.email);
+  }
+  for (const [uid, email] of fallbacks) if (!names.has(uid)) names.set(uid, email);
   return audience
     .map((uid) => ({
       uid,
@@ -117,7 +125,7 @@ export default async function handler(request) {
     }
 
     if (action === "preview") {
-      return jsonResponse({ ok: true, recipients: audience.length, reachable, title, people: await describeRecipients({ audience, clients: clients ?? {}, reachableUids, accessToken }) });
+      return jsonResponse({ ok: true, recipients: audience.length, reachable, title, people: await describeRecipients({ audience, clients: clients ?? {}, devices, reachableUids, accessToken }) });
     }
     if (reachable === 0) {
       return jsonResponse({ ok: false, error: "Nikt z klientów nie ma jeszcze włączonych powiadomień." }, 409);

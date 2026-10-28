@@ -760,7 +760,8 @@ export const collectBroadcastDevices = async (accessToken, uids) => {
   for (const [uid, byDevice] of Object.entries(tokens)) {
     if (!wanted.has(uid)) continue;
     for (const [deviceKey, device] of Object.entries(byDevice ?? {})) {
-      if (device?.token && device.active !== false) devices.push({ uid, deviceKey, token: device.token });
+      // The Google name and address saved with the device let the sender recognise people who never booked a visit.
+      if (device?.token && device.active !== false) devices.push({ uid, deviceKey, token: device.token, displayName: String(device.displayName ?? ""), email: String(device.email ?? "") });
     }
   }
   return devices;
