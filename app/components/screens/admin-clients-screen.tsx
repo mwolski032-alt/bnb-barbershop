@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, type CSSProperties, type ReactNode } from "react";
-import { ChevronRight, Plus, Search, X } from "lucide-react";
+import { ChevronRight, Megaphone, Plus, Search, X } from "lucide-react";
 
 import ProfileAvatar from "../profile-avatar";
 
@@ -50,6 +50,8 @@ type AdminClientsScreenProps = {
   filter: ClientFilter;
   currentDate: Date;
   onCreateClient: () => void;
+  /** Opens "Napisz do klientów". Left out when this account may not write to clients. */
+  onBroadcast?: () => void;
   onSearchChange: (value: string) => void;
   onFilterChange: (filter: ClientFilter) => void;
   onOpenClient: (clientId: string) => void;
@@ -99,6 +101,7 @@ export default function AdminClientsScreen({
   filter,
   currentDate,
   onCreateClient,
+  onBroadcast,
   onSearchChange,
   onFilterChange,
   onOpenClient,
@@ -129,12 +132,20 @@ export default function AdminClientsScreen({
               Klienci <span>{directoryClients.length}</span>
             </h2>
           </div>
-          {canManageClients ? (
-            <button className="clients-base-add" type="button" onClick={onCreateClient}>
-              <Plus aria-hidden="true" />
-              Dodaj
-            </button>
-          ) : null}
+          <div className="clients-base-actions">
+            {onBroadcast ? (
+              <button className="clients-base-add clients-base-broadcast" type="button" onClick={onBroadcast}>
+                <Megaphone aria-hidden="true" />
+                Napisz do klientów
+              </button>
+            ) : null}
+            {canManageClients ? (
+              <button className="clients-base-add" type="button" onClick={onCreateClient}>
+                <Plus aria-hidden="true" />
+                Dodaj
+              </button>
+            ) : null}
+          </div>
         </header>
 
         <label className="clients-base-search">

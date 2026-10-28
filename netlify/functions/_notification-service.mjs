@@ -752,7 +752,50 @@ export const sendDirectPush = async ({ accessToken, uid, title, body, tag, siteU
   };
 };
 
-export const sendTestDeviceNotification = async ({ uid, appointment, siteUrl }) => {
+// Every push device of the given accounts, read in one go (not one read per person).
+export const collectBroadcastDevices = async (accessToken, uids) => {
+  const wanted = new Set(uids);
+  const tokens = (await readDatabase("notificationTokens", accessToken)) ?? {};
+  const devices = [];
+  for (const [uid, byDevice] of Object.entries(tokens)) {
+    if (!wanted.has(uid)) continue;
+    for (const [deviceKey, device] of Object.entries(byDevice ?? {})) {
+      if (device?.token && device.active !== false) devices.push({ uid, deviceKey, token: device.token });
+    }
+  }
+  return devices;
+};
+
+// A message written by hand ("Napisz do klientów"). It looks like a chat message: the sender's name as the title and
+// their picture as the icon. Sent a few devices at a time so a long list never runs into the function's time limit.
+export const sendBroadcastPush = async ({ accessToken, devices, title, body, icon, tag, siteUrl, query, linkEvent = "broadcast" }) => {
+  const link = new URL(siteUrl);
+  if (query) {
+    link.searchParams.set("event", linkEvent);
+    for (const [key, value] of Object.entries(query)) link.searchParams.set(key, value);
+  }
+  const results = [];
+  for (let index = 0; index < devices.length; index += 10) {
+    const batch = devices.slice(index, index + 10);
+    results.push(...await Promise.all(batch.map((device) => sendToDevice(
+      accessToken,
+      device,
+      { title, body },
+      { id: tag, lastOperationId: "" },
+      "broadcast",
+      siteUrl,
+      link.href,
+      icon ? { icon } : {},
+    ))));
+  }
+  return {
+    devices: devices.length,
+    sent: results.filter((result) => result.status === "delivered").length,
+    failed: results.filter((result) => result.status === "failed").length,
+  };
+};
+
+export const sendTestDeviceNotification = async({ uid, appointment, siteUrl }) => {
   const accessToken = await getAccessToken();
   const [tokensForUser, owner] = await Promise.all([
     readDatabase(`notificationTokens/${encodeURIComponent(uid)}`, accessToken),

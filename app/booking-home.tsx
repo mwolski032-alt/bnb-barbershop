@@ -22,6 +22,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Mail,
+  Megaphone,
   MessageSquare,
   Phone,
   RefreshCw,
@@ -202,6 +203,7 @@ import { detectInstallPlatform, isRunningAsInstalledApp, type DeferredInstallPro
 const AdminCalendarScreen = lazy(() => import("./components/screens/admin-calendar-screen"));
 
 const AdminClientsScreen = lazy(() => import("./components/screens/admin-clients-screen"));
+const ClientBroadcast = lazy(() => import("./components/client-broadcast"));
 
 const AdminAnalyticsScreen = lazy(() => import("./components/screens/admin-analytics-screen"));
 
@@ -404,6 +406,7 @@ export function BookingHome() {
   const [clientSearch, setClientSearch] = useState("");
   const [calendarClientSearch, setCalendarClientSearch] = useState("");
   const [calendarClientPickerOpen, setCalendarClientPickerOpen] = useState(false);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
   const [clientWorkspaceTab, setClientWorkspaceTab] = useState<ClientWorkspaceTab>("appointments");
   const [pendingClientRemovalId, setPendingClientRemovalId] = useState<string | null>(null);
@@ -512,6 +515,8 @@ export function BookingHome() {
     teamMembers.find((barber) => barber.id === visibleBarberId) ?? null;
   const signedInBarber =
     teamMembers.find((barber) => barber.id === signedInBarberId) ?? null;
+  // The owner may switch a barber's "Napisz do klientów" off in the team screen; the owner always may write.
+  const canWriteToClients = isOwner || (isBarber && signedInBarber?.broadcastBlocked !== true);
   const signedInBarberProfile = signedInBarberId
     ? barberProfiles[signedInBarberId] ?? emptyBarberDetails
     : emptyBarberDetails;
@@ -3062,6 +3067,35 @@ export function BookingHome() {
     }
   };
 
+  // "Może pisać do klientów": off writes `broadcastBlocked: true`, on removes the field again.
+  const updateTeamMemberBroadcast = async (member: BarberProfile, allowed: boolean) => {
+    if (!isOwner || isTeamSaving) return;
+    const change = (blocked: boolean) => setTeamMembers((current) =>
+      current.map((currentMember) => {
+        if (currentMember.id !== member.id) return currentMember;
+        const { broadcastBlocked: _previous, ...rest } = currentMember;
+        return blocked ? { ...rest, broadcastBlocked: true } : rest;
+      }));
+    try {
+      setIsTeamSaving(true);
+      setTeamFeedback(null);
+      change(!allowed);
+      await update(ref(realtimeDb, `team/barbers/${member.id}`), {
+        broadcastBlocked: allowed ? null : true,
+        updatedAt: serverTimestamp(),
+      });
+      const message = allowed ? `${member.name} może znowu pisać do klientów.` : `${member.name} nie może już pisać do klientów.`;
+      setTeamFeedback({ kind: "success", message });
+      showActionFeedback("toggle_team_member", "success", message);
+    } catch {
+      change(member.broadcastBlocked === true);
+      setTeamFeedback({ kind: "error", message: "Nie udało się zmienić uprawnienia." });
+      showActionFeedback("toggle_team_member", "error", "Nie udało się zmienić uprawnienia.");
+    } finally {
+      setIsTeamSaving(false);
+    }
+  };
+
   const updateTeamMemberActive = async (member: BarberProfile, active: boolean) => {
     if (!isOwner || isTeamSaving) return;
     if (!active && !(await confirmAction({
@@ -4290,6 +4324,7 @@ export function BookingHome() {
     },
     { active: Boolean(clientDialog && visibleStep === "admin"), close: () => setClientDialog(null) },
     { active: Boolean(calendarClientPickerOpen && visibleStep === "admin"), close: () => setCalendarClientPickerOpen(false) },
+    { active: Boolean(broadcastOpen && visibleStep === "admin"), close: () => setBroadcastOpen(false) },
     { active: Boolean(selectedAdminEditAppointment && visibleStep === "admin"), close: () => setAdminEditAppointmentId(null) },
     { active: Boolean(selectedAdminClient && visibleStep === "admin"), close: () => setSelectedAdminClientId(null) },
     { active: Boolean(selectedClientAppointment && visibleStep !== "admin"), close: () => setClientAppointmentId(null) },
@@ -4552,6 +4587,10 @@ export function BookingHome() {
                   <span className="team-icon" aria-hidden="true" />
                   Zarządzaj zespołem
                 </button>
+                <button className="owner-broadcast-button" type="button" onClick={() => setBroadcastOpen(true)}>
+                  <Megaphone aria-hidden="true" />
+                  Napisz do klientów
+                </button>
               </header>
 
               <div className="owner-barber-grid">
@@ -4670,11 +4709,23 @@ export function BookingHome() {
                   filter={clientFilter}
                   currentDate={currentDate}
                   onCreateClient={() => openClientCreator()}
+                  onBroadcast={canWriteToClients ? () => setBroadcastOpen(true) : undefined}
                   onSearchChange={setClientSearch}
                   onFilterChange={setClientFilter}
                   onOpenClient={setSelectedAdminClientId}
                   canSettleAppointment={canSettleAppointment}
                   isPotentialNoShow={isPotentialNoShow}
+                />
+              </Suspense>
+            ) : null}
+
+            {broadcastOpen && canWriteToClients && visibleStep === "admin" ? (
+              <Suspense fallback={null}>
+                <ClientBroadcast
+                  senderName={isOwner ? "BNB Barbershop" : signedInBarberName}
+                  senderPhotoUrl={isOwner ? null : signedInBarberProfile.photoUrl}
+                  asCompany={isOwner}
+                  onClose={() => setBroadcastOpen(false)}
                 />
               </Suspense>
             ) : null}
@@ -4757,6 +4808,7 @@ export function BookingHome() {
                   adminSections={barberAdminSections}
                   accessLabels={teamAccessLabels}
                   onActiveChange={(member, active) => void updateTeamMemberActive(member, active)}
+                  onBroadcastChange={(member, allowed) => void updateTeamMemberBroadcast(member, allowed)}
                   onEditMember={openTeamMemberEditDialog}
                   onAddMember={openTeamMemberCreateDialog}
                   onRemoveInvite={(member) => void removeTeamInvite(member)}

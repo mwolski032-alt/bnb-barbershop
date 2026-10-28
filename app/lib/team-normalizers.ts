@@ -40,6 +40,7 @@ export const normalizeTeamMember = (
   email: value?.email?.trim().toLocaleLowerCase("pl") ?? "",
   active: value?.active === true,
   access: normalizeBarberAccess(value?.access),
+  ...(value?.broadcastBlocked === true ? { broadcastBlocked: true } : {}),
   ...(Number(value?.invitedAt) ? { invitedAt: Number(value?.invitedAt) } : {}),
   ...(Number(value?.claimedAt) ? { claimedAt: Number(value?.claimedAt) } : {}),
   createdAt: Number(value?.createdAt) || undefined,

@@ -12,6 +12,7 @@ import "./telegram-feel.css";
 import "./offline.css";
 import "./gallery-wow.css";
 import "./client-account.css";
+import "./client-broadcast.css";
 import "./notification-nudge.css";
 import ClientErrorMonitor from "./components/client-error-monitor";
 import TapFeedback from "./components/tap-feedback";

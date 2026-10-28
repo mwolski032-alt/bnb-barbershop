@@ -56,6 +56,7 @@ type BarberProfile = {
   email: string;
   active: boolean;
   access: Record<BarberAdminSection, boolean>;
+  broadcastBlocked?: boolean;
   claimedAt?: number;
   createdAt?: number;
   updatedAt?: number;
@@ -120,6 +121,7 @@ type TeamScreenProps = {
   adminSections: BarberAdminSection[];
   accessLabels: Record<BarberAdminSection, string>;
   onActiveChange: (member: BarberProfile, active: boolean) => void;
+  onBroadcastChange: (member: BarberProfile, allowed: boolean) => void;
   onEditMember: (member: BarberProfile) => void;
   onOpenBarberPanel: (barberId: string, section: "schedule" | "analytics") => void;
   onAccessChange: (member: BarberProfile, section: BarberAdminSection, enabled: boolean) => void;
@@ -999,6 +1001,25 @@ function TeamSettingsScreen(props: TeamScreenProps) {
                     </label>
                   ))}
                 </fieldset>
+
+                {!waiting ? (
+                  <div className="team-broadcast-row">
+                    <span>
+                      <strong>Pisanie do klientów</strong>
+                      Wiadomość trafia do jego klientów jako powiadomienie.
+                    </span>
+                    <label className="team-active-switch">
+                      <input
+                        type="checkbox"
+                        checked={member.broadcastBlocked !== true}
+                        disabled={props.isSaving}
+                        onChange={(event) => props.onBroadcastChange(member, event.target.checked)}
+                      />
+                      <span aria-hidden="true" />
+                      {member.broadcastBlocked === true ? "Wyłączone" : "Może pisać"}
+                    </label>
+                  </div>
+                ) : null}
               </article>
             );
           })}

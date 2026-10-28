@@ -1,0 +1,84 @@
+/* "Napisz do klientów" dialog. Motion collapses to nothing when the system asks for less motion (theme.css zeroes the durations). */
+.salon-dialog.broadcast-dialog { width: min(520px, calc(100% - 20px)); overflow: hidden; background: var(--color-surface); }
+.broadcast-dialog .salon-dialog-content { max-height: calc(100dvh - 20px); padding: 0; overflow-y: auto; }
+.broadcast-card { position: relative; display: grid; gap: 14px; padding: 0 18px 22px; }
+
+.broadcast-hero { position: absolute; inset: 0 0 auto; height: 170px; overflow: hidden; background: linear-gradient(135deg, var(--color-primary), #012e2d); }
+.broadcast-hero i { position: absolute; width: 200px; height: 200px; border-radius: 50%; filter: blur(44px); opacity: .7; animation: broadcast-drift 9s ease-in-out infinite alternate; }
+.broadcast-hero i:nth-child(1) { left: -50px; top: -80px; background: var(--color-secondary); }
+.broadcast-hero i:nth-child(2) { right: -60px; top: -30px; background: var(--color-star-bright); animation-delay: -3s; opacity: .45; }
+.broadcast-hero i:nth-child(3) { left: 40%; top: 50px; background: #2aa6a0; animation-delay: -6s; opacity: .5; }
+@keyframes broadcast-drift { to { transform: translate(36px, 26px) scale(1.2); } }
+
+.broadcast-head { position: relative; display: grid; gap: 4px; padding: 46px 0 2px; color: #fff; }
+.broadcast-head .salon-overline { color: rgb(255 255 255 / 78%); animation: broadcast-rise 600ms var(--ease-out) backwards; }
+.broadcast-head h2 { margin: 0; font-family: var(--font-display); font-size: 1.75rem; overflow-wrap: anywhere; animation: broadcast-rise 700ms var(--ease-out) 80ms backwards; }
+.broadcast-head p { margin: 4px 0 0; color: rgb(255 255 255 / 86%); font-size: 13px; line-height: 1.45; animation: broadcast-rise 700ms var(--ease-out) 160ms backwards; }
+.broadcast-card > :not(.broadcast-hero):not(.broadcast-head) { animation: broadcast-rise 600ms var(--ease-out) backwards; }
+.broadcast-card > :nth-child(4) { animation-delay: 80ms; } .broadcast-card > :nth-child(5) { animation-delay: 160ms; } .broadcast-card > :nth-child(6) { animation-delay: 240ms; }
+@keyframes broadcast-rise { from { opacity: 0; transform: translateY(14px); } }
+
+.broadcast-reach { display: flex; align-items: center; gap: 12px; min-height: 64px; margin-top: 18px; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 18px; background: var(--color-surface-secondary); }
+.broadcast-reach > svg { flex: none; width: 22px; height: 22px; color: var(--color-primary); }
+.broadcast-reach strong { color: var(--color-primary); font-family: var(--font-display); font-size: 1.9rem; font-variant-numeric: tabular-nums; line-height: 1; }
+.broadcast-reach span { display: grid; gap: 2px; color: var(--color-text); font-size: 14px; }
+.broadcast-reach small { color: var(--color-text-muted); font-size: 12px; }
+.broadcast-reach-loading { color: var(--color-text-muted); animation: broadcast-pulse 1.2s ease-in-out infinite; }
+@keyframes broadcast-pulse { 50% { opacity: .45; } }
+
+.broadcast-field { position: relative; display: grid; gap: 6px; color: var(--color-text-secondary); font-size: 13px; font-weight: 600; }
+.broadcast-field textarea { min-height: 112px; padding: 12px 14px 28px; border: 1px solid var(--color-border); border-radius: 16px; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 16px; font-weight: 400; line-height: 1.45; resize: none; transition: border-color var(--duration-base), box-shadow var(--duration-base); }
+.broadcast-field textarea:focus { border-color: var(--color-secondary); outline: 0; box-shadow: 0 0 0 4px var(--color-secondary-soft); }
+.broadcast-count { position: absolute; right: 12px; bottom: 9px; color: var(--color-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 600; transition: color var(--duration-base); }
+.broadcast-count.low { color: #b3261e; }
+
+.broadcast-preview { display: grid; gap: 8px; }
+.broadcast-preview-label { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--color-text-secondary); font-size: 13px; font-weight: 600; }
+.broadcast-preview-label svg { width: 15px; height: 15px; color: var(--color-secondary); animation: broadcast-ring 3.5s ease-in-out infinite; transform-origin: 50% 0; }
+@keyframes broadcast-ring { 0%, 70%, 100% { transform: rotate(0); } 74% { transform: rotate(16deg); } 80% { transform: rotate(-14deg); } 86% { transform: rotate(8deg); } 92% { transform: rotate(-4deg); } }
+/* A dim "lock screen" behind the notification, so it reads like the real thing. */
+.broadcast-phone { display: grid; align-items: center; min-height: 118px; padding: 16px 12px; border-radius: 22px; background: linear-gradient(160deg, #0d3b3a, #1b1d2a 60%, #2a1f3d); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 8%); }
+.broadcast-push { display: flex; align-items: flex-start; gap: 11px; padding: 12px 13px; border-radius: 20px; background: rgb(255 255 255 / 92%); box-shadow: 0 10px 28px rgb(0 0 0 / 32%); color: #1c1c1e; animation: broadcast-drop 700ms var(--ease-out) 200ms backwards; transition: transform var(--duration-slow) var(--ease-out); }
+.broadcast-push.typed { transform: scale(1.015); }
+@keyframes broadcast-drop { from { opacity: 0; transform: translateY(-22px) scale(.94); } }
+.broadcast-push .broadcast-push-avatar { flex: none; width: 42px; height: 42px; border-radius: 50%; overflow: hidden; font-size: 1.1rem; background: var(--color-primary); color: #fff; display: grid; place-items: center; }
+.broadcast-push-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.broadcast-push > div { min-width: 0; flex: 1; }
+.broadcast-push-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0; }
+.broadcast-push-top strong { font-size: 14px; overflow-wrap: anywhere; }
+.broadcast-push-top span { flex: none; color: #6b6b70; font-size: 12px; }
+.broadcast-push-body { margin: 2px 0 0; font-size: 14px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; animation: broadcast-text 260ms var(--ease-out); }
+.broadcast-push:not(.typed) .broadcast-push-body { color: #8a8a8f; }
+@keyframes broadcast-text { from { opacity: .35; transform: translateY(3px); } }
+
+.broadcast-send { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.broadcast-send svg { width: 18px; height: 18px; transition: transform var(--duration-slow) var(--ease-out); }
+.broadcast-card.sending .broadcast-send svg { animation: broadcast-fly 900ms ease-in infinite; }
+@media (hover: hover) { .broadcast-send:hover:not(:disabled) svg { transform: translate(3px, -3px) rotate(8deg); } }
+@keyframes broadcast-fly { 60% { transform: translate(24px, -18px) scale(.7); opacity: 0; } 61% { transform: translate(-24px, 18px) scale(.7); opacity: 0; } }
+
+.broadcast-done { position: relative; display: grid; justify-items: center; gap: 6px; padding: 38px 8px 4px; text-align: center; }
+.broadcast-done h3 { margin: 6px 0 0; color: var(--color-text); font-family: var(--font-display); font-size: 1.6rem; }
+.broadcast-done p { margin: 0 0 12px; color: var(--color-text-secondary); font-size: 14px; }
+.broadcast-done .salon-cta { width: 100%; justify-content: center; }
+.broadcast-done-plane, .broadcast-done-check { grid-area: 1 / 1; display: grid; place-items: center; width: 76px; height: 76px; border-radius: 50%; }
+.broadcast-done-plane { background: var(--color-secondary-soft); color: var(--color-primary); animation: broadcast-takeoff 900ms var(--ease-out) forwards; }
+.broadcast-done-plane svg, .broadcast-done-check svg { width: 34px; height: 34px; }
+.broadcast-done-check { background: var(--color-primary); color: #fff; animation: broadcast-pop 700ms var(--ease-out) 650ms backwards; }
+@keyframes broadcast-takeoff { 0% { opacity: 1; } 60% { transform: translate(60px, -50px) scale(.6) rotate(10deg); opacity: 0; } 100% { transform: translate(60px, -50px) scale(.6); opacity: 0; } }
+@keyframes broadcast-pop { from { opacity: 0; transform: scale(.3) rotate(-20deg); } }
+
+@media (max-width: 420px) { .broadcast-card { padding-inline: 14px; } .broadcast-head h2 { font-size: 1.5rem; } }
+
+/* The entry points: a button beside "Dodaj" in the client base, and one on the owner's home. */
+.clients-base-header { flex-wrap: wrap; }
+.clients-base-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; margin-left: auto; }
+.clients-base-broadcast:hover svg { transform: translateX(2px) rotate(-12deg) scale(1.1); }
+.owner-broadcast-button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 8px; padding: 8px 16px; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-surface); color: var(--color-text); font: inherit; font-weight: 600; cursor: pointer; transition: transform var(--duration-base) var(--ease-out), border-color var(--duration-base); }
+.owner-broadcast-button svg { width: 18px; height: 18px; color: var(--color-secondary); transition: transform var(--duration-slow) var(--ease-out); }
+@media (hover: hover) { .owner-broadcast-button:hover { transform: translateY(-2px); border-color: var(--color-secondary); } .owner-broadcast-button:hover svg { transform: rotate(-14deg) scale(1.15); } }
+.owner-broadcast-button:active { transform: scale(.96); }
+
+/* The team card's switch: same family as the "Aktywne" switch, as a quiet row of its own. */
+.team-broadcast-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 2px 2px; color: var(--color-text-secondary); font-size: 13px; }
+.team-broadcast-row strong { display: block; color: var(--color-text); font-size: 14px; }
