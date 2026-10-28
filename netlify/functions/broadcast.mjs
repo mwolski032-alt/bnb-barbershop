@@ -28,6 +28,7 @@ export const config = {
 
 const OWNER_NAME = "BNB Barbershop";
 const PHOTO = /^data:image\/(?:webp|jpeg|png);base64,/;
+const ROUND_ICON = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/;
 
 // "Napisz do klientów": the owner or a barber sends a short hand-written push. `preview` only counts who would get it;
 // `send` delivers it. The sender is whoever is signed in: a barber writes as themselves, the owner writes as the company.
@@ -99,6 +100,14 @@ export default async function handler(request) {
     }
 
     const sentAt = Date.now();
+    // The sender's picture cut to a circle by their own browser. Kept so the icon address can serve it; when it is
+    // missing or not a small PNG the notification falls back to the square picture.
+    const roundIcon = String(body?.icon ?? "");
+    if (barberId && ROUND_ICON.test(roundIcon) && roundIcon.length <= 90_000) {
+      const stored = await patchDatabase(`broadcastIcons/${encodeURIComponent(barberId)}`, { png: roundIcon, updatedAt: sentAt }, accessToken)
+        .then(() => true, () => false);
+      if (stored) icon = new URL(`/api/barber-photo/${encodeURIComponent(barberId)}?v=${sentAt}`, siteUrl).href;
+    }
     const result = await sendBroadcastPush({
       accessToken,
       devices,

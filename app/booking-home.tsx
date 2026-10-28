@@ -3073,8 +3073,10 @@ export function BookingHome() {
     const change = (blocked: boolean) => setTeamMembers((current) =>
       current.map((currentMember) => {
         if (currentMember.id !== member.id) return currentMember;
-        const { broadcastBlocked: _previous, ...rest } = currentMember;
-        return blocked ? { ...rest, broadcastBlocked: true } : rest;
+        const next = { ...currentMember };
+        if (blocked) next.broadcastBlocked = true;
+        else delete next.broadcastBlocked;
+        return next;
       }));
     try {
       setIsTeamSaving(true);
@@ -4719,16 +4721,6 @@ export function BookingHome() {
               </Suspense>
             ) : null}
 
-            {broadcastOpen && canWriteToClients && visibleStep === "admin" ? (
-              <Suspense fallback={null}>
-                <ClientBroadcast
-                  senderName={isOwner ? "BNB Barbershop" : signedInBarberName}
-                  senderPhotoUrl={isOwner ? null : signedInBarberProfile.photoUrl}
-                  asCompany={isOwner}
-                  onClose={() => setBroadcastOpen(false)}
-                />
-              </Suspense>
-            ) : null}
 
             {adminSection === "analytics" ? (
               <Suspense fallback={<div className="admin-panel-loading" role="status" aria-label="Ładowanie analityki" />}>
@@ -5626,6 +5618,17 @@ export function BookingHome() {
       </ModalPresence>
 
       <ModalPresence>
+      {broadcastOpen && canWriteToClients && visibleStep === "admin" ? (
+        <Suspense fallback={null}>
+          <ClientBroadcast
+            senderName={isOwner ? "BNB Barbershop" : signedInBarberName}
+            senderPhotoUrl={isOwner ? null : signedInBarberProfile.photoUrl}
+            asCompany={isOwner}
+            onClose={() => setBroadcastOpen(false)}
+          />
+        </Suspense>
+      ) : null}
+
       {calendarClientPickerOpen && visibleStep === "admin" ? (
         <div
           className="client-modal-backdrop calendar-client-picker-backdrop"

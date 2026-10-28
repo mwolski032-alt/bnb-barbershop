@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Bell, Check, Send, Users } from "lucide-react";
 import { BROADCAST_MAX_CHARS } from "../../shared/broadcast.mjs";
 import { useCountUp } from "../hooks/use-count-up";
-import { previewBroadcast, sendBroadcast, type BroadcastReach, type BroadcastResult } from "../lib/broadcast-api";
+import { previewBroadcast, roundIcon, sendBroadcast, type BroadcastReach, type BroadcastResult } from "../lib/broadcast-api";
 import { confirmAction } from "../lib/confirm-action";
 import ProfileAvatar from "./profile-avatar";
 import SalonDialog from "./salon-dialog";
@@ -60,7 +60,7 @@ export default function ClientBroadcast(props: Props) {
     if (!confirmed) { area.current?.focus(); return; }
     setState("sending"); setError("");
     try {
-      setResult(await sendBroadcast(message));
+      setResult(await sendBroadcast(message, props.asCompany ? "" : await roundIcon(props.senderPhotoUrl)));
       setState("sent");
     } catch (failure) {
       setState("idle");

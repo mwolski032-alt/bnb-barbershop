@@ -12,7 +12,12 @@ const notFound = () =>
  * A barber's profile picture as a normal image, used as the icon of "Napisz do klientów" notifications
  * (a push can only show a picture that has an address). The link carries `?v=<time of the change>`.
  */
-export const createHandler = (readPhoto = async (barberId) => readDatabase(`barbers/${encodeURIComponent(barberId)}/profile/photoUrl`, await getAccessToken())) =>
+export const createHandler = (readPhoto = async (barberId) => {
+  const accessToken = await getAccessToken();
+  const key = encodeURIComponent(barberId);
+  // The round version made for the last message wins over the plain profile picture.
+  return (await readDatabase(`broadcastIcons/${key}/png`, accessToken)) ?? readDatabase(`barbers/${key}/profile/photoUrl`, accessToken);
+}) =>
   async function handler(request) {
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response("Method not allowed", { status: 405, headers: { Allow: "GET, HEAD" } });

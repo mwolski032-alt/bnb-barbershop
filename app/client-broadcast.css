@@ -11,9 +11,11 @@
 @keyframes broadcast-drift { to { transform: translate(36px, 26px) scale(1.2); } }
 
 .broadcast-head { position: relative; display: grid; gap: 4px; padding: 46px 0 2px; color: #fff; }
-.broadcast-head .salon-overline { color: rgb(255 255 255 / 78%); animation: broadcast-rise 600ms var(--ease-out) backwards; }
-.broadcast-head h2 { margin: 0; font-family: var(--font-display); font-size: 1.75rem; overflow-wrap: anywhere; animation: broadcast-rise 700ms var(--ease-out) 80ms backwards; }
-.broadcast-head p { margin: 4px 0 0; color: rgb(255 255 255 / 86%); font-size: 13px; line-height: 1.45; animation: broadcast-rise 700ms var(--ease-out) 160ms backwards; }
+.broadcast-head .salon-overline { animation: broadcast-rise 600ms var(--ease-out) backwards; }
+/* `.salon-dialog h2` paints headings dark green, which vanished on the dark hero; this one is white and shadowed. */
+.broadcast-card .broadcast-head h2 { margin: 0; color: #fff; font-family: var(--font-display); font-size: 1.75rem; text-shadow: 0 2px 14px rgb(0 0 0 / 45%); overflow-wrap: anywhere; animation: broadcast-rise 700ms var(--ease-out) 80ms backwards; }
+.broadcast-card .broadcast-head p { margin: 4px 0 0; color: #fff; font-size: 13px; line-height: 1.45; text-shadow: 0 1px 8px rgb(0 0 0 / 50%); animation: broadcast-rise 700ms var(--ease-out) 160ms backwards; }
+.broadcast-card .broadcast-head .salon-overline { background: rgb(255 255 255 / 92%); color: var(--color-primary); text-shadow: none; }
 .broadcast-card > :not(.broadcast-hero):not(.broadcast-head) { animation: broadcast-rise 600ms var(--ease-out) backwards; }
 .broadcast-card > :nth-child(4) { animation-delay: 80ms; } .broadcast-card > :nth-child(5) { animation-delay: 160ms; } .broadcast-card > :nth-child(6) { animation-delay: 240ms; }
 @keyframes broadcast-rise { from { opacity: 0; transform: translateY(14px); } }
