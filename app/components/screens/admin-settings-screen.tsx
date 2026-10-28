@@ -1008,15 +1008,15 @@ function TeamSettingsScreen(props: TeamScreenProps) {
                       <strong>Pisanie do klientów</strong>
                       Wiadomość trafia do jego klientów jako powiadomienie.
                     </span>
-                    <label className="team-active-switch">
+                    <label className="broadcast-switch">
                       <input
                         type="checkbox"
                         checked={member.broadcastBlocked !== true}
                         disabled={props.isSaving}
                         onChange={(event) => props.onBroadcastChange(member, event.target.checked)}
                       />
-                      <span aria-hidden="true" />
-                      {member.broadcastBlocked === true ? "Wyłączone" : "Może pisać"}
+                      <i aria-hidden="true" />
+                      <b>{member.broadcastBlocked === true ? "Wyłączone" : "Włączone"}</b>
                     </label>
                   </div>
                 ) : null}
