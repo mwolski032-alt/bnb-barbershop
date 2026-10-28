@@ -20,7 +20,7 @@
 .broadcast-card > :nth-child(4) { animation-delay: 80ms; } .broadcast-card > :nth-child(5) { animation-delay: 160ms; } .broadcast-card > :nth-child(6) { animation-delay: 240ms; }
 @keyframes broadcast-rise { from { opacity: 0; transform: translateY(14px); } }
 
-.broadcast-reach { display: flex; align-items: center; gap: 12px; min-height: 64px; margin-top: 18px; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 18px; background: var(--color-surface-secondary); }
+.broadcast-reach { width: 100%; font: inherit; text-align: left; display: flex; align-items: center; gap: 12px; min-height: 64px; margin-top: 18px; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 18px; background: var(--color-surface-secondary); }
 .broadcast-reach > svg { flex: none; width: 22px; height: 22px; color: var(--color-primary); }
 .broadcast-reach strong { color: var(--color-primary); font-family: var(--font-display); font-size: 1.9rem; font-variant-numeric: tabular-nums; line-height: 1; }
 .broadcast-reach span { display: grid; gap: 2px; color: var(--color-text); font-size: 14px; }
@@ -95,3 +95,34 @@
 .broadcast-switch input:focus-visible + i { outline: 2px solid var(--color-secondary); outline-offset: 3px; }
 .broadcast-switch input:disabled + i { opacity: .55; }
 .broadcast-switch b { min-width: 4.6em; color: var(--color-text); font-size: 13px; font-weight: 700; }
+
+/* The list of recipients: the count is a button that unfolds it; every row is ticked until the sender unticks it. */
+.broadcast-recipients { display: grid; margin-top: 18px; }
+.broadcast-recipients .broadcast-reach { margin-top: 0; }
+button.broadcast-reach { cursor: pointer; transition: border-color var(--duration-base), transform var(--duration-base) var(--ease-out); }
+button.broadcast-reach:disabled { cursor: default; }
+@media (hover: hover) { button.broadcast-reach:not(:disabled):hover { border-color: var(--color-secondary); } }
+button.broadcast-reach:not(:disabled):active { transform: scale(.985); }
+.broadcast-reach-chevron { margin-left: auto; flex: none; width: 20px; height: 20px; color: var(--color-text-muted); transition: transform var(--duration-slow) var(--ease-out); }
+.broadcast-reach[aria-expanded="true"] .broadcast-reach-chevron { transform: rotate(180deg); }
+.broadcast-people { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--duration-slow) var(--ease-out); }
+.broadcast-people[data-open] { grid-template-rows: 1fr; }
+.broadcast-people-inner { min-height: 0; overflow: hidden; }
+.broadcast-people-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 2px 6px; color: var(--color-text-muted); font-size: 12px; }
+.broadcast-people-tools button { flex: none; padding: 6px 10px; border: 0; border-radius: 999px; background: var(--color-secondary-soft); color: var(--color-primary); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.broadcast-people ul { display: grid; gap: 2px; max-height: 240px; margin: 0; padding: 0; overflow-y: auto; list-style: none; overscroll-behavior: contain; }
+.broadcast-people li label, .broadcast-person-off { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 4px 6px; border-radius: 14px; color: var(--color-text); font-size: 14px; cursor: pointer; transition: background var(--duration-base); }
+.broadcast-people li label:hover { background: var(--color-surface-secondary); }
+.broadcast-people li input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.broadcast-people li label > i { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border: 2px solid #8c9391; border-radius: 8px; color: transparent; background: var(--color-surface); transition: background var(--duration-base), border-color var(--duration-base); }
+.broadcast-people li label > i svg { width: 15px; height: 15px; stroke-width: 3; transform: scale(.4); transition: transform var(--duration-slow) var(--ease-out); }
+.broadcast-people li input:checked + i { border-color: var(--color-primary); background: var(--color-primary); color: #fff; }
+.broadcast-people li input:checked + i svg { transform: scale(1); }
+.broadcast-people li input:focus-visible + i { outline: 2px solid var(--color-secondary); outline-offset: 2px; }
+.broadcast-people li input:not(:checked) ~ span { color: var(--color-text-muted); text-decoration: line-through; }
+.broadcast-person-avatar { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; overflow: hidden; background: var(--color-primary); color: #fff; font-size: .9rem; }
+.broadcast-person-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.broadcast-people li span { min-width: 0; overflow-wrap: anywhere; }
+.broadcast-people-note { margin: 10px 2px 4px; color: var(--color-text-muted); font-size: 12px; }
+.broadcast-people ul.muted { max-height: 120px; opacity: .6; }
+.broadcast-person-off { cursor: default; }

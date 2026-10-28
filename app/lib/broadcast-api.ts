@@ -2,10 +2,11 @@ import { getAuth } from "firebase/auth";
 
 import { firebaseApp } from "./firebase";
 
-export type BroadcastReach = { recipients: number; reachable: number };
-export type BroadcastResult = BroadcastReach & { sent: number; failed: number };
+export type BroadcastPerson = { uid: string; name: string; photoVersion: number; reachable: boolean };
+export type BroadcastReach = { recipients: number; reachable: number; people: BroadcastPerson[] };
+export type BroadcastResult = { recipients: number; reachable: number; sent: number; failed: number };
 
-async function call<T>(payload: { action: "preview" | "send"; text?: string; icon?: string }): Promise<T> {
+async function call<T>(payload: { action: "preview" | "send"; text?: string; icon?: string; excludedUids?: string[] }): Promise<T> {
   const user = getAuth(firebaseApp).currentUser;
   if (!user) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
   const response = await fetch("/api/broadcast", {
@@ -22,7 +23,8 @@ async function call<T>(payload: { action: "preview" | "send"; text?: string; ico
 export const previewBroadcast = () => call<BroadcastReach>({ action: "preview" });
 
 /** `icon` is the sender's picture cut to a circle (a PNG data URL), so the notification shows it round. */
-export const sendBroadcast = (text: string, icon?: string) => call<BroadcastResult>({ action: "send", text, ...(icon ? { icon } : {}) });
+export const sendBroadcast = (text: string, icon?: string, excludedUids: string[] = []) =>
+  call<BroadcastResult>({ action: "send", text, ...(icon ? { icon } : {}), excludedUids });
 
 /** The picture as a transparent PNG with round edges, small enough for a notification icon. Empty when it cannot be made. */
 export async function roundIcon(photoUrl?: string | null): Promise<string> {

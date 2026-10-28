@@ -30,6 +30,29 @@ const OWNER_NAME = "BNB Barbershop";
 const PHOTO = /^data:image\/(?:webp|jpeg|png);base64,/;
 const ROUND_ICON = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/;
 
+// Name and picture version of everyone who would get the message, for the list the sender can look through.
+const describeRecipients = async ({ audience, clients, reachableUids, accessToken }) => {
+  const names = new Map();
+  for (const client of Object.values(clients)) {
+    const name = `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim();
+    if (client?.userId && name) names.set(client.userId, name);
+  }
+  const missing = audience.filter((uid) => !names.has(uid)).slice(0, 200);
+  const [versions, profileNames] = await Promise.all([
+    readDatabase("clientPhotoVersions", accessToken),
+    Promise.all(missing.map((uid) => readDatabase(`clientProfiles/${encodeURIComponent(uid)}/displayName`, accessToken).catch(() => ""))),
+  ]);
+  missing.forEach((uid, index) => { if (profileNames[index]) names.set(uid, String(profileNames[index])); });
+  return audience
+    .map((uid) => ({
+      uid,
+      name: names.get(uid) || "Klient bez nazwy",
+      photoVersion: Number(versions?.[uid]) || 0,
+      reachable: reachableUids.has(uid),
+    }))
+    .sort((a, b) => Number(b.reachable) - Number(a.reachable) || a.name.localeCompare(b.name, "pl"));
+};
+
 // "Napisz do klientów": the owner or a barber sends a short hand-written push. `preview` only counts who would get it;
 // `send` delivers it. The sender is whoever is signed in: a barber writes as themselves, the owner writes as the company.
 export default async function handler(request) {
@@ -71,8 +94,12 @@ export default async function handler(request) {
       deviceUids,
       excludedUids,
     });
-    const devices = await collectBroadcastDevices(accessToken, audience);
-    const reachable = new Set(devices.map((device) => device.uid)).size;
+    // The sender can untick people in the list; only a real send honours that, the preview always lists everyone.
+    const excluded = new Set(Array.isArray(body?.excludedUids) ? body.excludedUids.map(String) : []);
+    const chosen = action === "send" ? audience.filter((uid) => !excluded.has(uid)) : audience;
+    const devices = await collectBroadcastDevices(accessToken, chosen);
+    const reachableUids = new Set(devices.map((device) => device.uid));
+    const reachable = reachableUids.size;
 
     const siteUrl = resolveNotificationSiteUrl(request);
     let title = OWNER_NAME;
@@ -90,7 +117,7 @@ export default async function handler(request) {
     }
 
     if (action === "preview") {
-      return jsonResponse({ ok: true, recipients: audience.length, reachable, title });
+      return jsonResponse({ ok: true, recipients: audience.length, reachable, title, people: await describeRecipients({ audience, clients: clients ?? {}, reachableUids, accessToken }) });
     }
     if (reachable === 0) {
       return jsonResponse({ ok: false, error: "Nikt z klientów nie ma jeszcze włączonych powiadomień." }, 409);
@@ -124,13 +151,14 @@ export default async function handler(request) {
       senderName: title,
       barberId,
       text,
-      recipients: audience.length,
+      recipients: chosen.length,
+      excluded: audience.length - chosen.length,
       reachable,
       sent: result.sent,
       failed: result.failed,
       sentAt,
     }, accessToken).catch(() => undefined);
-    return jsonResponse({ ok: true, recipients: audience.length, reachable, sent: result.sent, failed: result.failed });
+    return jsonResponse({ ok: true, recipients: chosen.length, reachable, sent: result.sent, failed: result.failed });
   } catch (error) {
     return jsonResponse(
       { ok: false, error: error instanceof Error ? error.message : "Nie udało się wysłać wiadomości." },

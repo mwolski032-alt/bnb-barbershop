@@ -69,3 +69,11 @@ test("the message is sent by the server only for the owner and for barbers the o
   assert.match(home, /const canWriteToClients = isOwner \|\| \(isBarber && signedInBarber\?\.broadcastBlocked !== true\)/);
   assert.match(home, /broadcastBlocked: allowed \? null : true/);
 });
+
+test("the sender can untick people: the server drops them from a real send but lists everyone in the preview", () => {
+  const server = read("netlify/functions/broadcast.mjs");
+  assert.match(server, /const chosen = action === "send" \? audience\.filter\(\(uid\) => !excluded\.has\(uid\)\) : audience/);
+  assert.match(server, /collectBroadcastDevices\(accessToken, chosen\)/);
+  const dialog = read("app/components/client-broadcast.tsx");
+  assert.match(dialog, /checked=\{!excluded\.has\(person\.uid\)\}/);
+});
